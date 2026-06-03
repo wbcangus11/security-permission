@@ -22,6 +22,12 @@ func Register(group *ghttp.RouterGroup) {
 	group.GET("/visible-areas", visibleAreas)
 	group.GET("/area-resources", areaResources)
 	group.GET("/app-menus", appMenus)
+	// 后台管理域体验
+	group.GET("/sys-menus", sysMenus)
+	group.GET("/manage-areas", manageAreas)
+	group.GET("/manage-orgs", manageOrgs)
+	group.GET("/manage-area-detail", manageAreaDetail)
+	group.GET("/manage-org-detail", manageOrgDetail)
 }
 
 func ok(r *ghttp.Request, data interface{}) {
@@ -121,6 +127,31 @@ func areaResources(r *ghttp.Request) {
 // appMenus 应用端:某用户可见的应用菜单(功能权限)。?userId=
 func appMenus(r *ghttp.Request) {
 	ok(r, service.S.AppMenus(r.Get("userId").Int()))
+}
+
+// sysMenus 后台:某用户可见的系统管理菜单。?userId=
+func sysMenus(r *ghttp.Request) {
+	ok(r, service.S.SysMenus(r.Get("userId").Int()))
+}
+
+// manageAreas 后台:某用户可管理的安保区域树(带 accessible)。?userId=
+func manageAreas(r *ghttp.Request) {
+	ok(r, service.S.ManageAreas(r.Get("userId").Int()))
+}
+
+// manageOrgs 后台:某用户可管理的组织树(带 accessible)。?userId=
+func manageOrgs(r *ghttp.Request) {
+	ok(r, service.S.ManageOrgs(r.Get("userId").Int()))
+}
+
+// manageAreaDetail 后台:点击某区域的管理详情。?userId=&areaId=
+func manageAreaDetail(r *ghttp.Request) {
+	ok(r, service.S.ManageAreaDetail(r.Get("userId").Int(), r.Get("areaId").Int()))
+}
+
+// manageOrgDetail 后台:点击某组织的管理详情。?userId=&orgId=
+func manageOrgDetail(r *ghttp.Request) {
+	ok(r, service.S.ManageOrgDetail(r.Get("userId").Int(), r.Get("orgId").Int()))
 }
 
 // checkReq 鉴权测试请求。

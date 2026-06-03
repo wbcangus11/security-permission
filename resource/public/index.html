@@ -102,6 +102,7 @@
   <span class="title">🛡️ 权限演示平台</span>
   <div class="main-tabs">
     <div class="main-tab active" data-view="app" onclick="switchView('app')">应用端(体验)</div>
+    <div class="main-tab" data-view="sys" onclick="switchView('sys')">后台管理(体验)</div>
     <div class="main-tab" data-view="roles" onclick="switchView('roles')">角色管理</div>
     <div class="main-tab" data-view="users" onclick="switchView('users')">用户管理</div>
   </div>
@@ -119,6 +120,23 @@
     </div>
     <div class="panel app-main" id="appMain">
       <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 后台管理(体验) ============ -->
+<div id="view-sys" class="main-view">
+  <div class="app-menus" id="sysMenus"></div>
+  <div class="app-layout">
+    <div class="panel app-tree" style="width:280px">
+      <h3>安保区域管理</h3>
+      <div class="muted" style="margin-bottom:6px">灰色=仅可见无管理权</div>
+      <div id="manageAreaTree"></div>
+      <h3 style="margin-top:18px">组织管理</h3>
+      <div id="manageOrgTree"></div>
+    </div>
+    <div class="panel app-main" id="sysMain">
+      <div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>
     </div>
   </div>
 </div>
@@ -339,6 +357,7 @@ async function init(){
   await refreshRoles();
   renderTesterTarget();
   await loadAppView();   // 默认进应用端
+  await loadSysView();
 }
 // 重新拉取元数据并刷新所有用户/角色下拉
 async function reloadMeta(){
@@ -360,7 +379,7 @@ function switchView(v){
   document.querySelectorAll('.main-tab').forEach(e=>e.classList.toggle('active',e.dataset.view===v));
   document.querySelectorAll('.main-view').forEach(e=>e.classList.toggle('active',e.id==='view-'+v));
 }
-async function onLoginChange(){ await loadAppView(); }
+async function onLoginChange(){ await loadAppView(); await loadSysView(); }
 async function loadAppView(){
   const uid=loginUserId();
   // 顶部应用菜单(功能权限)
@@ -405,6 +424,52 @@ async function openArea(areaId){
     </div>`).join('');
 }
 function doOp(res,act,allowed){ if(!allowed){ toast('⛔ 无「'+act+'」权限'); return; } toast('▶ 执行:'+act+' @ '+res); }
+
+// ---------- 后台管理(体验) ----------
+async function loadSysView(){
+  const uid=loginUserId();
+  const menus=await api('/api/sys-menus?userId='+uid);
+  document.getElementById('sysMenus').innerHTML = menus.length ? ('可用系统管理菜单:'+menus.map(m=>`<span class="mtag">${m.name}</span>`).join('')) : '<span class="muted">该用户无任何系统管理菜单权限</span>';
+  renderManageTree('manageAreaTree', await api('/api/manage-areas?userId='+uid), 'area');
+  renderManageTree('manageOrgTree', await api('/api/manage-orgs?userId='+uid), 'org');
+  document.getElementById('sysMain').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>';
+}
+function renderManageTree(elId, flat, kind){
+  const el=document.getElementById(elId);
+  if(!flat.length){ el.innerHTML='<div class="muted">无可见'+(kind==='area'?'区域':'组织')+'</div>'; return; }
+  el.innerHTML=''; el.appendChild(renderManageNodes(buildTree(flat), kind));
+}
+function renderManageNodes(nodes, kind){
+  const wrap=document.createElement('div');
+  nodes.forEach(n=>{
+    const node=document.createElement('div'); node.className='area-node'+(n.accessible?'':' structural');
+    node.textContent=(n.children&&n.children.length?'▸ ':'')+n.name+(n.accessible?'':' (仅可见)');
+    node.onclick=(e)=>{ e.stopPropagation(); document.querySelectorAll('#view-sys .area-node').forEach(x=>x.classList.remove('active')); node.classList.add('active'); openManageNode(kind, n.id); };
+    wrap.appendChild(node);
+    if(n.children&&n.children.length){ const box=document.createElement('div'); box.style.marginLeft='16px'; box.appendChild(renderManageNodes(n.children, kind)); wrap.appendChild(box); }
+  });
+  return wrap;
+}
+async function openManageNode(kind, id){
+  const uid=loginUserId();
+  const url = kind==='area' ? `/api/manage-area-detail?userId=${uid}&areaId=${id}` : `/api/manage-org-detail?userId=${uid}&orgId=${id}`;
+  const d=await api(url);
+  const main=document.getElementById('sysMain');
+  const label = kind==='area' ? '区域' : '组织';
+  if(!d.accessible){
+    main.innerHTML=`<div class="no-perm"><div class="big">🔒</div>暂无管理权限<div class="muted" style="margin-top:8px">「${d.name}」仅用于导航,你没有该${label}的管理权限</div></div>`;
+    return;
+  }
+  let html=`<h3>${d.name} — 管理权限</h3>
+    <div class="res-card"><div class="rc-title">✅ 可对该${label}执行</div>
+      <button class="op-btn">查看</button><button class="op-btn">添加</button><button class="op-btn">修改</button><button class="op-btn">删除</button>
+    </div>`;
+  html+=`<div class="res-card"><div class="rc-title">子${label}(${d.children.length})</div>${d.children.length?d.children.map(c=>`<span class="badge" style="margin-right:6px">${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+  if(kind==='area'){
+    html+=`<div class="res-card"><div class="rc-title">本区域资源(${d.resources.length})</div>${d.resources.length?d.resources.map(c=>`<span class="badge" style="margin-right:6px">📹 ${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+  }
+  main.innerHTML=html;
+}
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(window._tt); window._tt=setTimeout(()=>t.style.display='none',1800); }
 
 // ---------- 用户管理 ----------
