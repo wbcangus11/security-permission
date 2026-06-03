@@ -75,9 +75,11 @@
   .sys-layout { display:flex; align-items:stretch; min-height:calc(100vh - 50px); }
   .sys-nav { width:200px; flex:none; background:#2b2f3a; padding:8px 0; }
   .sys-nav .nav-title { color:#7a808c; font-size:12px; padding:10px 18px 6px; }
-  .sys-nav .nav-item { color:#c0c6d0; padding:11px 18px; cursor:default; border-left:3px solid transparent; font-size:13px; }
+  .sys-nav .nav-item { color:#c0c6d0; padding:11px 18px; cursor:pointer; border-left:3px solid transparent; font-size:13px; }
+  .sys-nav .nav-item:hover { color:#fff; background:#23252c; }
   .sys-nav .nav-item.on { color:#fff; background:#23252c; border-left-color:#e60012; }
   .sys-nav .nav-empty { color:#7a808c; padding:12px 18px; font-size:12px; }
+  .sys-content { flex:1; min-width:0; }
   /* 红色主按钮 hover + 标题红边 */
   .btn-primary:hover { background:#c5000f; }
   .sec-accent { border-left:3px solid #e60012; padding-left:8px; }
@@ -115,9 +117,7 @@
   <span class="brand"><span class="shield"></span>安防权限管理平台</span>
   <div class="main-tabs">
     <div class="main-tab active" data-view="app" onclick="switchView('app')">应用端(体验)</div>
-    <div class="main-tab" data-view="sys" onclick="switchView('sys')">后台管理(体验)</div>
-    <div class="main-tab" data-view="roles" onclick="switchView('roles')">角色管理</div>
-    <div class="main-tab" data-view="users" onclick="switchView('users')">用户管理</div>
+    <div class="main-tab" data-view="sys" onclick="switchView('sys')">系统管理(后台)</div>
   </div>
   <div class="login">当前登录:<select id="loginUser" onchange="onLoginChange()"></select></div>
 </div>
@@ -140,28 +140,31 @@
 <!-- ============ 后台管理(体验) ============ -->
 <div id="view-sys" class="main-view">
   <div class="sys-layout">
-    <!-- 深色左侧:系统管理菜单(功能权限) -->
+    <!-- 深色左侧:系统管理菜单(功能权限),点击切换右侧配置界面 -->
     <div class="sys-nav">
       <div class="nav-title">系统管理菜单(功能权限)</div>
       <div id="sysMenus"></div>
     </div>
-    <!-- 中间:区域/组织管理树 -->
-    <div class="panel app-tree" style="width:280px;margin:12px 0 12px 12px">
-      <h3 class="sec-accent">安保区域管理</h3>
-      <div class="muted" style="margin-bottom:6px">灰色=仅可见无管理权</div>
-      <div id="manageAreaTree"></div>
-      <h3 class="sec-accent" style="margin-top:18px">组织管理</h3>
-      <div id="manageOrgTree"></div>
-    </div>
-    <!-- 右侧:管理详情 -->
-    <div class="panel app-main" id="sysMain" style="margin:12px">
-      <div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>
-    </div>
-  </div>
-</div>
+    <div class="sys-content">
 
-<!-- ============ 角色管理 ============ -->
-<div id="view-roles" class="main-view">
+      <!-- 安保区域管理 -->
+      <div id="sc-area" class="sys-panel">
+        <div style="display:flex;gap:12px;padding:12px;align-items:flex-start">
+          <div class="panel app-tree" style="width:280px">
+            <h3 class="sec-accent">安保区域管理</h3>
+            <div class="muted" style="margin-bottom:6px">灰色=仅可见无管理权</div>
+            <div id="manageAreaTree"></div>
+            <h3 class="sec-accent" style="margin-top:18px">组织管理</h3>
+            <div id="manageOrgTree"></div>
+          </div>
+          <div class="panel app-main" id="sysMain" style="flex:1">
+            <div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 角色管理 -->
+      <div id="sc-role" class="sys-panel" style="display:none">
 <div class="layout">
   <!-- 角色列表 -->
   <div class="panel role-list">
@@ -260,12 +263,12 @@
     <div id="checkResult"></div>
   </div>
 </div>
-</div><!-- /view-roles -->
+      </div><!-- /sc-role -->
 
-<!-- ============ 用户管理 ============ -->
-<div id="view-users" class="main-view">
-  <div class="panel user-mgmt">
-    <h3>用户管理 <span class="muted">— 建用户、绑角色,然后到右上角「当前登录」切换体验</span></h3>
+      <!-- 账号管理 -->
+      <div id="sc-user" class="sys-panel" style="display:none">
+  <div class="panel user-mgmt" style="margin:12px">
+    <h3>账号管理 <span class="muted">— 建用户、绑角色,然后到右上角「当前登录」切换体验</span></h3>
     <div id="userList"></div>
     <hr style="border:none;border-top:1px solid #ebeef5;margin:16px 0">
     <h3>新建用户</h3>
@@ -274,7 +277,20 @@
     <div class="form-row" style="align-items:flex-start"><label>绑定角色</label><span id="newUserRoles"></span></div>
     <button class="btn btn-primary" onclick="createUser()">创建用户</button>
   </div>
-</div>
+      </div><!-- /sc-user -->
+
+      <!-- 其他系统菜单:演示占位 -->
+      <div id="sc-placeholder" class="sys-panel" style="display:none">
+        <div class="panel" style="margin:12px;padding:48px;text-align:center">
+          <div style="font-size:40px">🧩</div>
+          <div id="phName" style="margin-top:8px;font-size:15px;color:#606266"></div>
+          <div class="muted" style="margin-top:6px">该模块为演示占位,未实现具体配置界面</div>
+        </div>
+      </div>
+
+    </div><!-- /sys-content -->
+  </div><!-- /sys-layout -->
+</div><!-- /view-sys -->
 
 <script>
 let META = {};            // areas/orgs/menus/resources/actions/users
@@ -445,12 +461,28 @@ async function openArea(areaId){
 function doOp(res,act,allowed){ if(!allowed){ toast('⛔ 无「'+act+'」权限'); return; } toast('▶ 执行:'+act+' @ '+res); }
 
 // ---------- 后台管理(体验) ----------
+// 菜单 code -> 右侧配置界面
+const SYS_ROUTE = { 'sys.area':'area', 'sys.person.role':'role', 'sys.person.account':'user' };
+function onSysMenu(code, name, el){
+  document.querySelectorAll('#sysMenus .nav-item').forEach(x=>x.classList.remove('on'));
+  if(el) el.classList.add('on');
+  showSysPanel(SYS_ROUTE[code] || 'placeholder', name);
+}
+function showSysPanel(panel, name){
+  ['area','role','user','placeholder'].forEach(p=>{ const d=document.getElementById('sc-'+p); if(d) d.style.display=(p===panel)?'block':'none'; });
+  if(panel==='placeholder'){ document.getElementById('phName').textContent=name||''; }
+}
 async function loadSysView(){
   const uid=loginUserId();
   const menus=await api('/api/sys-menus?userId='+uid);
-  document.getElementById('sysMenus').innerHTML = menus.length
-    ? menus.map(m=>`<div class="nav-item${m.parentId?'':' on'}">${m.parentId?'　':''}${m.name}</div>`).join('')
+  const navEl=document.getElementById('sysMenus');
+  navEl.innerHTML = menus.length
+    ? menus.map(m=>`<div class="nav-item" data-code="${m.code}" onclick="onSysMenu('${m.code}','${m.name}',this)">${m.parentId?'　':''}${m.name}</div>`).join('')
     : '<div class="nav-empty">该用户无任何系统管理菜单权限</div>';
+  // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
+  let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus[0];
+  if(def){ const el=navEl.querySelector(`[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
+  else { showSysPanel('none'); }
   renderManageTree('manageAreaTree', await api('/api/manage-areas?userId='+uid), 'area');
   renderManageTree('manageOrgTree', await api('/api/manage-orgs?userId='+uid), 'org');
   document.getElementById('sysMain').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>';
