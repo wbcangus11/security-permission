@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基于角色的权限设计 - 演示</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Microsoft YaHei", Arial, sans-serif; font-size: 14px; color: #303133; background: #f0f2f5; }
+  .crumb { background: #e8eef7; padding: 10px 20px; color: #606266; font-size: 13px; }
+  .layout { display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
+  .panel { background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .role-list { width: 200px; flex: none; padding: 10px; }
+  .role-list h3 { margin: 4px 0 10px; font-size: 15px; }
+  .role-item { padding: 8px 10px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; }
+  .role-item:hover { background: #f5f7fa; }
+  .role-item.active { background: #ecf5ff; color: #409eff; }
+  .role-item small { color: #909399; display: block; font-size: 12px; }
+  .btn { border: none; border-radius: 4px; padding: 7px 16px; cursor: pointer; font-size: 13px; }
+  .btn-primary { background: #409eff; color: #fff; }
+  .btn-default { background: #fff; border: 1px solid #dcdfe6; color: #606266; }
+  .btn-mini { padding: 4px 10px; font-size: 12px; }
+  .editor { flex: 1; min-width: 560px; padding: 18px 22px; }
+  .editor h2 { font-size: 16px; margin: 0 0 14px; }
+  .form-row { margin-bottom: 14px; }
+  .form-row label { display: inline-block; width: 80px; color: #606266; }
+  .form-row input { width: 320px; padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; }
+  .tabs { display: flex; border-bottom: 1px solid #e4e7ed; margin-bottom: 0; }
+  .tab { padding: 10px 18px; cursor: pointer; color: #606266; border-bottom: 2px solid transparent; }
+  .tab.active { color: #409eff; border-bottom-color: #409eff; }
+  .perm-body { display: flex; border: 1px solid #ebeef5; border-top: none; min-height: 320px; }
+  .sub-tabs { width: 150px; flex: none; background: #fafafa; border-right: 1px solid #ebeef5; padding: 10px 0; }
+  .sub-tab { padding: 10px 16px; cursor: pointer; color: #606266; border-left: 2px solid transparent; }
+  .sub-tab.active { color: #409eff; border-left-color: #409eff; background: #ecf5ff; }
+  .sub-content { flex: 1; padding: 14px 18px; }
+  .tip { background: #fdf6ec; color: #e6a23c; border-radius: 4px; padding: 8px 12px; font-size: 12px; margin-bottom: 12px; line-height: 1.6; }
+  .tree-node { padding: 3px 0; }
+  .tree-children { margin-left: 22px; }
+  .tree-node label { cursor: pointer; user-select: none; }
+  .toggler { display: inline-block; width: 14px; text-align: center; cursor: pointer; color: #909399; }
+  table.res { border-collapse: collapse; width: 100%; }
+  table.res th, table.res td { border: 1px solid #ebeef5; padding: 6px 8px; text-align: center; font-size: 13px; }
+  table.res th { background: #fafafa; }
+  table.res td.name { text-align: left; }
+  .badge { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #f0f2f5; color: #909399; }
+  .footer-bar { padding: 12px 22px; border-top: 1px solid #ebeef5; text-align: right; }
+  .footer-bar .btn { margin-left: 8px; }
+  /* 鉴权测试 */
+  .tester { width: 360px; flex: none; padding: 16px; }
+  .tester h3 { margin: 0 0 12px; font-size: 15px; }
+  .tester .form-row label { width: 64px; }
+  .tester select, .tester input { padding: 6px 8px; border: 1px solid #dcdfe6; border-radius: 4px; }
+  .tester select { width: 250px; }
+  .result { margin-top: 14px; border-radius: 4px; padding: 12px; font-size: 13px; line-height: 1.7; }
+  .result.allow { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
+  .result.deny { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
+  .result .trace { color: #606266; margin-top: 6px; }
+  .result .trace div::before { content: "› "; color: #c0c4cc; }
+  .muted { color: #909399; font-size: 12px; }
+  .tree-node label.disabled { color: #c0c4cc; }
+  .tree-node label.disabled::after { content: " (超出操作者范围)"; font-size: 11px; color: #f56c6c; }
+  .violations { background:#fef0f0;border:1px solid #fde2e2;color:#f56c6c;border-radius:4px;padding:10px;margin:10px 22px 0;font-size:13px;line-height:1.7;display:none; }
+</style>
+</head>
+<body>
+<div class="crumb">系统管理 &gt; 人员管理 &gt; 角色管理 &gt; 编辑角色 &nbsp;<span class="muted">（演示：功能权限 + 数据权限，数据权限绑定角色）</span></div>
+
+<div class="layout">
+  <!-- 角色列表 -->
+  <div class="panel role-list">
+    <h3>角色</h3>
+    <div id="roleList"></div>
+    <button class="btn btn-default btn-mini" style="width:100%;margin-top:8px" onclick="newRole()">+ 新建角色</button>
+  </div>
+
+  <!-- 角色编辑器 -->
+  <div class="panel editor">
+    <div class="form-row" style="background:#ecf5ff;padding:10px;border-radius:4px">
+      <label style="width:auto;margin-right:8px">操作者(创建人)</label>
+      <select id="actor" onchange="onActorChange()" style="padding:6px 8px;border:1px solid #dcdfe6;border-radius:4px"></select>
+      <span class="muted" id="actorHint" style="margin-left:10px"></span>
+    </div>
+    <h2>基本信息</h2>
+    <div class="form-row"><label>角色名称</label><input id="roleName" placeholder="请输入角色名称"></div>
+    <div class="form-row"><label>描述</label><input id="roleDesc" placeholder="请输入角色描述"></div>
+
+    <h2>权限配置</h2>
+    <div class="tabs">
+      <div class="tab active" data-tab="sys" onclick="switchTab('sys')">系统管理权限</div>
+      <div class="tab" data-tab="app" onclick="switchTab('app')">应用权限</div>
+    </div>
+
+    <!-- 系统管理权限 -->
+    <div class="perm-body" data-pane="sys">
+      <div class="sub-tabs">
+        <div class="sub-tab active" data-sub="sysmenu" onclick="switchSub('sys','sysmenu')">系统管理菜单权限</div>
+        <div class="sub-tab" data-sub="area" onclick="switchSub('sys','area')">安保区域管理权限</div>
+        <div class="sub-tab" data-sub="org" onclick="switchSub('sys','org')">组织管理权限</div>
+      </div>
+      <div class="sub-content">
+        <div data-subpane="sysmenu">
+          <div class="tip">配置该角色在系统管理中的菜单访问权限。若需二次授权，需勾选「角色管理 / 账号管理」菜单，可授出范围不超过此处。</div>
+          <div id="tree-sysmenu"></div>
+        </div>
+        <div data-subpane="area" style="display:none">
+          <div class="tip">配置该角色对安保区域及区域下资源的管理权限（查看/添加/修改/删除）。勾选父节点含整棵子树，新增子节点自动继承。</div>
+          <div id="tree-area"></div>
+        </div>
+        <div data-subpane="org" style="display:none">
+          <div class="tip">配置该角色对组织（人员/车辆归属）的管理权限。勾选父节点含整棵子树。</div>
+          <div id="tree-org"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 应用权限 -->
+    <div class="perm-body" data-pane="app" style="display:none">
+      <div class="sub-tabs">
+        <div class="sub-tab active" data-sub="appmenu" onclick="switchSub('app','appmenu')">应用菜单权限</div>
+        <div class="sub-tab" data-sub="res" onclick="switchSub('app','res')">业务资源权限</div>
+      </div>
+      <div class="sub-content">
+        <div data-subpane="appmenu">
+          <div class="tip">配置该角色在应用端的菜单访问权限。</div>
+          <div id="tree-appmenu"></div>
+        </div>
+        <div data-subpane="res" style="display:none">
+          <div class="tip">先按区域勾定「资源范围」（粗粒度，继承新资源）；下方对范围内已存在资源做操作项精细配置（勾选「精细」后仅授予所选操作，否则继承区域=全部操作）。</div>
+          <strong>资源权限范围</strong>
+          <div id="tree-resarea" style="margin:8px 0 16px"></div>
+          <strong>资源操作精细配置</strong>
+          <table class="res" style="margin-top:8px">
+            <thead><tr><th style="width:40px">精细</th><th class="name">资源（所在区域）</th><th id="actHead"></th></tr></thead>
+            <tbody id="resBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="violations" id="violations"></div>
+    <div class="footer-bar">
+      <button class="btn btn-primary" onclick="saveRole()">保存</button>
+      <button class="btn btn-default" onclick="loadRole(currentRoleId)">重置</button>
+    </div>
+  </div>
+
+  <!-- 鉴权测试 -->
+  <div class="panel tester">
+    <h3>🔐 鉴权测试</h3>
+    <div class="muted" style="margin-bottom:10px">选个用户，模拟一次访问，看引擎判定与原因。</div>
+    <div class="form-row"><label>用户</label><select id="tUser"></select></div>
+    <div class="form-row"><label>类型</label>
+      <select id="tType" onchange="renderTesterTarget()">
+        <option value="menu">菜单(功能权限)</option>
+        <option value="area">安保区域(管理数据权限)</option>
+        <option value="org">组织(管理数据权限)</option>
+        <option value="resource">业务资源+操作(应用数据权限)</option>
+      </select>
+    </div>
+    <div class="form-row" id="tTargetRow"><label>目标</label><select id="tTarget"></select></div>
+    <div class="form-row" id="tActionRow" style="display:none"><label>操作</label><select id="tAction"></select></div>
+    <button class="btn btn-primary" style="width:100%" onclick="runCheck()">执行鉴权</button>
+    <div id="checkResult"></div>
+  </div>
+</div>
+
+<script>
+let META = {};            // areas/orgs/menus/resources/actions/users
+let currentRoleId = 0;
+let role = blankRole();   // 当前编辑中的角色
+const checked = {         // 各树的勾选状态: id -> true
+  sysmenu: {}, appmenu: {}, area: {}, org: {}, resarea: {}
+};
+const resOverride = {};   // resourceId -> {mode:bool, actions:Set}
+let GRANT = {unlimited:true}; // 操作者可授出的上限,用于置灰
+function actorId(){ return Number(document.getElementById('actor').value||0); }
+// 某 id 在该树是否可授(不受限或在允许集合内)
+function grantAllows(kind, id){
+  if(GRANT.unlimited) return true;
+  const m={sysmenu:'menuIds',appmenu:'menuIds',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
+  return (GRANT[m]||[]).includes(id);
+}
+function grantAllowsResAction(resId, code){ if(GRANT.unlimited) return true; return (GRANT.resourceActions||[]).some(x=>x.resourceId===resId&&x.actionCode===code); }
+
+function blankRole(){ return {id:0,name:'',description:'',menuIds:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[],resourceActions:[]}; }
+
+// ---------- 通用请求 ----------
+async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json(); if(j.code!==0) throw new Error(j.message); return j.data; }
+
+// ---------- 树工具 ----------
+function buildTree(nodes){ // nodes: [{id,parentId,...}]
+  const map={}, roots=[]; nodes.forEach(n=>map[n.id]={...n,children:[]});
+  nodes.forEach(n=>{ if(n.parentId&&map[n.parentId]) map[n.parentId].children.push(map[n.id]); else roots.push(map[n.id]); });
+  return roots;
+}
+function descendants(node){ let r=[]; (node.children||[]).forEach(c=>{ r.push(c); r=r.concat(descendants(c)); }); return r; }
+
+// 渲染带勾选框的树。kind 用于按操作者范围置灰。
+function renderTree(elId, roots, store, kind){
+  const el=document.getElementById(elId); el.innerHTML='';
+  el.appendChild(renderNodes(roots, store, kind));
+}
+// 整棵子树是否有任何可授节点;否则整体隐藏(对齐海康:看不到操作者无权的部分)
+function anyGrantInSubtree(kind,n){
+  if(GRANT.unlimited||grantAllows(kind,n.id)) return true;
+  return (n.children||[]).some(c=>anyGrantInSubtree(kind,c));
+}
+function renderNodes(nodes, store, kind){
+  const wrap=document.createElement('div');
+  nodes.forEach(n=>{
+    if(!anyGrantInSubtree(kind,n)) return; // 超出操作者范围 -> 隐藏
+    const node=document.createElement('div'); node.className='tree-node';
+    const hasChild=(n.children&&n.children.length);
+    const tog=document.createElement('span'); tog.className='toggler'; tog.textContent=hasChild?'▾':'';
+    const selfAllowed=GRANT.unlimited||grantAllows(kind,n.id);
+    const lab=document.createElement('label');
+    if(selfAllowed){
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!store[n.id];
+      cb.onchange=()=>{ toggleNode(n,store,cb.checked); };
+      lab.append(cb, document.createTextNode(' '+ (n.name||n.code)));
+    } else {
+      // 自身不可授,但有可授子孙:仅作结构展示(无勾选框)
+      lab.append(document.createTextNode(' '+ (n.name||n.code))); lab.style.color='#c0c4cc';
+    }
+    node.append(tog, lab);
+    let childBox=null;
+    if(hasChild){ childBox=document.createElement('div'); childBox.className='tree-children'; childBox.appendChild(renderNodes(n.children,store,kind)); node.appendChild(childBox);
+      tog.onclick=()=>{ const show=childBox.style.display!=='none'; childBox.style.display=show?'none':''; tog.textContent=show?'▸':'▾'; }; }
+    wrap.appendChild(node);
+  });
+  return wrap;
+}
+// 勾选级联:选父则选中所有后代;取消父则取消后代
+function toggleNode(n,store,val){
+  store[n.id]=val;
+  descendants(n).forEach(d=>store[d.id]=val);
+  // 重新渲染对应树以刷新 UI
+  rerenderAll();
+}
+
+// 从勾选状态提取「最小授权根」(父被选则不重复记子) -> [{nodeId,includeChild:true}]
+function extractScopes(roots, store){
+  const out=[];
+  function walk(nodes, parentChecked){
+    nodes.forEach(n=>{
+      const c=!!store[n.id];
+      if(c && !parentChecked){ out.push({nodeId:n.id, includeChild:true}); }
+      walk(n.children||[], parentChecked||c);
+    });
+  }
+  walk(roots,false); return out;
+}
+// 把 scopes 展开回勾选状态(含子树)
+function applyScopes(roots, scopes, store){
+  for(const k in store) delete store[k];
+  const byId={}; function index(ns){ns.forEach(n=>{byId[n.id]=n; index(n.children||[]);});} index(roots);
+  scopes.forEach(sc=>{ const n=byId[sc.nodeId]; if(!n) return; store[sc.nodeId]=true; if(sc.includeChild) descendants(n).forEach(d=>store[d.id]=true); });
+}
+
+// ---------- 初始化 ----------
+async function init(){
+  META = await api('/api/meta');
+  // 用户下拉(鉴权测试)
+  const us=document.getElementById('tUser'); us.innerHTML=META.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  // 操作者下拉(创建人):0=系统管理员不受限
+  document.getElementById('actor').innerHTML='<option value="0">系统管理员(不受限)</option>'+META.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  await fetchGrantable();
+  // 角色列表
+  await refreshRoles();
+  renderTesterTarget();
+}
+async function fetchGrantable(){
+  GRANT = await api('/api/grantable?actor='+actorId());
+  document.getElementById('actorHint').textContent = GRANT.unlimited ? '不受限,可授予全部权限' : '只能授予该操作者拥有的权限(灰色项不可勾)';
+}
+async function onActorChange(){ await fetchGrantable(); rerenderAll(); }
+
+async function refreshRoles(){
+  const roles = await api('/api/roles');
+  const el=document.getElementById('roleList');
+  el.innerHTML = roles.map(r=>`<div class="role-item ${r.id===currentRoleId?'active':''}" onclick="loadRole(${r.id})">${r.name}<small>${r.description||''}</small></div>`).join('');
+  if(!currentRoleId && roles.length){ loadRole(roles[0].id); }
+}
+
+async function loadRole(id){
+  if(!id){ return; }
+  currentRoleId=id; role = await api('/api/roles/'+id);
+  document.getElementById('roleName').value=role.name||'';
+  document.getElementById('roleDesc').value=role.description||'';
+  // 菜单勾选
+  const sysMenus=META.menus.filter(m=>m.domain==='SYS'), appMenus=META.menus.filter(m=>m.domain==='APP');
+  checked.sysmenu={}; checked.appmenu={};
+  (role.menuIds||[]).forEach(mid=>{ const m=META.menus.find(x=>x.id===mid); if(!m)return; if(m.domain==='SYS')checked.sysmenu[mid]=true; else checked.appmenu[mid]=true; });
+  // 树范围
+  applyScopes(buildTree(META.areas), role.areaScopes||[], checked.area);
+  applyScopes(buildTree(META.orgs), role.orgScopes||[], checked.org);
+  applyScopes(buildTree(META.areas), role.resourceAreaScopes||[], checked.resarea);
+  // 资源精细配置
+  for(const k in resOverride) delete resOverride[k];
+  (role.resourceActions||[]).forEach(ra=>{ if(!resOverride[ra.resourceId]) resOverride[ra.resourceId]={mode:true,actions:new Set()}; resOverride[ra.resourceId].actions.add(ra.actionCode); });
+  rerenderAll(); refreshRoles();
+}
+
+function newRole(){ currentRoleId=0; role=blankRole();
+  document.getElementById('roleName').value=''; document.getElementById('roleDesc').value='';
+  ['sysmenu','appmenu','area','org','resarea'].forEach(k=>checked[k]={});
+  for(const k in resOverride) delete resOverride[k];
+  rerenderAll(); refreshRoles();
+}
+
+function rerenderAll(){
+  renderTree('tree-sysmenu', buildTree(META.menus.filter(m=>m.domain==='SYS')), checked.sysmenu, 'sysmenu');
+  renderTree('tree-appmenu', buildTree(META.menus.filter(m=>m.domain==='APP')), checked.appmenu, 'appmenu');
+  renderTree('tree-area', buildTree(META.areas), checked.area, 'area');
+  renderTree('tree-org', buildTree(META.orgs), checked.org, 'org');
+  renderTree('tree-resarea', buildTree(META.areas), checked.resarea, 'resarea');
+  renderResTable();
+}
+
+// 资源操作精细配置表(仅列出在「资源范围」内的资源)
+function renderResTable(){
+  document.getElementById('actHead').textContent='操作项';
+  const head=document.querySelector('table.res thead tr');
+  // 重建表头操作列
+  head.innerHTML='<th style="width:48px">精细</th><th class="name">资源（所在区域）</th>'+META.actions.map(a=>`<th>${a.name}</th>`).join('');
+  const areaName=id=>{const a=META.areas.find(x=>x.id===id);return a?a.name:'?';};
+  const inScope = META.resources.filter(r=>checked.resarea[r.areaId]);
+  const body=document.getElementById('resBody');
+  if(!inScope.length){ body.innerHTML=`<tr><td colspan="${2+META.actions.length}" class="muted">请先在上方勾选资源范围</td></tr>`; return; }
+  body.innerHTML='';
+  inScope.forEach(r=>{
+    const ov=resOverride[r.id]||{mode:false,actions:new Set()};
+    const tr=document.createElement('tr');
+    const tdMode=document.createElement('td');
+    const modeCb=document.createElement('input'); modeCb.type='checkbox'; modeCb.checked=ov.mode;
+    modeCb.onchange=()=>{ resOverride[r.id]={mode:modeCb.checked, actions: ov.actions||new Set()}; renderResTable(); };
+    tdMode.appendChild(modeCb); tr.appendChild(tdMode);
+    const tdName=document.createElement('td'); tdName.className='name';
+    tdName.innerHTML=`${r.name} <span class="badge">${areaName(r.areaId)}</span>`; tr.appendChild(tdName);
+    META.actions.forEach(a=>{
+      const td=document.createElement('td');
+      const okAct=grantAllowsResAction(r.id,a.code);
+      if(ov.mode){ const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=ov.actions.has(a.code); cb.disabled=!okAct;
+        cb.onchange=()=>{ if(cb.checked)ov.actions.add(a.code); else ov.actions.delete(a.code); resOverride[r.id]={mode:true,actions:ov.actions}; };
+        td.appendChild(cb);
+      } else { td.innerHTML = okAct ? '<span class="muted">继承✓</span>' : '<span style="color:#f56c6c">✕</span>'; }
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+// ---------- Tab 切换 ----------
+function switchTab(t){ document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.tab===t));
+  document.querySelectorAll('[data-pane]').forEach(e=>e.style.display=e.dataset.pane===t?'flex':'none'); }
+function switchSub(pane,sub){ const root=document.querySelector(`[data-pane="${pane}"]`);
+  root.querySelectorAll('.sub-tab').forEach(e=>e.classList.toggle('active',e.dataset.sub===sub));
+  root.querySelectorAll('[data-subpane]').forEach(e=>e.style.display=e.dataset.subpane===sub?'block':'none'); }
+
+// ---------- 保存 ----------
+async function saveRole(){
+  const r={
+    id: currentRoleId,
+    name: document.getElementById('roleName').value.trim(),
+    description: document.getElementById('roleDesc').value.trim(),
+    menuIds: [...Object.keys(checked.sysmenu).filter(k=>checked.sysmenu[k]), ...Object.keys(checked.appmenu).filter(k=>checked.appmenu[k])].map(Number),
+    areaScopes: extractScopes(buildTree(META.areas), checked.area),
+    orgScopes: extractScopes(buildTree(META.orgs), checked.org),
+    resourceAreaScopes: extractScopes(buildTree(META.areas), checked.resarea),
+    resourceActions: []
+  };
+  Object.keys(resOverride).forEach(rid=>{ const ov=resOverride[rid]; if(ov.mode){ ov.actions.forEach(ac=>r.resourceActions.push({resourceId:Number(rid),actionCode:ac})); } });
+  if(!r.name){ alert('角色名称不能为空'); return; }
+  const vbox=document.getElementById('violations'); vbox.style.display='none'; vbox.innerHTML='';
+  const resp=await fetch('/api/roles?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
+  const j=await resp.json();
+  if(j.code!==0){ alert('保存失败:'+j.message); return; }
+  let msg='已保存:'+j.data.name;
+  if(j.preserved>0) msg+=`\n(保留了 ${j.preserved} 项你无权查看/修改的范围外权限)`;
+  alert(msg);
+  currentRoleId=j.data.id;
+  await refreshRoles();
+  await loadRole(currentRoleId); // 重新载入合并后的结果
+}
+
+// ---------- 鉴权测试 ----------
+function renderTesterTarget(){
+  const type=document.getElementById('tType').value;
+  const tgt=document.getElementById('tTarget'); const actRow=document.getElementById('tActionRow');
+  actRow.style.display='none';
+  if(type==='menu'){ tgt.innerHTML=META.menus.map(m=>`<option value="${m.code}">[${m.domain}] ${m.name}</option>`).join(''); }
+  else if(type==='area'){ tgt.innerHTML=META.areas.map(a=>`<option value="${a.id}">${a.name}</option>`).join(''); }
+  else if(type==='org'){ tgt.innerHTML=META.orgs.map(o=>`<option value="${o.id}">${o.name}</option>`).join(''); }
+  else if(type==='resource'){ tgt.innerHTML=META.resources.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+    actRow.style.display='block'; document.getElementById('tAction').innerHTML=META.actions.map(a=>`<option value="${a.code}">${a.name}</option>`).join(''); }
+}
+async function runCheck(){
+  const type=document.getElementById('tType').value;
+  const body={ userId:Number(document.getElementById('tUser').value), type };
+  const t=document.getElementById('tTarget').value;
+  if(type==='menu') body.code=t; else if(type==='resource'){ body.resourceId=Number(t); body.action=document.getElementById('tAction').value; } else body.nodeId=Number(t);
+  try{ const d=await api('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const el=document.getElementById('checkResult');
+    el.className='result '+(d.allow?'allow':'deny');
+    el.innerHTML=`<strong>${d.allow?'✅ 允许':'⛔ 拒绝'}</strong> — ${d.reason}`+
+      (d.trace&&d.trace.length?`<div class="trace">${d.trace.map(t=>`<div>${t}</div>`).join('')}</div>`:'');
+  }catch(e){ alert('鉴权失败:'+e.message); }
+}
+
+init();
+</script>
+</body>
+</html>

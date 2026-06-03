@@ -1,0 +1,31 @@
+.buildpath
+.hgignore.swp
+.project
+.orig
+.swp
+.idea/
+.settings/
+.vscode/
+bin/
+**/.DS_Store
+gf
+main
+main.exe
+output/
+manifest/output/
+temp/
+temp.yaml
+bin
+
+# 本项目编译产物与运行日志(不纳入版本管理)
+/security-permission.exe
+/app_debug.exe
+/sp*.exe
+server.out.log
+server.err.log
+run.log
+
+# 注:config.yaml 含本地开发库连接(root/123456),作为可运行的演示项目一并纳入 git。
+#     接入真实环境时改用环境变量或私密配置,并在此重新忽略。
+# git-bash 崩溃转储
+*.stackdump
