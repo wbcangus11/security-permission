@@ -213,3 +213,38 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 	}
 	return s.Role(r.Id), nil
 }
+
+// SaveUser 落库(用户主表 + user_role 绑定),成功后刷新缓存。id<=0 为新增。
+func (s *Store) SaveUser(ctx context.Context, u *model.User) (*model.User, error) {
+	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		data := g.Map{"name": u.Name, "org_id": u.OrgId}
+		if u.Id <= 0 {
+			res, err := tx.Model("user").Ctx(ctx).Data(data).Insert()
+			if err != nil {
+				return err
+			}
+			id, _ := res.LastInsertId()
+			u.Id = int(id)
+		} else {
+			if _, err := tx.Model("user").Ctx(ctx).Data(data).Where("id", u.Id).Update(); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Model("user_role").Ctx(ctx).Where("user_id", u.Id).Delete(); err != nil {
+			return err
+		}
+		for _, rid := range u.RoleIds {
+			if _, err := tx.Model("user_role").Ctx(ctx).Data(g.Map{"user_id": u.Id, "role_id": rid}).Insert(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Reload(ctx); err != nil {
+		return nil, err
+	}
+	return s.User(u.Id), nil
+}

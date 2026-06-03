@@ -60,11 +60,71 @@
   .tree-node label.disabled { color: #c0c4cc; }
   .tree-node label.disabled::after { content: " (超出操作者范围)"; font-size: 11px; color: #f56c6c; }
   .violations { background:#fef0f0;border:1px solid #fde2e2;color:#f56c6c;border-radius:4px;padding:10px;margin:10px 22px 0;font-size:13px;line-height:1.7;display:none; }
+  /* 顶栏 + 主Tab */
+  .topbar { background:#324157; color:#fff; padding:0 20px; display:flex; align-items:center; height:50px; }
+  .topbar .title { font-size:16px; font-weight:bold; margin-right:30px; }
+  .topbar .login { margin-left:auto; font-size:13px; }
+  .topbar .login select { padding:5px 8px; border-radius:4px; border:none; }
+  .main-tabs { display:flex; height:100%; }
+  .main-tab { padding:0 20px; line-height:50px; cursor:pointer; color:#c0ccda; border-bottom:3px solid transparent; }
+  .main-tab.active { color:#fff; border-bottom-color:#409eff; }
+  .main-view { display:none; }
+  .main-view.active { display:block; }
+  /* 应用端 */
+  .app-layout { display:flex; gap:12px; padding:12px; align-items:flex-start; }
+  .app-tree { width:240px; flex:none; padding:12px; }
+  .app-tree h3, .app-main h3 { margin:4px 0 12px; font-size:15px; }
+  .area-node { padding:6px 8px; border-radius:4px; cursor:pointer; }
+  .area-node:hover { background:#f5f7fa; }
+  .area-node.active { background:#ecf5ff; color:#409eff; }
+  .area-node.structural { color:#c0c4cc; }
+  .app-main { flex:1; min-width:480px; padding:16px 20px; min-height:360px; }
+  .res-card { border:1px solid #ebeef5; border-radius:6px; padding:12px 14px; margin-bottom:12px; }
+  .res-card .rc-title { font-weight:bold; margin-bottom:8px; }
+  .op-btn { border:1px solid #409eff; color:#409eff; background:#fff; border-radius:4px; padding:5px 14px; margin-right:8px; cursor:pointer; font-size:13px; }
+  .op-btn:disabled { border-color:#e4e7ed; color:#c0c4cc; cursor:not-allowed; }
+  .no-perm { text-align:center; color:#909399; padding:60px 0; }
+  .no-perm .big { font-size:48px; }
+  .app-menus { padding:8px 20px; background:#fff; border-bottom:1px solid #ebeef5; }
+  .app-menus .mtag { display:inline-block; background:#ecf5ff; color:#409eff; border-radius:4px; padding:3px 10px; margin-right:8px; font-size:12px; }
+  /* 用户管理 */
+  .user-mgmt { padding:16px 20px; }
+  .user-row { display:flex; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #f0f2f5; }
+  .user-row .uname { width:200px; }
+  .rolechk { margin-right:12px; }
+  .toast { position:fixed; top:70px; left:50%; transform:translateX(-50%); background:#67c23a; color:#fff; padding:10px 22px; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.2); display:none; z-index:99; }
 </style>
 </head>
 <body>
-<div class="crumb">系统管理 &gt; 人员管理 &gt; 角色管理 &gt; 编辑角色 &nbsp;<span class="muted">（演示：功能权限 + 数据权限，数据权限绑定角色）</span></div>
+<div class="toast" id="toast"></div>
 
+<div class="topbar">
+  <span class="title">🛡️ 权限演示平台</span>
+  <div class="main-tabs">
+    <div class="main-tab active" data-view="app" onclick="switchView('app')">应用端(体验)</div>
+    <div class="main-tab" data-view="roles" onclick="switchView('roles')">角色管理</div>
+    <div class="main-tab" data-view="users" onclick="switchView('users')">用户管理</div>
+  </div>
+  <div class="login">当前登录:<select id="loginUser" onchange="onLoginChange()"></select></div>
+</div>
+
+<!-- ============ 应用端(体验) ============ -->
+<div id="view-app" class="main-view active">
+  <div class="app-menus" id="appMenus"></div>
+  <div class="app-layout">
+    <div class="panel app-tree">
+      <h3>区域</h3>
+      <div class="muted" style="margin-bottom:8px">灰色=仅可见无权限,点击提示暂无操作权限</div>
+      <div id="appAreaTree"></div>
+    </div>
+    <div class="panel app-main" id="appMain">
+      <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 角色管理 ============ -->
+<div id="view-roles" class="main-view">
 <div class="layout">
   <!-- 角色列表 -->
   <div class="panel role-list">
@@ -163,6 +223,21 @@
     <div id="checkResult"></div>
   </div>
 </div>
+</div><!-- /view-roles -->
+
+<!-- ============ 用户管理 ============ -->
+<div id="view-users" class="main-view">
+  <div class="panel user-mgmt">
+    <h3>用户管理 <span class="muted">— 建用户、绑角色,然后到右上角「当前登录」切换体验</span></h3>
+    <div id="userList"></div>
+    <hr style="border:none;border-top:1px solid #ebeef5;margin:16px 0">
+    <h3>新建用户</h3>
+    <div class="form-row"><label>用户名</label><input id="newUserName" placeholder="如:王五"></div>
+    <div class="form-row"><label>所属组织</label><select id="newUserOrg"></select></div>
+    <div class="form-row" style="align-items:flex-start"><label>绑定角色</label><span id="newUserRoles"></span></div>
+    <button class="btn btn-primary" onclick="createUser()">创建用户</button>
+  </div>
+</div>
 
 <script>
 let META = {};            // areas/orgs/menus/resources/actions/users
@@ -259,15 +334,103 @@ function applyScopes(roots, scopes, store){
 
 // ---------- 初始化 ----------
 async function init(){
-  META = await api('/api/meta');
-  // 用户下拉(鉴权测试)
-  const us=document.getElementById('tUser'); us.innerHTML=META.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
-  // 操作者下拉(创建人):0=系统管理员不受限
-  document.getElementById('actor').innerHTML='<option value="0">系统管理员(不受限)</option>'+META.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  await reloadMeta();
   await fetchGrantable();
-  // 角色列表
   await refreshRoles();
   renderTesterTarget();
+  await loadAppView();   // 默认进应用端
+}
+// 重新拉取元数据并刷新所有用户/角色下拉
+async function reloadMeta(){
+  META = await api('/api/meta');
+  META._roles = await api('/api/roles');
+  const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  document.getElementById('tUser').innerHTML = userOpts;
+  document.getElementById('loginUser').innerHTML = userOpts;
+  document.getElementById('actor').innerHTML = '<option value="0">系统管理员(不受限)</option>'+userOpts;
+  // 用户管理:组织下拉 + 角色复选 + 用户列表
+  document.getElementById('newUserOrg').innerHTML = META.orgs.map(o=>`<option value="${o.id}">${o.name}</option>`).join('');
+  renderRoleChecks();
+  renderUserList();
+}
+function loginUserId(){ return Number(document.getElementById('loginUser').value||0); }
+
+// ---------- 应用端(体验) ----------
+function switchView(v){
+  document.querySelectorAll('.main-tab').forEach(e=>e.classList.toggle('active',e.dataset.view===v));
+  document.querySelectorAll('.main-view').forEach(e=>e.classList.toggle('active',e.id==='view-'+v));
+}
+async function onLoginChange(){ await loadAppView(); }
+async function loadAppView(){
+  const uid=loginUserId();
+  // 顶部应用菜单(功能权限)
+  const menus=await api('/api/app-menus?userId='+uid);
+  const mEl=document.getElementById('appMenus');
+  mEl.innerHTML = menus.length ? ('可用应用菜单:'+menus.map(m=>`<span class="mtag">${m.name}</span>`).join('')) : '<span class="muted">该用户无任何应用菜单权限</span>';
+  // 可见区域树
+  const areas=await api('/api/visible-areas?userId='+uid);
+  renderAppAreaTree(areas);
+  document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>';
+}
+function renderAppAreaTree(flat){
+  const el=document.getElementById('appAreaTree');
+  if(!flat.length){ el.innerHTML='<div class="muted">该用户无任何可见区域</div>'; return; }
+  const roots=buildTree(flat); el.innerHTML='';
+  el.appendChild(renderAppNodes(roots));
+}
+function renderAppNodes(nodes){
+  const wrap=document.createElement('div');
+  nodes.forEach(n=>{
+    const node=document.createElement('div'); node.className='area-node'+(n.accessible?'':' structural');
+    node.textContent=(n.children&&n.children.length?'▸ ':'') + n.name + (n.accessible?'':' (仅可见)');
+    node.onclick=(e)=>{ e.stopPropagation(); document.querySelectorAll('.area-node').forEach(x=>x.classList.remove('active')); node.classList.add('active'); openArea(n.id); };
+    wrap.appendChild(node);
+    if(n.children&&n.children.length){ const box=document.createElement('div'); box.style.marginLeft='16px'; box.appendChild(renderAppNodes(n.children)); wrap.appendChild(box); }
+  });
+  return wrap;
+}
+async function openArea(areaId){
+  const uid=loginUserId();
+  const d=await api(`/api/area-resources?userId=${uid}&areaId=${areaId}`);
+  const main=document.getElementById('appMain');
+  if(!d.accessible){
+    main.innerHTML=`<div class="no-perm"><div class="big">🔒</div>暂无操作权限<div class="muted" style="margin-top:8px">「${d.areaName}」仅用于导航,你没有该区域资源的权限</div></div>`;
+    return;
+  }
+  if(!d.resources.length){ main.innerHTML=`<h3>${d.areaName}</h3><div class="muted">该区域下暂无监控资源</div>`; return; }
+  main.innerHTML=`<h3>${d.areaName} — 监控资源</h3>`+d.resources.map(r=>`
+    <div class="res-card">
+      <div class="rc-title">📹 ${r.name} <span class="badge">${r.area}</span></div>
+      <div>${r.actions.map(a=>`<button class="op-btn" ${a.allowed?'':'disabled'} onclick="doOp('${r.name}','${a.name}',${a.allowed})">${a.name}</button>`).join('')}</div>
+    </div>`).join('');
+}
+function doOp(res,act,allowed){ if(!allowed){ toast('⛔ 无「'+act+'」权限'); return; } toast('▶ 执行:'+act+' @ '+res); }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(window._tt); window._tt=setTimeout(()=>t.style.display='none',1800); }
+
+// ---------- 用户管理 ----------
+function renderUserList(){
+  const roleName=id=>{const r=(META._roles||[]).find(x=>x.id===id);return r?r.name:('#'+id);};
+  document.getElementById('userList').innerHTML = META.users.map(u=>{
+    const rs=(u.roleIds||[]).map(roleName).join('、')||'(无角色)';
+    return `<div class="user-row"><span class="uname"><b>${u.name}</b></span><span class="muted">角色:${rs}</span></div>`;
+  }).join('');
+}
+function renderRoleChecks(){
+  const el=document.getElementById('newUserRoles');
+  el.innerHTML=(META._roles||[]).map(r=>`<label class="rolechk"><input type="checkbox" value="${r.id}"> ${r.name}</label>`).join('') || '<span class="muted">先去角色管理建角色</span>';
+}
+async function createUser(){
+  const name=document.getElementById('newUserName').value.trim();
+  if(!name){ alert('请输入用户名'); return; }
+  const orgId=Number(document.getElementById('newUserOrg').value||0);
+  const roleIds=[...document.querySelectorAll('#newUserRoles input:checked')].map(c=>Number(c.value));
+  try{
+    await api('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,orgId,roleIds})});
+    document.getElementById('newUserName').value='';
+    document.querySelectorAll('#newUserRoles input:checked').forEach(c=>c.checked=false);
+    await reloadMeta();
+    toast('✅ 已创建用户:'+name);
+  }catch(e){ alert('创建失败:'+e.message); }
 }
 async function fetchGrantable(){
   GRANT = await api('/api/grantable?actor='+actorId());
@@ -277,6 +440,8 @@ async function onActorChange(){ await fetchGrantable(); rerenderAll(); }
 
 async function refreshRoles(){
   const roles = await api('/api/roles');
+  META._roles = roles;            // 供用户管理用
+  if(document.getElementById('newUserRoles')) renderRoleChecks();
   const el=document.getElementById('roleList');
   el.innerHTML = roles.map(r=>`<div class="role-item ${r.id===currentRoleId?'active':''}" onclick="loadRole(${r.id})">${r.name}<small>${r.description||''}</small></div>`).join('');
   if(!currentRoleId && roles.length){ loadRole(roles[0].id); }

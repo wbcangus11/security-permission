@@ -17,6 +17,11 @@ func Register(group *ghttp.RouterGroup) {
 	group.POST("/roles", saveRole)
 	group.GET("/grantable", grantable)
 	group.POST("/check", check)
+	// 用户管理 + 应用端体验
+	group.POST("/users", saveUser)
+	group.GET("/visible-areas", visibleAreas)
+	group.GET("/area-resources", areaResources)
+	group.GET("/app-menus", appMenus)
 }
 
 func ok(r *ghttp.Request, data interface{}) {
@@ -82,6 +87,40 @@ func saveRole(r *ghttp.Request) {
 // grantable 返回操作者可授出的范围上限(供前端置灰)。?actor=用户ID,0=不受限。
 func grantable(r *ghttp.Request) {
 	ok(r, service.S.GrantableSet(r.Get("actor").Int()))
+}
+
+// saveUser 新增或更新用户(含角色绑定)。请求体即 model.User 的 JSON。
+func saveUser(r *ghttp.Request) {
+	var u model.User
+	if err := r.Parse(&u); err != nil {
+		fail(r, "参数错误:"+err.Error())
+		return
+	}
+	if u.Name == "" {
+		fail(r, "用户名不能为空")
+		return
+	}
+	saved, err := service.S.SaveUser(r.Context(), &u)
+	if err != nil {
+		fail(r, "保存失败:"+err.Error())
+		return
+	}
+	ok(r, saved)
+}
+
+// visibleAreas 应用端:某用户可见的区域树(带 accessible)。?userId=
+func visibleAreas(r *ghttp.Request) {
+	ok(r, service.S.VisibleAreas(r.Get("userId").Int()))
+}
+
+// areaResources 应用端:点击某区域时该用户能看到的资源 + 各操作是否有权。?userId=&areaId=
+func areaResources(r *ghttp.Request) {
+	ok(r, service.S.AreaResources(r.Get("userId").Int(), r.Get("areaId").Int()))
+}
+
+// appMenus 应用端:某用户可见的应用菜单(功能权限)。?userId=
+func appMenus(r *ghttp.Request) {
+	ok(r, service.S.AppMenus(r.Get("userId").Int()))
 }
 
 // checkReq 鉴权测试请求。
