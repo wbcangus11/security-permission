@@ -102,6 +102,15 @@
   .no-perm .big { font-size:48px; }
   .app-menus { padding:8px 20px; background:#fff; border-bottom:1px solid #ebeef5; }
   .app-menus .mtag { display:inline-block; background:#fdecec; color:#e60012; border-radius:4px; padding:3px 10px; margin-right:8px; font-size:12px; }
+  /* 前台卡片首页 */
+  .card-section { padding:0 24px; }
+  .card-section h3 { font-size:15px; margin:18px 0 4px; }
+  .card-section .desc { color:#909399; font-size:12px; margin-bottom:10px; }
+  .card-grid { display:flex; flex-wrap:wrap; gap:14px; }
+  .app-card { width:140px; height:118px; border:1px solid #ebeef5; border-radius:8px; background:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:.15s; }
+  .app-card:hover { box-shadow:0 6px 16px rgba(0,0,0,.1); border-color:#e60012; transform:translateY(-2px); }
+  .app-card .ic { font-size:32px; margin-bottom:10px; }
+  .app-card .nm { font-size:13px; color:#303133; }
   /* 用户管理 */
   .user-mgmt { padding:16px 20px; }
   .user-row { display:flex; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #f0f2f5; }
@@ -124,15 +133,23 @@
 
 <!-- ============ 应用端(体验) ============ -->
 <div id="view-app" class="main-view active">
-  <div class="app-menus" id="appMenus"></div>
-  <div class="app-layout">
-    <div class="panel app-tree">
-      <h3>区域</h3>
-      <div class="muted" style="margin-bottom:8px">灰色=仅可见无权限,点击提示暂无操作权限</div>
-      <div id="appAreaTree"></div>
-    </div>
-    <div class="panel app-main" id="appMain">
-      <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>
+  <!-- 首页:卡片(按应用菜单分组) -->
+  <div id="appHome">
+    <div class="card-section" style="padding-top:14px"><h3 class="sec-accent">快捷入口</h3><div class="desc">以下是你有权使用的应用模块</div></div>
+    <div id="appCards"></div>
+  </div>
+  <!-- 视频监控模块:区域 + 资源浏览 -->
+  <div id="appBrowse" style="display:none">
+    <div style="padding:10px 16px 0"><button class="btn btn-default btn-mini" onclick="showAppHome()">← 返回首页</button></div>
+    <div class="app-layout">
+      <div class="panel app-tree">
+        <h3 class="sec-accent">区域</h3>
+        <div class="muted" style="margin-bottom:8px">灰色=仅可见无权限,点击提示暂无操作权限</div>
+        <div id="appAreaTree"></div>
+      </div>
+      <div class="panel app-main" id="appMain">
+        <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>
+      </div>
     </div>
   </div>
 </div>
@@ -147,18 +164,30 @@
     </div>
     <div class="sys-content">
 
-      <!-- 安保区域管理 -->
+      <!-- 人员信息:组织机构(左树右详情) -->
+      <div id="sc-person" class="sys-panel" style="display:none">
+        <div style="display:flex;gap:12px;padding:12px;align-items:flex-start">
+          <div class="panel app-tree" style="width:280px">
+            <h3 class="sec-accent">组织机构</h3>
+            <div class="muted" style="margin-bottom:6px">人员归属的组织树;灰色=仅可见无管理权</div>
+            <div id="manageOrgTree"></div>
+          </div>
+          <div class="panel app-main" id="sysMainOrg" style="flex:1">
+            <div class="no-perm"><div class="big">👈</div>请选择左侧组织查看管理权限</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 安保区域管理(左树右详情) -->
       <div id="sc-area" class="sys-panel">
         <div style="display:flex;gap:12px;padding:12px;align-items:flex-start">
           <div class="panel app-tree" style="width:280px">
             <h3 class="sec-accent">安保区域管理</h3>
             <div class="muted" style="margin-bottom:6px">灰色=仅可见无管理权</div>
             <div id="manageAreaTree"></div>
-            <h3 class="sec-accent" style="margin-top:18px">组织管理</h3>
-            <div id="manageOrgTree"></div>
           </div>
-          <div class="panel app-main" id="sysMain" style="flex:1">
-            <div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>
+          <div class="panel app-main" id="sysMainArea" style="flex:1">
+            <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看管理权限</div>
           </div>
         </div>
       </div>
@@ -417,15 +446,55 @@ function switchView(v){
 async function onLoginChange(){ await loadAppView(); await loadSysView(); }
 async function loadAppView(){
   const uid=loginUserId();
-  // 顶部应用菜单(功能权限)
+  // 应用菜单(功能权限)→ 卡片
   const menus=await api('/api/app-menus?userId='+uid);
-  const mEl=document.getElementById('appMenus');
-  mEl.innerHTML = menus.length ? ('可用应用菜单:'+menus.map(m=>`<span class="mtag">${m.name}</span>`).join('')) : '<span class="muted">该用户无任何应用菜单权限</span>';
-  // 可见区域树
+  renderAppCards(menus);
+  // 视频监控模块用的可见区域树
   const areas=await api('/api/visible-areas?userId='+uid);
   renderAppAreaTree(areas);
   document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>';
+  showAppHome();
 }
+// 图标:按菜单 code 关键字
+function menuIcon(code){
+  if(code.includes('video')||code==='app.video') return '📹';
+  if(code.includes('live')) return '📺';
+  if(code.includes('playback')) return '⏯️';
+  if(code.includes('picture')) return '🖼️';
+  if(code.includes('event')||code.includes('search')) return '🔍';
+  if(code.includes('map')) return '🗺️';
+  if(code.includes('broadcast')) return '📢';
+  if(code.includes('network')) return '🌐';
+  if(code.includes('integrated')) return '🧭';
+  return '📦';
+}
+// 视频监控相关卡片 → 进入区域/资源浏览;其余 → 占位提示
+function isVideoCard(code){ return code.startsWith('app.video'); }
+function renderAppCards(menus){
+  const box=document.getElementById('appCards');
+  if(!menus.length){ box.innerHTML='<div class="card-section"><span class="muted">该用户无任何应用菜单权限</span></div>'; return; }
+  // 按顶级父菜单分组
+  const tops=menus.filter(m=>!m.parentId);
+  const childrenOf=pid=>menus.filter(m=>m.parentId===pid);
+  let html='';
+  const sections = tops.length ? tops : [{id:0,name:'应用',code:''}];
+  sections.forEach(top=>{
+    const kids = top.id ? childrenOf(top.id) : menus;
+    const cards = (kids.length?kids:[top]); // 没有子项就把父本身作为卡片
+    html+=`<div class="card-section"><h3 class="sec-accent">${top.name}</h3><div class="card-grid">`;
+    cards.forEach(c=>{
+      html+=`<div class="app-card" onclick="openCard('${c.code}','${c.name}')"><div class="ic">${menuIcon(c.code)}</div><div class="nm">${c.name}</div></div>`;
+    });
+    html+=`</div></div>`;
+  });
+  box.innerHTML=html;
+}
+function openCard(code,name){
+  if(isVideoCard(code)){ showAppBrowse(); }
+  else { toast('🧩 「'+name+'」为演示占位'); }
+}
+function showAppHome(){ document.getElementById('appHome').style.display='block'; document.getElementById('appBrowse').style.display='none'; }
+function showAppBrowse(){ document.getElementById('appHome').style.display='none'; document.getElementById('appBrowse').style.display='block'; }
 function renderAppAreaTree(flat){
   const el=document.getElementById('appAreaTree');
   if(!flat.length){ el.innerHTML='<div class="muted">该用户无任何可见区域</div>'; return; }
@@ -462,14 +531,14 @@ function doOp(res,act,allowed){ if(!allowed){ toast('⛔ 无「'+act+'」权限'
 
 // ---------- 后台管理(体验) ----------
 // 菜单 code -> 右侧配置界面
-const SYS_ROUTE = { 'sys.area':'area', 'sys.person.role':'role', 'sys.person.account':'user' };
+const SYS_ROUTE = { 'sys.area':'area', 'sys.person.info':'person', 'sys.person.role':'role', 'sys.person.account':'user' };
 function onSysMenu(code, name, el){
   document.querySelectorAll('#sysMenus .nav-item').forEach(x=>x.classList.remove('on'));
   if(el) el.classList.add('on');
   showSysPanel(SYS_ROUTE[code] || 'placeholder', name);
 }
 function showSysPanel(panel, name){
-  ['area','role','user','placeholder'].forEach(p=>{ const d=document.getElementById('sc-'+p); if(d) d.style.display=(p===panel)?'block':'none'; });
+  ['person','area','role','user','placeholder'].forEach(p=>{ const d=document.getElementById('sc-'+p); if(d) d.style.display=(p===panel)?'block':'none'; });
   if(panel==='placeholder'){ document.getElementById('phName').textContent=name||''; }
 }
 async function loadSysView(){
@@ -485,7 +554,8 @@ async function loadSysView(){
   else { showSysPanel('none'); }
   renderManageTree('manageAreaTree', await api('/api/manage-areas?userId='+uid), 'area');
   renderManageTree('manageOrgTree', await api('/api/manage-orgs?userId='+uid), 'org');
-  document.getElementById('sysMain').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域 / 组织查看管理权限</div>';
+  document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域查看管理权限</div>';
+  document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧组织查看管理权限</div>';
 }
 function renderManageTree(elId, flat, kind){
   const el=document.getElementById(elId);
@@ -507,7 +577,7 @@ async function openManageNode(kind, id){
   const uid=loginUserId();
   const url = kind==='area' ? `/api/manage-area-detail?userId=${uid}&areaId=${id}` : `/api/manage-org-detail?userId=${uid}&orgId=${id}`;
   const d=await api(url);
-  const main=document.getElementById('sysMain');
+  const main=document.getElementById(kind==='area'?'sysMainArea':'sysMainOrg');
   const label = kind==='area' ? '区域' : '组织';
   if(!d.accessible){
     main.innerHTML=`<div class="no-perm"><div class="big">🔒</div>暂无管理权限<div class="muted" style="margin-top:8px">「${d.name}」仅用于导航,你没有该${label}的管理权限</div></div>`;

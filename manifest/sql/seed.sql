@@ -78,6 +78,7 @@ INSERT IGNORE INTO `role_menu` (`role_id`,`menu_id`) VALUES
 -- 数据范围
 INSERT IGNORE INTO `role_data_scope` (`role_id`,`scope_type`,`node_id`,`include_child`) VALUES
  (1,'AREA',2,1),
+ (1,'ORG',1,1),
  (1,'RES_AREA',2,1),
  (2,'RES_AREA',3,1);
 
