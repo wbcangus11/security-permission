@@ -13,6 +13,15 @@ type Decision struct {
 	Trace  []string `json:"trace"`
 }
 
+// isSuper 超级管理员判定(仿海康内置 root):鉴权三关对其直接放行。
+func isSuper(u *model.User) bool { return u != nil && u.IsSuperuser }
+
+// superDecision 超级管理员放行结果。
+func superDecision(what string) *Decision {
+	r := "超级管理员,拥有全部" + what
+	return &Decision{Allow: true, Reason: r, Trace: []string{r}}
+}
+
 // effectiveRoles 取用户绑定的全部角色实体。
 func (s *Store) effectiveRoles(u *model.User) []*model.Role {
 	s.mu.RLock()
@@ -28,6 +37,9 @@ func (s *Store) effectiveRoles(u *model.User) []*model.Role {
 
 // CheckMenu 功能关:用户任一角色拥有该菜单 code 即放行。
 func (s *Store) CheckMenu(u *model.User, menuCode string) *Decision {
+	if isSuper(u) {
+		return superDecision("功能权限")
+	}
 	d := &Decision{}
 	menu := s.menuByCode(menuCode)
 	if menu == nil {
@@ -60,6 +72,9 @@ func (s *Store) CheckOrg(u *model.User, orgId int) *Decision {
 
 // checkTreeScope 树范围判断的通用实现:精确命中节点,或在含子节点的授权子树内(path 前缀)。
 func (s *Store) checkTreeScope(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope) *Decision {
+	if isSuper(u) {
+		return superDecision("数据权限")
+	}
 	d := &Decision{}
 	targetPath := s.nodePath(kind, nodeId)
 	if targetPath == "" {
@@ -93,6 +108,9 @@ func (s *Store) checkTreeScope(u *model.User, nodeId int, kind string, pick func
 //   - 若该资源存在精细配置(ResourceActions 里有该资源的条目),则仅授予列出的操作(覆盖模式);
 //   - 否则,资源所在区域在业务范围内即默认授予全部操作(继承模式,新增资源自动生效)。
 func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) *Decision {
+	if isSuper(u) {
+		return superDecision("业务资源操作权限")
+	}
 	d := &Decision{}
 	res := func() *model.Resource { s.mu.RLock(); defer s.mu.RUnlock(); return s.resource(resourceId) }()
 	if res == nil {

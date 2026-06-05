@@ -22,6 +22,9 @@ func Register(group *ghttp.RouterGroup) {
 	group.GET("/visible-areas", visibleAreas)
 	group.GET("/area-resources", areaResources)
 	group.GET("/app-menus", appMenus)
+	// 区域管理(真实落库:写时鉴权 + path 自动维护)
+	group.POST("/areas", saveArea)
+	group.POST("/areas/delete", deleteArea)
 	// 后台管理域体验
 	group.GET("/sys-menus", sysMenus)
 	group.GET("/manage-areas", manageAreas)
@@ -112,6 +115,31 @@ func saveUser(r *ghttp.Request) {
 		return
 	}
 	ok(r, saved)
+}
+
+// saveArea 新增/重命名/移动区域。?userId=操作人。
+// 写时鉴权(sys.area 菜单 + 区域数据权限),自动维护物化路径(移动批量改子孙 path)。
+func saveArea(r *ghttp.Request) {
+	var in service.AreaSaveInput
+	if err := r.Parse(&in); err != nil {
+		fail(r, "参数错误:"+err.Error())
+		return
+	}
+	saved, err := service.S.SaveArea(r.Context(), r.Get("userId").Int(), &in)
+	if err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, saved)
+}
+
+// deleteArea 删除区域(仅限无子区域、无资源),并清理对该节点的数据范围授权。?userId=操作人
+func deleteArea(r *ghttp.Request) {
+	if err := service.S.DeleteArea(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, true)
 }
 
 // visibleAreas 应用端:某用户可见的区域树(带 accessible)。?userId=

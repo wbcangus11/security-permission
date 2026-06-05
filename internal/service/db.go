@@ -217,7 +217,7 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 // SaveUser 落库(用户主表 + user_role 绑定),成功后刷新缓存。id<=0 为新增。
 func (s *Store) SaveUser(ctx context.Context, u *model.User) (*model.User, error) {
 	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		data := g.Map{"name": u.Name, "org_id": u.OrgId}
+		data := g.Map{"name": u.Name, "org_id": u.OrgId, "is_superuser": u.IsSuperuser}
 		if u.Id <= 0 {
 			res, err := tx.Model("user").Ctx(ctx).Data(data).Insert()
 			if err != nil {

@@ -5,130 +5,212 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>基于角色的权限设计 - 演示</title>
 <style>
+  /* ============ 海康风设计系统 ============ */
+  :root{
+    --brand:#c81225; --brand-d:#a50f1e; --brand-soft:#fef0f1; --brand-line:#f7d3d6;
+    --ink:#1d2129; --ink2:#4e5969; --ink3:#86909c; --ink4:#c9cdd4;
+    --bg:#f0f2f5; --line:#e5e6eb; --line2:#eef0f3; --card:#fff;
+    --nav:#1e2533; --nav-d:#171d28; --nav-hover:#28303f; --nav-txt:#aab2c0;
+    --ok:#1f9d55; --ok-soft:#eaf7ee; --warn:#c77b13; --warn-soft:#fdf5e8;
+    --r:6px; --r-lg:10px;
+    --sh:0 1px 2px rgba(20,33,61,.04), 0 2px 8px rgba(20,33,61,.06);
+    --sh-h:0 6px 22px rgba(20,33,61,.13);
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Microsoft YaHei", Arial, sans-serif; font-size: 14px; color: #303133; background: #f0f2f5; }
-  .crumb { background: #e8eef7; padding: 10px 20px; color: #606266; font-size: 13px; }
-  .layout { display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
-  .panel { background: #fff; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-  .role-list { width: 200px; flex: none; padding: 10px; }
-  .role-list h3 { margin: 4px 0 10px; font-size: 15px; }
-  .role-item { padding: 8px 10px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; }
-  .role-item:hover { background: #f5f7fa; }
-  .role-item.active { background: #fdecec; color: #e60012; }
-  .role-item small { color: #909399; display: block; font-size: 12px; }
-  .btn { border: none; border-radius: 4px; padding: 7px 16px; cursor: pointer; font-size: 13px; }
-  .btn-primary { background: #e60012; color: #fff; }
-  .btn-default { background: #fff; border: 1px solid #dcdfe6; color: #606266; }
-  .btn-mini { padding: 4px 10px; font-size: 12px; }
-  .editor { flex: 1; min-width: 560px; padding: 18px 22px; }
-  .editor h2 { font-size: 16px; margin: 0 0 14px; }
-  .form-row { margin-bottom: 14px; }
-  .form-row label { display: inline-block; width: 80px; color: #606266; }
-  .form-row input { width: 320px; padding: 6px 10px; border: 1px solid #dcdfe6; border-radius: 4px; }
-  .tabs { display: flex; border-bottom: 1px solid #e4e7ed; margin-bottom: 0; }
-  .tab { padding: 10px 18px; cursor: pointer; color: #606266; border-bottom: 2px solid transparent; }
-  .tab.active { color: #e60012; border-bottom-color: #e60012; }
-  .perm-body { display: flex; border: 1px solid #ebeef5; border-top: none; min-height: 320px; }
-  .sub-tabs { width: 150px; flex: none; background: #fafafa; border-right: 1px solid #ebeef5; padding: 10px 0; }
-  .sub-tab { padding: 10px 16px; cursor: pointer; color: #606266; border-left: 2px solid transparent; }
-  .sub-tab.active { color: #e60012; border-left-color: #e60012; background: #fdecec; }
-  .sub-content { flex: 1; padding: 14px 18px; }
-  .tip { background: #fdf6ec; color: #e6a23c; border-radius: 4px; padding: 8px 12px; font-size: 12px; margin-bottom: 12px; line-height: 1.6; }
-  .tree-node { padding: 3px 0; }
-  .tree-children { margin-left: 22px; }
-  .tree-node label { cursor: pointer; user-select: none; }
-  .toggler { display: inline-block; width: 14px; text-align: center; cursor: pointer; color: #909399; }
-  table.res { border-collapse: collapse; width: 100%; }
-  table.res th, table.res td { border: 1px solid #ebeef5; padding: 6px 8px; text-align: center; font-size: 13px; }
-  table.res th { background: #fafafa; }
-  table.res td.name { text-align: left; }
-  .badge { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #f0f2f5; color: #909399; }
-  .footer-bar { padding: 12px 22px; border-top: 1px solid #ebeef5; text-align: right; }
-  .footer-bar .btn { margin-left: 8px; }
+  body { margin:0; font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif; font-size:14px; color:var(--ink); background:var(--bg); -webkit-font-smoothing:antialiased; }
+  h2,h3{ color:var(--ink); }
+  /* 通用图标 */
+  .ico{ width:1.05em; height:1.05em; vertical-align:-.18em; flex:none; }
+  .crumb { background:#fff; padding:11px 22px; color:var(--ink3); font-size:13px; border-bottom:1px solid var(--line); }
+  .crumb b{ color:var(--ink2); font-weight:600; }
+  .layout { display:flex; gap:14px; padding:14px; align-items:flex-start; }
+  .panel { background:var(--card); border-radius:var(--r-lg); box-shadow:var(--sh); border:1px solid var(--line2); }
+  .role-list { width:210px; flex:none; padding:12px; }
+  .role-list h3 { margin:4px 0 12px; font-size:15px; }
+  .role-item { padding:9px 12px; border-radius:var(--r); cursor:pointer; margin-bottom:4px; transition:.12s; border:1px solid transparent; }
+  .role-item:hover { background:#f6f8fa; }
+  .role-item.active { background:var(--brand-soft); color:var(--brand); border-color:var(--brand-line); font-weight:600; }
+  .role-item small { color:var(--ink3); display:block; font-size:12px; font-weight:400; margin-top:2px; }
+  .btn { border:none; border-radius:var(--r); padding:8px 16px; cursor:pointer; font-size:13px; transition:.12s; display:inline-flex; align-items:center; gap:5px; }
+  .btn-primary { background:var(--brand); color:#fff; box-shadow:0 2px 6px rgba(200,18,37,.25); }
+  .btn-primary:hover { background:var(--brand-d); }
+  .btn-default { background:#fff; border:1px solid var(--line); color:var(--ink2); }
+  .btn-default:hover { color:var(--brand); border-color:var(--brand-line); }
+  .btn-mini { padding:5px 11px; font-size:12px; }
+  .editor { flex:1; min-width:560px; padding:20px 24px; }
+  .editor h2 { font-size:15px; margin:0 0 14px; padding-left:9px; border-left:3px solid var(--brand); line-height:1.1; }
+  .form-row { margin-bottom:14px; }
+  .form-row label { display:inline-block; width:80px; color:var(--ink2); }
+  .form-row input { width:320px; padding:7px 11px; border:1px solid var(--line); border-radius:var(--r); transition:.12s; }
+  .form-row input:focus,.tester select:focus,.tester input:focus{ outline:none; border-color:var(--brand); box-shadow:0 0 0 2px var(--brand-soft); }
+  .tabs { display:flex; border-bottom:1px solid var(--line); margin-bottom:0; }
+  .tab { padding:11px 20px; cursor:pointer; color:var(--ink2); border-bottom:2px solid transparent; font-size:14px; transition:.12s; }
+  .tab:hover{ color:var(--brand); }
+  .tab.active { color:var(--brand); border-bottom-color:var(--brand); font-weight:600; }
+  .perm-body { display:flex; border:1px solid var(--line); border-top:none; min-height:320px; border-radius:0 0 var(--r) var(--r); overflow:hidden; }
+  .sub-tabs { width:158px; flex:none; background:#f7f8fa; border-right:1px solid var(--line); padding:10px 0; }
+  .sub-tab { padding:11px 16px; cursor:pointer; color:var(--ink2); border-left:3px solid transparent; font-size:13px; transition:.12s; }
+  .sub-tab:hover{ color:var(--ink); background:#eef0f3; }
+  .sub-tab.active { color:var(--brand); border-left-color:var(--brand); background:var(--brand-soft); font-weight:600; }
+  .sub-content { flex:1; padding:16px 20px; }
+  .tip { background:var(--warn-soft); color:var(--warn); border-radius:var(--r); padding:9px 13px; font-size:12px; margin-bottom:14px; line-height:1.7; border:1px solid #f6e7c8; }
+  .tree-node { padding:3px 0; }
+  .tree-children { margin-left:22px; }
+  .tree-node label { cursor:pointer; user-select:none; }
+  .toggler { display:inline-block; width:14px; text-align:center; cursor:pointer; color:var(--ink3); }
+  table.res { border-collapse:collapse; width:100%; border-radius:var(--r); overflow:hidden; }
+  table.res th, table.res td { border:1px solid var(--line); padding:8px; text-align:center; font-size:13px; }
+  table.res th { background:#f7f8fa; color:var(--ink2); font-weight:600; }
+  table.res td.name { text-align:left; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:10px; background:#eef0f3; color:var(--ink3); display:inline-flex; align-items:center; gap:3px; }
+  .footer-bar { padding:14px 24px; border-top:1px solid var(--line2); text-align:right; }
+  .footer-bar .btn { margin-left:8px; }
   /* 鉴权测试 */
-  .tester { width: 360px; flex: none; padding: 16px; }
-  .tester h3 { margin: 0 0 12px; font-size: 15px; }
-  .tester .form-row label { width: 64px; }
-  .tester select, .tester input { padding: 6px 8px; border: 1px solid #dcdfe6; border-radius: 4px; }
-  .tester select { width: 250px; }
-  .result { margin-top: 14px; border-radius: 4px; padding: 12px; font-size: 13px; line-height: 1.7; }
-  .result.allow { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
-  .result.deny { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; }
-  .result .trace { color: #606266; margin-top: 6px; }
-  .result .trace div::before { content: "› "; color: #c0c4cc; }
-  .muted { color: #909399; font-size: 12px; }
-  .tree-node label.disabled { color: #c0c4cc; }
-  .tree-node label.disabled::after { content: " (超出操作者范围)"; font-size: 11px; color: #f56c6c; }
-  .violations { background:#fef0f0;border:1px solid #fde2e2;color:#f56c6c;border-radius:4px;padding:10px;margin:10px 22px 0;font-size:13px;line-height:1.7;display:none; }
-  /* 顶栏 + 主Tab(仿海康:深色 + 红色品牌) */
-  .topbar { background:#23252c; color:#fff; padding:0 18px; display:flex; align-items:center; height:50px; }
-  .topbar .brand { display:flex; align-items:center; font-size:17px; font-weight:bold; margin-right:28px; }
-  .topbar .shield { display:inline-block; width:22px; height:22px; background:#e60012; border-radius:4px; margin-right:8px; position:relative; }
-  .topbar .shield::after { content:"🛡"; position:absolute; left:2px; top:-1px; font-size:15px; filter:grayscale(1) brightness(3); }
-  .topbar .login { margin-left:auto; font-size:13px; color:#c0ccda; }
-  .topbar .login select { padding:5px 8px; border-radius:4px; border:none; }
+  .tester { width:360px; flex:none; padding:18px; }
+  .tester h3 { margin:0 0 6px; font-size:15px; display:flex; align-items:center; gap:6px; }
+  .tester h3 .ico{ color:var(--brand); }
+  .tester .form-row label { width:64px; }
+  .tester select, .tester input { padding:7px 9px; border:1px solid var(--line); border-radius:var(--r); }
+  .tester select { width:250px; }
+  .result { margin-top:14px; border-radius:var(--r); padding:13px; font-size:13px; line-height:1.7; }
+  .result.allow { background:var(--ok-soft); color:var(--ok); border:1px solid #cdeed9; }
+  .result.deny { background:var(--brand-soft); color:var(--brand); border:1px solid var(--brand-line); }
+  .result strong{ display:inline-flex; align-items:center; gap:4px; }
+  .result .trace { color:var(--ink2); margin-top:7px; }
+  .result .trace div::before { content:"› "; color:var(--ink4); }
+  .muted { color:var(--ink3); font-size:12px; }
+  .tree-node label.disabled { color:var(--ink4); }
+  .tree-node label.disabled::after { content:" (超出操作者范围)"; font-size:11px; color:var(--brand); }
+  .violations { background:var(--brand-soft); border:1px solid var(--brand-line); color:var(--brand); border-radius:var(--r); padding:11px; margin:10px 24px 0; font-size:13px; line-height:1.7; display:none; }
+  /* ===== 顶栏(深色渐变 + 海康红品牌) ===== */
+  .topbar { background:linear-gradient(90deg,#1b2230 0%,#222c3d 60%,#263244 100%); color:#fff; padding:0 20px; display:flex; align-items:center; height:54px; box-shadow:0 1px 0 rgba(0,0,0,.25); position:sticky; top:0; z-index:50; }
+  .topbar .brand { display:flex; align-items:center; font-size:16px; font-weight:700; margin-right:30px; letter-spacing:.5px; white-space:nowrap; }
+  .topbar .brand .logo{ width:30px; height:30px; color:var(--brand); margin-right:9px; filter:drop-shadow(0 1px 2px rgba(200,18,37,.4)); }
+  .topbar .brand .sub{ color:#7e8aa0; font-weight:400; font-size:12px; margin-left:8px; padding-left:9px; border-left:1px solid #3a4760; }
+  .topbar .login { margin-left:auto; font-size:13px; color:#aeb8c9; display:flex; align-items:center; gap:8px; }
+  .topbar .login .avatar{ width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,var(--brand),#e2231a); color:#fff; display:flex; align-items:center; justify-content:center; }
+  .topbar .login .avatar .ico{ width:16px; height:16px; }
+  .topbar .login select { padding:6px 12px; border-radius:var(--r); border:1px solid #cdd4e0; background:#fff; color:#1d2129; font-size:13px; font-weight:600; cursor:pointer; min-width:170px; }
+  .topbar .login select:hover{ border-color:var(--brand); }
+  .topbar .login select option{ color:#1d2129; background:#fff; font-weight:400; }
   .main-tabs { display:flex; height:100%; }
-  .main-tab { padding:0 22px; line-height:50px; cursor:pointer; color:#9aa0ac; border-bottom:3px solid transparent; }
+  .main-tab { padding:0 22px; line-height:54px; cursor:pointer; color:#9aa6ba; border-bottom:3px solid transparent; font-size:14px; transition:.12s; display:flex; align-items:center; gap:7px; }
+  .main-tab .ico{ width:16px; height:16px; }
   .main-tab:hover { color:#fff; }
-  .main-tab.active { color:#fff; border-bottom-color:#e60012; }
-  /* 后台管理:深色左侧菜单栏(仿海康系统管理) */
-  .sys-layout { display:flex; align-items:stretch; min-height:calc(100vh - 50px); }
-  .sys-nav { width:200px; flex:none; background:#2b2f3a; padding:8px 0; }
-  .sys-nav .nav-title { color:#7a808c; font-size:12px; padding:10px 18px 6px; }
-  .sys-nav .nav-item { color:#c0c6d0; padding:11px 18px; cursor:pointer; border-left:3px solid transparent; font-size:13px; }
-  .sys-nav .nav-item:hover { color:#fff; background:#23252c; }
-  .sys-nav .nav-item.on { color:#fff; background:#23252c; border-left-color:#e60012; }
-  .sys-nav .nav-empty { color:#7a808c; padding:12px 18px; font-size:12px; }
+  .main-tab.active { color:#fff; border-bottom-color:var(--brand); background:rgba(255,255,255,.04); }
+  /* ===== 后台:深色左侧菜单 ===== */
+  .sys-layout { display:flex; align-items:stretch; min-height:calc(100vh - 54px); }
+  .sys-nav { width:212px; flex:none; background:linear-gradient(180deg,#212939,#1a212e); padding:10px 0; }
+  .sys-nav .nav-title { color:#5d6a82; font-size:11px; letter-spacing:1px; padding:10px 18px 8px; text-transform:uppercase; }
+  .sys-nav .nav-item { color:var(--nav-txt); padding:11px 18px; cursor:pointer; border-left:3px solid transparent; font-size:13px; display:flex; align-items:center; gap:10px; transition:.12s; }
+  .sys-nav .nav-item .ico{ width:17px; height:17px; color:#7c879c; flex:none; }
+  .sys-nav .nav-item.child{ padding-left:40px; font-size:12.5px; }
+  .sys-nav .nav-item:hover { color:#fff; background:rgba(255,255,255,.05); }
+  .sys-nav .nav-item:hover .ico{ color:#cdd4e0; }
+  .sys-nav .nav-item.on { color:#fff; background:rgba(200,18,37,.16); border-left-color:var(--brand); }
+  .sys-nav .nav-item.on .ico{ color:var(--brand); }
+  .sys-nav .nav-empty { color:#5d6a82; padding:14px 18px; font-size:12px; line-height:1.6; }
   .sys-content { flex:1; min-width:0; }
-  /* 红色主按钮 hover + 标题红边 */
-  .btn-primary:hover { background:#c5000f; }
-  .sec-accent { border-left:3px solid #e60012; padding-left:8px; }
+  .sec-accent { border-left:3px solid var(--brand); padding-left:9px; font-size:15px; }
   .main-view { display:none; }
   .main-view.active { display:block; }
-  /* 应用端 */
-  .app-layout { display:flex; gap:12px; padding:12px; align-items:flex-start; }
-  .app-tree { width:240px; flex:none; padding:12px; }
+  /* ===== 应用端 ===== */
+  .app-layout { display:flex; gap:14px; padding:14px; align-items:flex-start; }
+  .app-tree { width:250px; flex:none; padding:14px; }
   .app-tree h3, .app-main h3 { margin:4px 0 12px; font-size:15px; }
-  .area-node { padding:6px 8px; border-radius:4px; cursor:pointer; }
-  .area-node:hover { background:#f5f7fa; }
-  .area-node.active { background:#fdecec; color:#e60012; }
-  .area-node.structural { color:#c0c4cc; }
-  .app-main { flex:1; min-width:480px; padding:16px 20px; min-height:360px; }
-  .res-card { border:1px solid #ebeef5; border-radius:6px; padding:12px 14px; margin-bottom:12px; }
-  .res-card .rc-title { font-weight:bold; margin-bottom:8px; }
-  .op-btn { border:1px solid #e60012; color:#e60012; background:#fff; border-radius:4px; padding:5px 14px; margin-right:8px; cursor:pointer; font-size:13px; }
-  .op-btn:disabled { border-color:#e4e7ed; color:#c0c4cc; cursor:not-allowed; }
-  .no-perm { text-align:center; color:#909399; padding:60px 0; }
-  .no-perm .big { font-size:48px; }
-  .app-menus { padding:8px 20px; background:#fff; border-bottom:1px solid #ebeef5; }
-  .app-menus .mtag { display:inline-block; background:#fdecec; color:#e60012; border-radius:4px; padding:3px 10px; margin-right:8px; font-size:12px; }
-  /* 前台卡片首页 */
+  .area-node { padding:7px 9px; border-radius:var(--r); cursor:pointer; display:flex; align-items:center; gap:7px; transition:.1s; }
+  .area-node .ico{ width:15px; height:15px; color:var(--ink3); flex:none; }
+  .area-node:hover { background:#f6f8fa; }
+  .area-node.active { background:var(--brand-soft); color:var(--brand); font-weight:600; }
+  .area-node.active .ico{ color:var(--brand); }
+  .area-node.structural { color:var(--ink4); }
+  .area-node.structural .ico{ color:var(--ink4); }
+  .app-main { flex:1; min-width:480px; padding:18px 22px; min-height:360px; }
+  .res-card { border:1px solid var(--line); border-radius:var(--r-lg); padding:14px 16px; margin-bottom:12px; background:#fff; transition:.12s; }
+  .res-card:hover{ box-shadow:var(--sh); }
+  .res-card .rc-title { font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:7px; color:var(--ink); }
+  .res-card .rc-title .ico{ width:18px; height:18px; color:var(--brand); }
+  .op-btn { border:1px solid var(--brand-line); color:var(--brand); background:#fff; border-radius:var(--r); padding:6px 14px; margin:0 8px 8px 0; cursor:pointer; font-size:13px; transition:.12s; display:inline-flex; align-items:center; gap:5px; }
+  .op-btn .ico{ width:14px; height:14px; }
+  .op-btn:hover:not(:disabled){ background:var(--brand-soft); border-color:var(--brand); }
+  .op-btn:disabled { border-color:var(--line); color:var(--ink4); cursor:not-allowed; background:#fafbfc; }
+  .no-perm { text-align:center; color:var(--ink3); padding:64px 0; }
+  .no-perm .big { color:var(--ink4); margin-bottom:10px; }
+  .no-perm .big .ico{ width:54px; height:54px; }
+  .app-menus { padding:8px 20px; background:#fff; border-bottom:1px solid var(--line); }
+  .app-menus .mtag { display:inline-block; background:var(--brand-soft); color:var(--brand); border-radius:var(--r); padding:3px 10px; margin-right:8px; font-size:12px; }
+  /* ===== 前台卡片首页 ===== */
   .card-section { padding:0 24px; }
-  .card-section h3 { font-size:15px; margin:18px 0 4px; }
-  .card-section .desc { color:#909399; font-size:12px; margin-bottom:10px; }
+  .card-section h3 { font-size:15px; margin:20px 0 4px; }
+  .card-section .desc { color:var(--ink3); font-size:12px; margin-bottom:12px; }
   .card-grid { display:flex; flex-wrap:wrap; gap:14px; }
-  .app-card { width:140px; height:118px; border:1px solid #ebeef5; border-radius:8px; background:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:.15s; }
-  .app-card:hover { box-shadow:0 6px 16px rgba(0,0,0,.1); border-color:#e60012; transform:translateY(-2px); }
-  .app-card .ic { font-size:32px; margin-bottom:10px; }
-  .app-card .nm { font-size:13px; color:#303133; }
-  /* 用户管理 */
-  .user-mgmt { padding:16px 20px; }
-  .user-row { display:flex; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #f0f2f5; }
-  .user-row .uname { width:200px; }
+  .app-card { position:relative; width:152px; height:124px; border:1px solid var(--line2); border-radius:var(--r-lg); background:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:.16s; overflow:hidden; box-shadow:var(--sh); }
+  .app-card::before{ content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--brand),#e2231a); transform:scaleX(0); transform-origin:left; transition:.2s; }
+  .app-card:hover { box-shadow:var(--sh-h); border-color:var(--brand-line); transform:translateY(-3px); }
+  .app-card:hover::before{ transform:scaleX(1); }
+  .app-card .ic { width:50px; height:50px; border-radius:13px; background:var(--brand-soft); color:var(--brand); display:flex; align-items:center; justify-content:center; margin-bottom:12px; transition:.16s; }
+  .app-card .ic .ico{ width:26px; height:26px; }
+  .app-card:hover .ic{ background:var(--brand); color:#fff; }
+  .app-card .nm { font-size:13px; color:var(--ink); font-weight:500; }
+  /* ===== 用户管理 ===== */
+  .user-mgmt { padding:18px 22px; }
+  .user-mgmt h3{ display:flex; align-items:center; gap:6px; }
+  .user-row { display:flex; align-items:center; gap:12px; padding:10px 8px; border-bottom:1px solid var(--line2); }
+  .user-row .uname { width:200px; display:flex; align-items:center; gap:8px; }
+  .user-row .uava{ width:28px; height:28px; border-radius:50%; background:var(--brand-soft); color:var(--brand); display:flex; align-items:center; justify-content:center; flex:none; }
+  .user-row .uava .ico{ width:16px; height:16px; }
   .rolechk { margin-right:12px; }
-  .toast { position:fixed; top:70px; left:50%; transform:translateX(-50%); background:#67c23a; color:#fff; padding:10px 22px; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.2); display:none; z-index:99; }
+  .toast { position:fixed; top:74px; left:50%; transform:translateX(-50%); background:#1d2533; color:#fff; padding:11px 20px; border-radius:var(--r); box-shadow:0 6px 22px rgba(0,0,0,.28); display:none; align-items:center; gap:8px; z-index:99; font-size:13px; }
+  .toast .ico{ width:17px; height:17px; color:#ff9aa3; }
 </style>
 </head>
 <body>
+<!-- 线性图标集(海康风:细线/圆角,stroke=currentColor 跟随文字色) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6l7-3z" fill="currentColor" stroke="none"/><path d="M9 12l2 2 4-4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/><circle cx="9" cy="12" r="2.2"/></symbol>
+    <symbol id="i-live" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-playback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></symbol>
+    <symbol id="i-picture" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5-7 7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></symbol>
+    <symbol id="i-broadcast" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l6 4V5L8 9H4z"/><path d="M17 8a5 5 0 0 1 0 8"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2v4M12 11.2L6 16M12 11.2L18 16"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-area" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-org" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2M12 12v2"/></symbol>
+    <symbol id="i-role" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6l7-3z"/><circle cx="12" cy="10" r="2"/><path d="M8.5 15.5a3.5 3.5 0 0 1 7 0"/></symbol>
+    <symbol id="i-account" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8v6H3v-6z"/><path d="M3 13h5l1 2h6l1-2h5"/></symbol>
+  </defs>
+</svg>
 <div class="toast" id="toast"></div>
 
 <div class="topbar">
-  <span class="brand"><span class="shield"></span>安防权限管理平台</span>
+  <span class="brand">
+    <svg class="logo ico" style="width:30px;height:30px"><use href="#i-shield"></use></svg>
+    综合安防管理平台<span class="sub">权限管理</span>
+  </span>
   <div class="main-tabs">
-    <div class="main-tab active" data-view="app" onclick="switchView('app')">应用端(体验)</div>
-    <div class="main-tab" data-view="sys" onclick="switchView('sys')">系统管理(后台)</div>
+    <div class="main-tab active" data-view="app" onclick="switchView('app')"><svg class="ico"><use href="#i-grid"></use></svg>应用端</div>
+    <div class="main-tab" data-view="sys" onclick="switchView('sys')"><svg class="ico"><use href="#i-account"></use></svg>系统管理</div>
   </div>
-  <div class="login">当前登录:<select id="loginUser" onchange="onLoginChange()"></select></div>
+  <div class="login">
+    <span class="avatar"><svg class="ico"><use href="#i-user"></use></svg></span>
+    当前登录<select id="loginUser" onchange="onLoginChange()"></select>
+  </div>
 </div>
 
 <!-- ============ 应用端(体验) ============ -->
@@ -140,7 +222,7 @@
   </div>
   <!-- 视频监控模块:区域 + 资源浏览 -->
   <div id="appBrowse" style="display:none">
-    <div style="padding:10px 16px 0"><button class="btn btn-default btn-mini" onclick="showAppHome()">← 返回首页</button></div>
+    <div style="padding:12px 16px 0"><button class="btn btn-default btn-mini" onclick="showAppHome()"><svg class="ico"><use href="#i-back"></use></svg> 返回首页</button></div>
     <div class="app-layout">
       <div class="panel app-tree">
         <h3 class="sec-accent">区域</h3>
@@ -148,7 +230,7 @@
         <div id="appAreaTree"></div>
       </div>
       <div class="panel app-main" id="appMain">
-        <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>
+        <div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>
       </div>
     </div>
   </div>
@@ -173,7 +255,7 @@
             <div id="manageOrgTree"></div>
           </div>
           <div class="panel app-main" id="sysMainOrg" style="flex:1">
-            <div class="no-perm"><div class="big">👈</div>请选择左侧组织查看管理权限</div>
+            <div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>
           </div>
         </div>
       </div>
@@ -187,7 +269,7 @@
             <div id="manageAreaTree"></div>
           </div>
           <div class="panel app-main" id="sysMainArea" style="flex:1">
-            <div class="no-perm"><div class="big">👈</div>请选择左侧区域查看管理权限</div>
+            <div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>
           </div>
         </div>
       </div>
@@ -275,7 +357,7 @@
 
   <!-- 鉴权测试 -->
   <div class="panel tester">
-    <h3>🔐 鉴权测试</h3>
+    <h3><svg class="ico"><use href="#i-shield"></use></svg> 鉴权测试</h3>
     <div class="muted" style="margin-bottom:10px">选个用户，模拟一次访问，看引擎判定与原因。</div>
     <div class="form-row"><label>用户</label><select id="tUser"></select></div>
     <div class="form-row"><label>类型</label>
@@ -297,7 +379,7 @@
       <!-- 账号管理 -->
       <div id="sc-user" class="sys-panel" style="display:none">
   <div class="panel user-mgmt" style="margin:12px">
-    <h3>账号管理 <span class="muted">— 建用户、绑角色,然后到右上角「当前登录」切换体验</span></h3>
+    <h3><svg class="ico" style="color:var(--brand)"><use href="#i-account"></use></svg> 账号管理 <span class="muted">— 建用户、绑角色,然后到右上角「当前登录」切换体验</span></h3>
     <div id="userList"></div>
     <hr style="border:none;border-top:1px solid #ebeef5;margin:16px 0">
     <h3>新建用户</h3>
@@ -310,9 +392,9 @@
 
       <!-- 其他系统菜单:演示占位 -->
       <div id="sc-placeholder" class="sys-panel" style="display:none">
-        <div class="panel" style="margin:12px;padding:48px;text-align:center">
-          <div style="font-size:40px">🧩</div>
-          <div id="phName" style="margin-top:8px;font-size:15px;color:#606266"></div>
+        <div class="panel" style="margin:12px;padding:56px;text-align:center">
+          <svg class="ico" style="width:48px;height:48px;color:var(--ink4)"><use href="#i-grid"></use></svg>
+          <div id="phName" style="margin-top:10px;font-size:15px;color:var(--ink2)"></div>
           <div class="muted" style="margin-top:6px">该模块为演示占位,未实现具体配置界面</div>
         </div>
       </div>
@@ -427,7 +509,7 @@ async function init(){
 async function reloadMeta(){
   META = await api('/api/meta');
   META._roles = await api('/api/roles');
-  const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}${u.isSuperuser?' ★超管':''}</option>`).join('');
   document.getElementById('tUser').innerHTML = userOpts;
   document.getElementById('loginUser').innerHTML = userOpts;
   document.getElementById('actor').innerHTML = '<option value="0">系统管理员(不受限)</option>'+userOpts;
@@ -452,21 +534,32 @@ async function loadAppView(){
   // 视频监控模块用的可见区域树
   const areas=await api('/api/visible-areas?userId='+uid);
   renderAppAreaTree(areas);
-  document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域查看监控资源</div>';
+  document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>';
   showAppHome();
 }
-// 图标:按菜单 code 关键字
+// 内联 SVG 图标辅助:svgIco('i-video') -> <svg class="ico"><use .../></svg>
+function svgIco(id, cls){ return `<svg class="ico ${cls||''}"><use href="#${id}"></use></svg>`; }
+// 应用卡片图标:按菜单 code 关键字映射到线性图标 id
 function menuIcon(code){
-  if(code.includes('video')||code==='app.video') return '📹';
-  if(code.includes('live')) return '📺';
-  if(code.includes('playback')) return '⏯️';
-  if(code.includes('picture')) return '🖼️';
-  if(code.includes('event')||code.includes('search')) return '🔍';
-  if(code.includes('map')) return '🗺️';
-  if(code.includes('broadcast')) return '📢';
-  if(code.includes('network')) return '🌐';
-  if(code.includes('integrated')) return '🧭';
-  return '📦';
+  if(code.includes('video')||code==='app.video') return 'i-video';
+  if(code.includes('live')) return 'i-live';
+  if(code.includes('playback')) return 'i-playback';
+  if(code.includes('picture')) return 'i-picture';
+  if(code.includes('event')||code.includes('search')) return 'i-search';
+  if(code.includes('map')) return 'i-map';
+  if(code.includes('broadcast')) return 'i-broadcast';
+  if(code.includes('network')) return 'i-network';
+  if(code.includes('integrated')) return 'i-compass';
+  return 'i-grid';
+}
+// 系统管理菜单图标:按 code
+function sysIcon(code){
+  if(code==='sys.area') return 'i-area';
+  if(code==='sys.person.info') return 'i-org';
+  if(code==='sys.person.role') return 'i-role';
+  if(code==='sys.person.account') return 'i-account';
+  if(code.includes('person')) return 'i-user';
+  return 'i-grid';
 }
 // 视频监控相关卡片 → 进入区域/资源浏览;其余 → 占位提示
 function isVideoCard(code){ return code.startsWith('app.video'); }
@@ -483,7 +576,7 @@ function renderAppCards(menus){
     const cards = (kids.length?kids:[top]); // 没有子项就把父本身作为卡片
     html+=`<div class="card-section"><h3 class="sec-accent">${top.name}</h3><div class="card-grid">`;
     cards.forEach(c=>{
-      html+=`<div class="app-card" onclick="openCard('${c.code}','${c.name}')"><div class="ic">${menuIcon(c.code)}</div><div class="nm">${c.name}</div></div>`;
+      html+=`<div class="app-card" onclick="openCard('${c.code}','${c.name}')"><div class="ic">${svgIco(menuIcon(c.code))}</div><div class="nm">${c.name}</div></div>`;
     });
     html+=`</div></div>`;
   });
@@ -491,7 +584,7 @@ function renderAppCards(menus){
 }
 function openCard(code,name){
   if(isVideoCard(code)){ showAppBrowse(); }
-  else { toast('🧩 「'+name+'」为演示占位'); }
+  else { toast('「'+name+'」为演示占位','i-grid'); }
 }
 function showAppHome(){ document.getElementById('appHome').style.display='block'; document.getElementById('appBrowse').style.display='none'; }
 function showAppBrowse(){ document.getElementById('appHome').style.display='none'; document.getElementById('appBrowse').style.display='block'; }
@@ -505,7 +598,7 @@ function renderAppNodes(nodes){
   const wrap=document.createElement('div');
   nodes.forEach(n=>{
     const node=document.createElement('div'); node.className='area-node'+(n.accessible?'':' structural');
-    node.textContent=(n.children&&n.children.length?'▸ ':'') + n.name + (n.accessible?'':' (仅可见)');
+    node.innerHTML=svgIco('i-area')+'<span>'+n.name+(n.accessible?'':' <small style="color:var(--ink4)">(仅可见)</small>')+'</span>';
     node.onclick=(e)=>{ e.stopPropagation(); document.querySelectorAll('.area-node').forEach(x=>x.classList.remove('active')); node.classList.add('active'); openArea(n.id); };
     wrap.appendChild(node);
     if(n.children&&n.children.length){ const box=document.createElement('div'); box.style.marginLeft='16px'; box.appendChild(renderAppNodes(n.children)); wrap.appendChild(box); }
@@ -517,17 +610,17 @@ async function openArea(areaId){
   const d=await api(`/api/area-resources?userId=${uid}&areaId=${areaId}`);
   const main=document.getElementById('appMain');
   if(!d.accessible){
-    main.innerHTML=`<div class="no-perm"><div class="big">🔒</div>暂无操作权限<div class="muted" style="margin-top:8px">「${d.areaName}」仅用于导航,你没有该区域资源的权限</div></div>`;
+    main.innerHTML=`<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-lock"></use></svg></div>暂无操作权限<div class="muted" style="margin-top:8px">「${d.areaName}」仅用于导航,你没有该区域资源的权限</div></div>`;
     return;
   }
   if(!d.resources.length){ main.innerHTML=`<h3>${d.areaName}</h3><div class="muted">该区域下暂无监控资源</div>`; return; }
   main.innerHTML=`<h3>${d.areaName} — 监控资源</h3>`+d.resources.map(r=>`
     <div class="res-card">
-      <div class="rc-title">📹 ${r.name} <span class="badge">${r.area}</span></div>
+      <div class="rc-title">${svgIco('i-video')} ${r.name} <span class="badge">${r.area}</span></div>
       <div>${r.actions.map(a=>`<button class="op-btn" ${a.allowed?'':'disabled'} onclick="doOp('${r.name}','${a.name}',${a.allowed})">${a.name}</button>`).join('')}</div>
     </div>`).join('');
 }
-function doOp(res,act,allowed){ if(!allowed){ toast('⛔ 无「'+act+'」权限'); return; } toast('▶ 执行:'+act+' @ '+res); }
+function doOp(res,act,allowed){ if(!allowed){ toast('无「'+act+'」操作权限','i-x'); return; } toast('执行:'+act+' @ '+res,'i-live'); }
 
 // ---------- 后台管理(体验) ----------
 // 菜单 code -> 右侧配置界面
@@ -546,16 +639,17 @@ async function loadSysView(){
   const menus=await api('/api/sys-menus?userId='+uid);
   const navEl=document.getElementById('sysMenus');
   navEl.innerHTML = menus.length
-    ? menus.map(m=>`<div class="nav-item" data-code="${m.code}" onclick="onSysMenu('${m.code}','${m.name}',this)">${m.parentId?'　':''}${m.name}</div>`).join('')
-    : '<div class="nav-empty">该用户无任何系统管理菜单权限</div>';
+    ? menus.map(m=>`<div class="nav-item ${m.parentId?'child':''}" data-code="${m.code}" onclick="onSysMenu('${m.code}','${m.name}',this)">${svgIco(sysIcon(m.code))}<span>${m.name}</span></div>`).join('')
+    : '<div class="nav-empty">该用户无任何系统管理菜单权限<br>(应用域有权 ≠ 管理域有权)</div>';
   // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
   let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus[0];
   if(def){ const el=navEl.querySelector(`[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
   else { showSysPanel('none'); }
-  renderManageTree('manageAreaTree', await api('/api/manage-areas?userId='+uid), 'area');
+  MANAGE_AREAS = await api('/api/manage-areas?userId='+uid);
+  renderManageTree('manageAreaTree', MANAGE_AREAS, 'area');
   renderManageTree('manageOrgTree', await api('/api/manage-orgs?userId='+uid), 'org');
-  document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧区域查看管理权限</div>';
-  document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big">👈</div>请选择左侧组织查看管理权限</div>';
+  document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
+  document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
 }
 function renderManageTree(elId, flat, kind){
   const el=document.getElementById(elId);
@@ -566,41 +660,116 @@ function renderManageNodes(nodes, kind){
   const wrap=document.createElement('div');
   nodes.forEach(n=>{
     const node=document.createElement('div'); node.className='area-node'+(n.accessible?'':' structural');
-    node.textContent=(n.children&&n.children.length?'▸ ':'')+n.name+(n.accessible?'':' (仅可见)');
+    node.innerHTML=svgIco(kind==='area'?'i-area':'i-org')+'<span>'+n.name+(n.accessible?'':' <small style="color:var(--ink4)">(仅可见)</small>')+'</span>';
     node.onclick=(e)=>{ e.stopPropagation(); document.querySelectorAll('#view-sys .area-node').forEach(x=>x.classList.remove('active')); node.classList.add('active'); openManageNode(kind, n.id); };
     wrap.appendChild(node);
     if(n.children&&n.children.length){ const box=document.createElement('div'); box.style.marginLeft='16px'; box.appendChild(renderManageNodes(n.children, kind)); wrap.appendChild(box); }
   });
   return wrap;
 }
+let curManage={area:0,org:0};   // 左树当前选中节点
+let MANAGE_AREAS=[];            // 当前登录用户可见的管理区域(flat,供移动候选/取名)
 async function openManageNode(kind, id){
   const uid=loginUserId();
+  curManage[kind]=id;
   const url = kind==='area' ? `/api/manage-area-detail?userId=${uid}&areaId=${id}` : `/api/manage-org-detail?userId=${uid}&orgId=${id}`;
   const d=await api(url);
   const main=document.getElementById(kind==='area'?'sysMainArea':'sysMainOrg');
   const label = kind==='area' ? '区域' : '组织';
   if(!d.accessible){
-    main.innerHTML=`<div class="no-perm"><div class="big">🔒</div>暂无管理权限<div class="muted" style="margin-top:8px">「${d.name}」仅用于导航,你没有该${label}的管理权限</div></div>`;
+    main.innerHTML=`<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-lock"></use></svg></div>暂无管理权限<div class="muted" style="margin-top:8px">「${d.name}」仅用于导航,你没有该${label}的管理权限</div></div>`;
     return;
   }
-  let html=`<h3>${d.name} — 管理权限</h3>
-    <div class="res-card"><div class="rc-title">✅ 可对该${label}执行</div>
-      <button class="op-btn">查看</button><button class="op-btn">添加</button><button class="op-btn">修改</button><button class="op-btn">删除</button>
+  let html=`<h3>${d.name} — 管理权限</h3>`;
+  if(kind==='area'){
+    // 真实落库的区域操作(后端写时再校验一遍权限)
+    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-area')} 区域操作 <span class="muted" style="font-weight:400">(真实落库,写时校验权限)</span></div>
+      <button class="op-btn" onclick="areaAdd()">${svgIco('i-plus')} 新增子区域</button>
+      <button class="op-btn" onclick="areaRename()">${svgIco('i-edit')} 重命名</button>
+      <button class="op-btn" onclick="areaMoveUI()">${svgIco('i-move')} 移动到…</button>
+      <button class="op-btn" onclick="areaDelete()">${svgIco('i-trash')} 删除</button>
+      <div id="areaMoveBox" style="display:none;margin-top:10px">
+        移动「${d.name}」到:<select id="areaMoveSel" style="padding:6px 9px;border:1px solid var(--line);border-radius:6px"></select>
+        <button class="op-btn" onclick="areaMoveDo()">${svgIco('i-check')} 确认移动</button>
+      </div>
     </div>`;
+  }else{
+    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-check')} 可对该${label}执行</div>
+      <button class="op-btn">${svgIco('i-eye')} 查看</button><button class="op-btn">${svgIco('i-plus')} 添加</button><button class="op-btn">${svgIco('i-edit')} 修改</button><button class="op-btn">${svgIco('i-trash')} 删除</button>
+    </div>`;
+  }
   html+=`<div class="res-card"><div class="rc-title">子${label}(${d.children.length})</div>${d.children.length?d.children.map(c=>`<span class="badge" style="margin-right:6px">${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
   if(kind==='area'){
-    html+=`<div class="res-card"><div class="rc-title">本区域资源(${d.resources.length})</div>${d.resources.length?d.resources.map(c=>`<span class="badge" style="margin-right:6px">📹 ${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-video')} 本区域资源(${d.resources.length})</div>${d.resources.length?d.resources.map(c=>`<span class="badge" style="margin-right:6px">${svgIco('i-video')} ${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
   }
   main.innerHTML=html;
 }
-function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(window._tt); window._tt=setTimeout(()=>t.style.display='none',1800); }
+
+// ---------- 区域增删改(真实落库) ----------
+function manageAreaName(id){ const a=MANAGE_AREAS.find(x=>x.id===id); return a?a.name:('#'+id); }
+// 操作成功后:刷新左树 + 元数据(角色编辑器/应用端的区域树),并重新打开 focusId
+async function refreshAreaMgmt(focusId){
+  const uid=loginUserId();
+  MANAGE_AREAS = await api('/api/manage-areas?userId='+uid);
+  renderManageTree('manageAreaTree', MANAGE_AREAS, 'area');
+  await reloadMeta();
+  await loadAppView();
+  if(focusId && MANAGE_AREAS.some(x=>x.id===focusId)) await openManageNode('area', focusId);
+  else document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
+}
+async function areaAdd(){
+  const name=prompt('新子区域名称:'); if(!name||!name.trim()) return;
+  try{
+    await api('/api/areas?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.area,name:name.trim()})});
+    toast('已新增子区域:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ alert('新增失败:'+e.message); }
+}
+async function areaRename(){
+  const cur=manageAreaName(curManage.area);
+  const name=prompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
+  try{
+    await api('/api/areas?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,name:name.trim()})});
+    toast('已重命名为:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ alert('重命名失败:'+e.message); }
+}
+function areaMoveUI(){
+  const box=document.getElementById('areaMoveBox');
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  // 候选 = 可管理(accessible)且不是:自己 / 自己的子孙 / 当前父(原地移动无意义)
+  const kids=new Set();
+  const collect=id=>MANAGE_AREAS.forEach(n=>{ if(n.parentId===id&&!kids.has(n.id)){ kids.add(n.id); collect(n.id); } });
+  collect(curManage.area);
+  const me=MANAGE_AREAS.find(x=>x.id===curManage.area)||{};
+  const cands=MANAGE_AREAS.filter(n=>n.accessible&&n.id!==curManage.area&&!kids.has(n.id)&&n.id!==me.parentId);
+  if(!cands.length){ toast('没有可移动到的目标区域'); return; }
+  document.getElementById('areaMoveSel').innerHTML=cands.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  box.style.display='block';
+}
+async function areaMoveDo(){
+  const target=Number(document.getElementById('areaMoveSel').value||0); if(!target) return;
+  try{
+    await api('/api/areas?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target,name:manageAreaName(curManage.area)})});
+    toast('已移动到:'+manageAreaName(target),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ alert('移动失败:'+e.message); }
+}
+async function areaDelete(){
+  const name=manageAreaName(curManage.area);
+  if(!confirm('确认删除区域「'+name+'」?\n(仅允许删除无子区域、无资源的区域;对该区域的授权记录将一并清理)')) return;
+  const pid=(MANAGE_AREAS.find(x=>x.id===curManage.area)||{}).parentId||0;
+  try{
+    await api('/api/areas/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
+    toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(pid);
+  }catch(e){ alert('删除失败:'+e.message); }
+}
+function toast(msg, icon){ const t=document.getElementById('toast'); t.innerHTML=(icon?svgIco(icon):'')+'<span>'+msg+'</span>'; t.style.display='flex'; clearTimeout(window._tt); window._tt=setTimeout(()=>t.style.display='none',1800); }
 
 // ---------- 用户管理 ----------
 function renderUserList(){
   const roleName=id=>{const r=(META._roles||[]).find(x=>x.id===id);return r?r.name:('#'+id);};
   document.getElementById('userList').innerHTML = META.users.map(u=>{
     const rs=(u.roleIds||[]).map(roleName).join('、')||'(无角色)';
-    return `<div class="user-row"><span class="uname"><b>${u.name}</b></span><span class="muted">角色:${rs}</span></div>`;
+    const sup=u.isSuperuser?'<span class="badge" style="background:var(--brand-soft);color:var(--brand);margin-left:6px">'+svgIco('i-shield')+'超管</span>':'';
+    return `<div class="user-row"><span class="uname"><span class="uava">${svgIco('i-user')}</span><b>${u.name}</b>${sup}</span><span class="muted">角色:${u.isSuperuser?'超级管理员(绕过鉴权,拥有全部权限)':rs}</span></div>`;
   }).join('');
 }
 function renderRoleChecks(){
@@ -617,7 +786,7 @@ async function createUser(){
     document.getElementById('newUserName').value='';
     document.querySelectorAll('#newUserRoles input:checked').forEach(c=>c.checked=false);
     await reloadMeta();
-    toast('✅ 已创建用户:'+name);
+    toast('已创建用户:'+name,'i-check');
   }catch(e){ alert('创建失败:'+e.message); }
 }
 async function fetchGrantable(){
@@ -696,7 +865,7 @@ function renderResTable(){
       if(ov.mode){ const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=ov.actions.has(a.code); cb.disabled=!okAct;
         cb.onchange=()=>{ if(cb.checked)ov.actions.add(a.code); else ov.actions.delete(a.code); resOverride[r.id]={mode:true,actions:ov.actions}; };
         td.appendChild(cb);
-      } else { td.innerHTML = okAct ? '<span class="muted">继承✓</span>' : '<span style="color:#f56c6c">✕</span>'; }
+      } else { td.innerHTML = okAct ? '<span class="muted" style="display:inline-flex;align-items:center;gap:3px">'+svgIco('i-check')+'继承</span>' : '<span style="color:var(--ink4)">'+svgIco('i-x')+'</span>'; }
       tr.appendChild(td);
     });
     body.appendChild(tr);
@@ -755,7 +924,7 @@ async function runCheck(){
   try{ const d=await api('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const el=document.getElementById('checkResult');
     el.className='result '+(d.allow?'allow':'deny');
-    el.innerHTML=`<strong>${d.allow?'✅ 允许':'⛔ 拒绝'}</strong> — ${d.reason}`+
+    el.innerHTML=`<strong>${d.allow?svgIco('i-check')+'允许':svgIco('i-x')+'拒绝'}</strong> — ${d.reason}`+
       (d.trace&&d.trace.length?`<div class="trace">${d.trace.map(t=>`<div>${t}</div>`).join('')}</div>`:'');
   }catch(e){ alert('鉴权失败:'+e.message); }
 }

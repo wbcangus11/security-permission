@@ -1,0 +1,220 @@
+package service
+
+// 区域(安保区域树)增删改:写时鉴权 + 物化路径 path 自动维护。
+//
+// 鉴权规则(写操作同样过"两个维度",复用运行时鉴权引擎):
+//   功能关:操作人须有「安保区域管理」菜单(sys.area);
+//   数据关:新增看父区域、重命名/删除看本区域、移动还要看新父区域。
+//
+// path 维护规则(这是"授权子树 → 新增节点自动继承"真正用起来的关键):
+//   新增:path = 父.path + 新ID + "/" —— 授权了父子树的角色零配置自动覆盖新区域;
+//   移动:本节点改 parent_id,整棵子树(含自身)批量前缀替换 path —— 权限随树走;
+//   删除:对齐海康,仅允许"无子区域且无资源"的叶子,删除时同步清理
+//         role_data_scope 对该节点的 AREA / RES_AREA 授权行,避免悬挂引用。
+
+import (
+	"context"
+	"strconv"
+	"strings"
+
+	"github.com/gogf/gf/v2/database/gdb"
+	"github.com/gogf/gf/v2/errors/gerror"
+	"github.com/gogf/gf/v2/frame/g"
+
+	"security-permission/internal/model"
+)
+
+// menuAreaManage 安保区域管理菜单 code(写操作的功能关)。
+const menuAreaManage = "sys.area"
+
+// AreaSaveInput 新增/重命名/移动区域的入参。
+// Id<=0 为新增(ParentId=父区域);更新时 ParentId 非 0 且与原值不同即移动。
+type AreaSaveInput struct {
+	Id       int    `json:"id"`
+	ParentId int    `json:"parentId"`
+	Name     string `json:"name"`
+}
+
+// SaveArea 新增或更新(重命名/移动)区域,写时鉴权,成功后刷新缓存。actorId=操作人。
+func (s *Store) SaveArea(ctx context.Context, actorId int, in *AreaSaveInput) (*model.Area, error) {
+	actor, err := s.checkAreaWriter(actorId)
+	if err != nil {
+		return nil, err
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return nil, gerror.New("区域名称不能为空")
+	}
+	if in.Id <= 0 {
+		return s.createArea(ctx, actor, in)
+	}
+	return s.updateArea(ctx, actor, in)
+}
+
+// DeleteArea 删除区域(仅叶子且无资源),同步清理对该节点的数据范围授权。
+func (s *Store) DeleteArea(ctx context.Context, actorId, areaId int) error {
+	actor, err := s.checkAreaWriter(actorId)
+	if err != nil {
+		return err
+	}
+	target := s.AreaById(areaId)
+	if target == nil {
+		return gerror.New("区域不存在")
+	}
+	if target.ParentId == 0 {
+		return gerror.New("根区域不允许删除")
+	}
+	if d := s.CheckArea(actor, areaId); !d.Allow {
+		return gerror.New("无权删除「" + target.Name + "」:" + d.Reason)
+	}
+	// 对齐海康:非空区域不允许删除,先处理子区域与资源
+	for _, a := range s.Areas() {
+		if a.ParentId == areaId {
+			return gerror.New("「" + target.Name + "」下还有子区域,请先删除或移走")
+		}
+	}
+	for _, r := range s.Resources() {
+		if r.AreaId == areaId {
+			return gerror.New("「" + target.Name + "」下还有资源,请先移除")
+		}
+	}
+	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model("area").Ctx(ctx).Where("id", areaId).Delete(); err != nil {
+			return err
+		}
+		// 清理引用该节点的树范围授权(管理域 AREA + 应用域 RES_AREA;ORG 不涉及区域)
+		_, err := tx.Model("role_data_scope").Ctx(ctx).
+			Where("node_id", areaId).
+			WhereIn("scope_type", []string{"AREA", "RES_AREA"}).
+			Delete()
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return s.Reload(ctx)
+}
+
+// checkAreaWriter 写操作公共前置:操作人存在 + 功能关(sys.area 菜单)。
+func (s *Store) checkAreaWriter(actorId int) (*model.User, error) {
+	actor := s.User(actorId)
+	if actor == nil {
+		return nil, gerror.New("操作人不存在")
+	}
+	if d := s.CheckMenu(actor, menuAreaManage); !d.Allow {
+		return nil, gerror.New("功能权限不足:" + d.Reason)
+	}
+	return actor, nil
+}
+
+// createArea 新增子区域:数据关看父区域;插入后回填 path=父.path+新ID+"/"。
+func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
+	parent := s.AreaById(in.ParentId)
+	if parent == nil {
+		return nil, gerror.New("父区域不存在")
+	}
+	if d := s.CheckArea(actor, parent.Id); !d.Allow {
+		return nil, gerror.New("无权在「" + parent.Name + "」下新增子区域:" + d.Reason)
+	}
+	if s.areaNameTaken(parent.Id, in.Name, 0) {
+		return nil, gerror.New("同级已存在同名区域:" + in.Name)
+	}
+	var newId int64
+	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		res, err := tx.Model("area").Ctx(ctx).
+			Data(g.Map{"parent_id": parent.Id, "name": in.Name, "path": ""}).Insert()
+		if err != nil {
+			return err
+		}
+		if newId, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		// 物化路径含自身;授权了父子树的角色自此自动覆盖新区域(无需改 role_data_scope)
+		path := parent.Path + strconv.FormatInt(newId, 10) + "/"
+		_, err = tx.Model("area").Ctx(ctx).Data(g.Map{"path": path}).Where("id", newId).Update()
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err = s.Reload(ctx); err != nil {
+		return nil, err
+	}
+	return s.AreaById(int(newId)), nil
+}
+
+// updateArea 重命名 + 可选移动:移动需对本节点和新父都有权,且防环(新父不能是自己或后代)。
+func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
+	old := s.AreaById(in.Id)
+	if old == nil {
+		return nil, gerror.New("区域不存在")
+	}
+	if old.ParentId == 0 {
+		return nil, gerror.New("根区域不允许修改")
+	}
+	if d := s.CheckArea(actor, old.Id); !d.Allow {
+		return nil, gerror.New("无权管理「" + old.Name + "」:" + d.Reason)
+	}
+
+	moving := in.ParentId != 0 && in.ParentId != old.ParentId
+	var newParent *model.Area
+	if moving {
+		if newParent = s.AreaById(in.ParentId); newParent == nil {
+			return nil, gerror.New("目标父区域不存在")
+		}
+		// 防环:新父的 path 以本节点 path 为前缀 => 新父是自己或自己的后代
+		if strings.HasPrefix(newParent.Path, old.Path) {
+			return nil, gerror.New("不能把区域移动到自己或自己的子区域下")
+		}
+		if d := s.CheckArea(actor, newParent.Id); !d.Allow {
+			return nil, gerror.New("无权移动到「" + newParent.Name + "」下:" + d.Reason)
+		}
+	}
+	dupParent := old.ParentId
+	if moving {
+		dupParent = newParent.Id
+	}
+	if s.areaNameTaken(dupParent, in.Name, old.Id) {
+		return nil, gerror.New("同级已存在同名区域:" + in.Name)
+	}
+
+	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model("area").Ctx(ctx).
+			Data(g.Map{"name": in.Name}).Where("id", old.Id).Update(); err != nil {
+			return err
+		}
+		if !moving {
+			return nil
+		}
+		if _, err := tx.Model("area").Ctx(ctx).
+			Data(g.Map{"parent_id": newParent.Id}).Where("id", old.Id).Update(); err != nil {
+			return err
+		}
+		// 整棵子树(含自身)批量前缀替换:旧前缀=old.Path,新前缀=新父.path+本ID+"/"
+		// path 仅由数字和 "/" 组成,LIKE 无需转义;SUBSTRING 从旧前缀之后接回剩余路径
+		newPrefix := newParent.Path + strconv.Itoa(old.Id) + "/"
+		_, err := tx.Exec(
+			"UPDATE `area` SET `path`=CONCAT(?, SUBSTRING(`path`, ?)) WHERE `path` LIKE ?",
+			newPrefix, len(old.Path)+1, old.Path+"%")
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err = s.Reload(ctx); err != nil {
+		return nil, err
+	}
+	return s.AreaById(old.Id), nil
+}
+
+// areaNameTaken 同一父节点下是否已存在同名区域(excludeId 排除自身,用于更新)。
+func (s *Store) areaNameTaken(parentId int, name string, excludeId int) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, a := range s.areas {
+		if a.ParentId == parentId && a.Name == name && a.Id != excludeId {
+			return true
+		}
+	}
+	return false
+}

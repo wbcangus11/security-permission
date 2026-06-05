@@ -20,7 +20,9 @@ bin
 # 本项目编译产物与运行日志(不纳入版本管理)
 /security-permission.exe
 /app_debug.exe
+/app_test.exe
 /sp*.exe
+/shot_*.png
 server.out.log
 server.err.log
 run.log

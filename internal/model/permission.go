@@ -90,4 +90,7 @@ type User struct {
 	Name    string `json:"name"`
 	OrgId   int    `json:"orgId"`
 	RoleIds []int  `json:"roleIds"`
+	// IsSuperuser 超级管理员(仿海康内置 root):鉴权三关直接放行,拥有现有及将来全部权限。
+	// 与数据权限模型解耦——它是引擎层面的特例,不依赖任何角色/数据范围授权。
+	IsSuperuser bool `json:"isSuperuser"`
 }

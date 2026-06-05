@@ -46,6 +46,9 @@ func (s *Store) roleAllowsTree(scopes []model.DataScope, kind string, nodeId int
 // ---------- 操作者(用户)级判断 ----------
 
 func (s *Store) userHasMenuId(u *model.User, menuId int) bool {
+	if isSuper(u) { // 超级管理员拥有全部菜单 → SysMenus/AppMenus 自动返回全集
+		return true
+	}
 	for _, r := range s.effectiveRoles(u) {
 		if roleHasMenuId(r, menuId) {
 			return true
@@ -55,6 +58,9 @@ func (s *Store) userHasMenuId(u *model.User, menuId int) bool {
 }
 
 func (s *Store) userResAreaCovers(u *model.User, areaId int) bool {
+	if isSuper(u) { // 超级管理员覆盖全部区域资源 → 应用端可见全部
+		return true
+	}
 	for _, r := range s.effectiveRoles(u) {
 		if s.roleAllowsTree(r.ResourceAreaScopes, "area", areaId) {
 			return true
@@ -112,6 +118,9 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 		return sub, 0 // 不受限,直接采用提交
 	}
 	g := s.GrantableSet(actorId)
+	if g.Unlimited { // 超级管理员作为操作者:可授全部,直接采用提交
+		return sub, 0
+	}
 	menuG, areaG, orgG, resAreaG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds)
 	raG := map[string]bool{}
 	for _, ra := range g.ResourceActions {
@@ -184,6 +193,10 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 	}
 	actor := s.User(actorId)
 	if actor == nil {
+		return g
+	}
+	if actor.IsSuperuser { // 超级管理员可授出全部权限
+		g.Unlimited = true
 		return g
 	}
 	for _, m := range s.Menus() {

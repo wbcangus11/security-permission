@@ -113,9 +113,10 @@ CREATE TABLE IF NOT EXISTS `role_resource_action` (
 
 -- 用户(账号)
 CREATE TABLE IF NOT EXISTS `user` (
-  `id`     BIGINT       NOT NULL AUTO_INCREMENT COMMENT '用户ID',
-  `name`   VARCHAR(128) NOT NULL DEFAULT ''     COMMENT '用户名',
-  `org_id` BIGINT       NOT NULL DEFAULT 0      COMMENT '所属组织ID',
+  `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+  `name`         VARCHAR(128) NOT NULL DEFAULT ''     COMMENT '用户名',
+  `org_id`       BIGINT       NOT NULL DEFAULT 0      COMMENT '所属组织ID',
+  `is_superuser` TINYINT(1)   NOT NULL DEFAULT 0      COMMENT '超级管理员:1=鉴权三关直接放行(仿海康内置root)',
   PRIMARY KEY (`id`),
   KEY `idx_org` (`org_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户(账号)';
