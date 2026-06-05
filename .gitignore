@@ -22,6 +22,7 @@ bin
 /app_debug.exe
 /app_test.exe
 /sp*.exe
+*.exe~
 /shot_*.png
 server.out.log
 server.err.log

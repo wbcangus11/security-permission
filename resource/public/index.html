@@ -800,13 +800,19 @@ async function refreshRoles(){
   META._roles = roles;            // 供用户管理用
   if(document.getElementById('newUserRoles')) renderRoleChecks();
   const el=document.getElementById('roleList');
-  el.innerHTML = roles.map(r=>`<div class="role-item ${r.id===currentRoleId?'active':''}" onclick="loadRole(${r.id})">${r.name}<small>${r.description||''}</small></div>`).join('');
+  el.innerHTML = roles.map(r=>`<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})">${r.name}<small>${r.description||''}</small></div>`).join('');
   if(!currentRoleId && roles.length){ loadRole(roles[0].id); }
+}
+
+// 同步更新左侧角色列表的选中高亮(用显式 id,不依赖异步重渲染)
+function highlightRole(id){
+  document.querySelectorAll('#roleList .role-item').forEach(el=>el.classList.toggle('active', Number(el.dataset.id)===Number(id)));
 }
 
 async function loadRole(id){
   if(!id){ return; }
-  currentRoleId=id; role = await api('/api/roles/'+id);
+  currentRoleId=id; highlightRole(id); // 立即高亮,不等异步重渲染
+  role = await api('/api/roles/'+id);
   document.getElementById('roleName').value=role.name||'';
   document.getElementById('roleDesc').value=role.description||'';
   // 菜单勾选
@@ -820,7 +826,7 @@ async function loadRole(id){
   // 资源精细配置
   for(const k in resOverride) delete resOverride[k];
   (role.resourceActions||[]).forEach(ra=>{ if(!resOverride[ra.resourceId]) resOverride[ra.resourceId]={mode:true,actions:new Set()}; resOverride[ra.resourceId].actions.add(ra.actionCode); });
-  rerenderAll(); refreshRoles();
+  rerenderAll(); // 切换角色不必重拉/重建列表,高亮已在开头同步更新
 }
 
 function newRole(){ currentRoleId=0; role=blankRole();
