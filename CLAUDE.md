@@ -11,7 +11,7 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 ## 一句话现状
 
 功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**31/31 自动化测试通过**。
-区域已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用),新增 11 项测试全通过(测试报告 §九)。
+区域**与组织**均已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用):区域见测试报告 §九(11 项),组织见 §十一(12 项),两者共用同一套 path-维护引擎,仅「非空」判定不同(区域=无资源,组织=无子组织且无下属用户)。
 
 ---
 
@@ -43,6 +43,7 @@ internal/
     delegation.go            二次授权:GrantableSet + MergeDelegated ★
     runtime.go               应用端/后台体验:可见树、资源、菜单(VisibleAreas/ManageAreas/ManageOrgs/AreaResources/SysMenus/AppMenus…)
     area.go                  区域增删改:写时鉴权 + path 自动维护(SaveArea 新增/重命名/移动 + DeleteArea)★
+    org.go                   组织增删改:与 area.go 完全对称,功能关=人员信息 sys.person.info,删除前置=无子组织且无下属用户 ★
   controller/perm/perm.go    全部 HTTP 接口
   cmd/cmd.go                 路由 + 启动时 Reload + 静态目录
 resource/public/index.html   前端单页(所有 UI + JS,无构建步骤)★
@@ -73,6 +74,7 @@ docs/测试报告.md              31/31 场景测试报告
 `/api/meta` `/api/roles[/{id}]`(GET) `/api/roles?actor=`(POST,委派合并) `/api/grantable?actor=`
 `/api/check`(鉴权测试) `/api/users`(POST 建用户)
 区域管理:`/api/areas`(POST,?userId= 新增/重命名/移动,写时鉴权+path 维护) `/api/areas/delete`(POST,?userId=)
+组织管理:`/api/orgs`(POST,?userId= 新增/重命名/移动) `/api/orgs/delete`(POST,?userId=)
 应用端:`/api/app-menus` `/api/visible-areas` `/api/area-resources`(均 ?userId=)
 后台:`/api/sys-menus` `/api/manage-areas` `/api/manage-orgs` `/api/manage-area-detail` `/api/manage-org-detail`
 
@@ -99,16 +101,15 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ---
 
-## git 状态(2026-06-05)
+## git 状态(2026-06-08)
 
-- 已提交到 `6068080`(初始化→红黑风格→后台IA重排→前台卡片化)。
-- **工作区有未提交改动**:
-  - 区域增删改特性:新增 `internal/service/area.go`;改 `internal/controller/perm/perm.go`(注册 /api/areas[/delete])、`internal/service/store.go`(AreaById)。
-  - 前端海康风视觉重构:`resource/public/index.html`(CSS 设计系统 + SVG 图标 sprite,全站去 emoji;后台区域面板增删改按钮;顶栏用户切换器改白底深字,修可读性)。
-  - **超级管理员**:`model/permission.go`(User.IsSuperuser)、`auth.go`/`delegation.go`(短路放行)、`db.go`(读写 is_superuser)、`schema.sql`(加列)、`tools/dbinit`(幂等补列 + ensure admin)、前端(★超管标识)。
-  - 新增 `tools/shot.mjs`(UI 截图验证工具)。
-  - 文档:`docs/测试报告.md`(§九/§十)、`CLAUDE.md`。
-  - **注意**:DB 已含 admin 账号(uid=4);现有库需 `go run ./tools/dbinit` 跑一次迁移(补 is_superuser 列 + 建 admin)。
+- 已提交到 `c699cd0`(初始化→红黑风格→后台IA重排→前台卡片化→区域增删改+海康风重构+超管→修角色高亮)。区域增删改/超管/前端重构均已落入提交,工作区此前是干净的。
+- **工作区有未提交改动(组织树增删改)**:
+  - 新增 `internal/service/org.go`(与 area.go 对称的组织增删改 + path 维护)。
+  - 改 `internal/controller/perm/perm.go`(注册 /api/orgs[/delete])、`internal/service/store.go`(OrgById)。
+  - 改 `resource/public/index.html`(组织详情面板:把只读占位换成真实 ➕/✏️/📦/🗑 按钮 + orgAdd/orgRename/orgMove/orgDelete + MANAGE_ORGS 缓存 + refreshOrgMgmt)。
+  - 文档:`docs/测试报告.md`(§十一,12/12 通过)、`CLAUDE.md`。
+  - **不改 schema/seed**:org 表与 ORG scope_type 早已存在,无需迁移;现有库直接可用。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
@@ -116,8 +117,9 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 ## 待办 / 用户可能继续提的方向
 
 - ~~新增/移动区域接口(自动维护 path,移动子树批量更新子孙 path)~~ **已完成**(`service/area.go`,后台"安保区域管理"右侧已有➕/✏️/📦/🗑 按钮,真实落库)。
+- ~~**组织**的增删改真实落库~~ **已完成**(`service/org.go`,后台"人员信息→组织机构"右侧已有真实增删改按钮,§十一)。
 - `gf gen dao` 生成标准 dao 替代手写 `g.Model`。
-- 角色删除接口、**组织**的增删改真实落库(组织详情目前仍只读展示;区域已可写)。资源(摄像头)的增删改落库。
+- 角色删除接口。资源(摄像头)的增删改落库。
 - 二次授权升级到模型 B/C(`created_by` 已预留)。
 - 应用端更多模块卡片的真实界面(目前非视频类是占位)。
 - 用户偏好:决策(如委派模型)倾向**先调研真实海康行为再定**;喜欢**每步有验证/测试**;前端**仿海康红黑风格**。

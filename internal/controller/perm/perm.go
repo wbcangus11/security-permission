@@ -25,6 +25,9 @@ func Register(group *ghttp.RouterGroup) {
 	// 区域管理(真实落库:写时鉴权 + path 自动维护)
 	group.POST("/areas", saveArea)
 	group.POST("/areas/delete", deleteArea)
+	// 组织管理(真实落库:写时鉴权 + path 自动维护)
+	group.POST("/orgs", saveOrg)
+	group.POST("/orgs/delete", deleteOrg)
 	// 后台管理域体验
 	group.GET("/sys-menus", sysMenus)
 	group.GET("/manage-areas", manageAreas)
@@ -136,6 +139,31 @@ func saveArea(r *ghttp.Request) {
 // deleteArea 删除区域(仅限无子区域、无资源),并清理对该节点的数据范围授权。?userId=操作人
 func deleteArea(r *ghttp.Request) {
 	if err := service.S.DeleteArea(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, true)
+}
+
+// saveOrg 新增/重命名/移动组织。?userId=操作人。
+// 写时鉴权(sys.person.info 菜单 + 组织数据权限),自动维护物化路径(移动批量改子孙 path)。
+func saveOrg(r *ghttp.Request) {
+	var in service.OrgSaveInput
+	if err := r.Parse(&in); err != nil {
+		fail(r, "参数错误:"+err.Error())
+		return
+	}
+	saved, err := service.S.SaveOrg(r.Context(), r.Get("userId").Int(), &in)
+	if err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, saved)
+}
+
+// deleteOrg 删除组织(仅限无子组织、无下属用户),并清理对该节点的数据范围授权。?userId=操作人
+func deleteOrg(r *ghttp.Request) {
+	if err := service.S.DeleteOrg(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
 		fail(r, err.Error())
 		return
 	}

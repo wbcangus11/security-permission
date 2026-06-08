@@ -125,6 +125,12 @@ func (s *Store) AreaById(id int) *model.Area {
 	return s.areas[id]
 }
 
+func (s *Store) OrgById(id int) *model.Org {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.orgs[id]
+}
+
 func (s *Store) area(id int) *model.Area     { return s.areas[id] }
 func (s *Store) org(id int) *model.Org       { return s.orgs[id] }
 func (s *Store) resource(id int) *model.Resource { return s.resources[id] }

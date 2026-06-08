@@ -647,7 +647,8 @@ async function loadSysView(){
   else { showSysPanel('none'); }
   MANAGE_AREAS = await api('/api/manage-areas?userId='+uid);
   renderManageTree('manageAreaTree', MANAGE_AREAS, 'area');
-  renderManageTree('manageOrgTree', await api('/api/manage-orgs?userId='+uid), 'org');
+  MANAGE_ORGS = await api('/api/manage-orgs?userId='+uid);
+  renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
   document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
   document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
 }
@@ -669,6 +670,7 @@ function renderManageNodes(nodes, kind){
 }
 let curManage={area:0,org:0};   // 左树当前选中节点
 let MANAGE_AREAS=[];            // 当前登录用户可见的管理区域(flat,供移动候选/取名)
+let MANAGE_ORGS=[];             // 当前登录用户可见的管理组织(flat,供移动候选/取名)
 async function openManageNode(kind, id){
   const uid=loginUserId();
   curManage[kind]=id;
@@ -694,8 +696,16 @@ async function openManageNode(kind, id){
       </div>
     </div>`;
   }else{
-    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-check')} 可对该${label}执行</div>
-      <button class="op-btn">${svgIco('i-eye')} 查看</button><button class="op-btn">${svgIco('i-plus')} 添加</button><button class="op-btn">${svgIco('i-edit')} 修改</button><button class="op-btn">${svgIco('i-trash')} 删除</button>
+    // 真实落库的组织操作(后端写时再校验一遍权限)
+    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-org')} 组织操作 <span class="muted" style="font-weight:400">(真实落库,写时校验权限)</span></div>
+      <button class="op-btn" onclick="orgAdd()">${svgIco('i-plus')} 新增子组织</button>
+      <button class="op-btn" onclick="orgRename()">${svgIco('i-edit')} 重命名</button>
+      <button class="op-btn" onclick="orgMoveUI()">${svgIco('i-move')} 移动到…</button>
+      <button class="op-btn" onclick="orgDelete()">${svgIco('i-trash')} 删除</button>
+      <div id="orgMoveBox" style="display:none;margin-top:10px">
+        移动「${d.name}」到:<select id="orgMoveSel" style="padding:6px 9px;border:1px solid var(--line);border-radius:6px"></select>
+        <button class="op-btn" onclick="orgMoveDo()">${svgIco('i-check')} 确认移动</button>
+      </div>
     </div>`;
   }
   html+=`<div class="res-card"><div class="rc-title">子${label}(${d.children.length})</div>${d.children.length?d.children.map(c=>`<span class="badge" style="margin-right:6px">${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
@@ -759,6 +769,61 @@ async function areaDelete(){
   try{
     await api('/api/areas/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
     toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(pid);
+  }catch(e){ alert('删除失败:'+e.message); }
+}
+// ---------- 组织增删改(真实落库) ----------
+function manageOrgName(id){ const o=MANAGE_ORGS.find(x=>x.id===id); return o?o.name:('#'+id); }
+// 操作成功后:刷新左树 + 元数据(角色编辑器的组织树 / 用户管理的所属组织下拉),并重新打开 focusId
+async function refreshOrgMgmt(focusId){
+  const uid=loginUserId();
+  MANAGE_ORGS = await api('/api/manage-orgs?userId='+uid);
+  renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
+  await reloadMeta();
+  if(focusId && MANAGE_ORGS.some(x=>x.id===focusId)) await openManageNode('org', focusId);
+  else document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
+}
+async function orgAdd(){
+  const name=prompt('新子组织名称:'); if(!name||!name.trim()) return;
+  try{
+    await api('/api/orgs?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.org,name:name.trim()})});
+    toast('已新增子组织:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
+  }catch(e){ alert('新增失败:'+e.message); }
+}
+async function orgRename(){
+  const cur=manageOrgName(curManage.org);
+  const name=prompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
+  try{
+    await api('/api/orgs?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,name:name.trim()})});
+    toast('已重命名为:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
+  }catch(e){ alert('重命名失败:'+e.message); }
+}
+function orgMoveUI(){
+  const box=document.getElementById('orgMoveBox');
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  // 候选 = 可管理(accessible)且不是:自己 / 自己的子孙 / 当前父(原地移动无意义)
+  const kids=new Set();
+  const collect=id=>MANAGE_ORGS.forEach(n=>{ if(n.parentId===id&&!kids.has(n.id)){ kids.add(n.id); collect(n.id); } });
+  collect(curManage.org);
+  const me=MANAGE_ORGS.find(x=>x.id===curManage.org)||{};
+  const cands=MANAGE_ORGS.filter(n=>n.accessible&&n.id!==curManage.org&&!kids.has(n.id)&&n.id!==me.parentId);
+  if(!cands.length){ toast('没有可移动到的目标组织'); return; }
+  document.getElementById('orgMoveSel').innerHTML=cands.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  box.style.display='block';
+}
+async function orgMoveDo(){
+  const target=Number(document.getElementById('orgMoveSel').value||0); if(!target) return;
+  try{
+    await api('/api/orgs?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,parentId:target,name:manageOrgName(curManage.org)})});
+    toast('已移动到:'+manageOrgName(target),'i-check'); await refreshOrgMgmt(curManage.org);
+  }catch(e){ alert('移动失败:'+e.message); }
+}
+async function orgDelete(){
+  const name=manageOrgName(curManage.org);
+  if(!confirm('确认删除组织「'+name+'」?\n(仅允许删除无子组织、无下属用户的组织;对该组织的授权记录将一并清理)')) return;
+  const pid=(MANAGE_ORGS.find(x=>x.id===curManage.org)||{}).parentId||0;
+  try{
+    await api('/api/orgs/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org})});
+    toast('已删除:'+name,'i-trash'); await refreshOrgMgmt(pid);
   }catch(e){ alert('删除失败:'+e.message); }
 }
 function toast(msg, icon){ const t=document.getElementById('toast'); t.innerHTML=(icon?svgIco(icon):'')+'<span>'+msg+'</span>'; t.style.display='flex'; clearTimeout(window._tt); window._tt=setTimeout(()=>t.style.display='none',1800); }
