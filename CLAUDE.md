@@ -10,8 +10,10 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 ## 一句话现状
 
-功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**31/31 自动化测试通过**。
+功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 全部测试通过**。
 区域**与组织**均已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用):区域见测试报告 §九(11 项),组织见 §十一(12 项),两者共用同一套 path-维护引擎,仅「非空」判定不同(区域=无资源,组织=无子组织且无下属用户)。
+**角色**支持**真实删除**(§十二,14 项):委派校验(普通操作人只能删自己创建的 `created_by`,超管/不受限删任意)+ 级联清理(含 `user_role`,绑用户也直接删 → 用户失权);配套修正了 `created_by`(仅新建时记,编辑不覆盖)。
+**资源(摄像头)**支持**真实增删改**(§十三,13 项):功能关 `sys.resource` + 数据关 `CheckArea(所在区域)`;新增自动被覆盖该区域 RES_AREA 的角色继承;移动改 `area_id`;删除清理 `role_resource_action`。至此**数据树增删改三件套(区域/组织/资源)全部完成**。
 
 ---
 
@@ -25,7 +27,9 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
    - 编辑界面按创建人当前权限**实时过滤**(超范围节点前端**隐藏**)。
    - 保存时**合并**:`最终 = (提交 ∩ 创建人可授范围) ∪ (原有 \ 创建人可授范围)`,范围外原有权限原样保留(看不到也删不掉)。
    - 实现:`service/delegation.go` 的 `GrantableSet` 与 `MergeDelegated`。
-   - **未来若要升级**到模型 B(运行时取交集)/ C(变更级联):`role.created_by` 字段已预留。
+   - **角色删除**(`service/role.go` `DeleteRole`)的委派语义与之自洽:不受限(actor=0)/超管删任意;普通操作人须有「角色管理」菜单(`sys.person.role`)且**只能删自己创建的**(`created_by`)。绑用户也直接删(级联清 `user_role`,用户失权)。
+   - **`created_by` 语义已修正**:仅**新建**时记为操作人,**编辑**时保持原值不变(原先 `saveRole` 每次保存都覆盖,导致"创建人"不可靠;现 `perm.go` 区分 old==nil)。这是"只能删自己创建的"成立的前提。
+   - **未来若要升级**到模型 B(运行时取交集)/ C(变更级联):`role.created_by` 字段已预留(且现在可靠)。
 5. **存储**:MySQL(库 `security_permission`,root/123456)为持久层;启动 `service.S.Reload(ctx)` 全量载入内存缓存,鉴权读缓存,写角色/用户落库后刷新缓存。`role_data_scope` 一张表用 `scope_type`(AREA/ORG/RES_AREA)统一三种树范围。
 6. **前端两大块对应两个域**:应用端=应用域(看监控,RES_AREA);系统管理后台=系统域(系统菜单 + 安保区域管理 AREA + 组织管理 ORG)。"应用域有权 ≠ 管理域有权"(如李四能看监控但后台为空)。
 
@@ -44,6 +48,8 @@ internal/
     runtime.go               应用端/后台体验:可见树、资源、菜单(VisibleAreas/ManageAreas/ManageOrgs/AreaResources/SysMenus/AppMenus…)
     area.go                  区域增删改:写时鉴权 + path 自动维护(SaveArea 新增/重命名/移动 + DeleteArea)★
     org.go                   组织增删改:与 area.go 完全对称,功能关=人员信息 sys.person.info,删除前置=无子组织且无下属用户 ★
+    role.go                  角色删除:委派校验(不受限/超管删任意;普通操作人=功能关 sys.person.role + 仅删自建 created_by)+ 级联清理(含 user_role,绑用户也直接删)★
+    resource.go              资源(摄像头)增删改:功能关 sys.resource + 数据关 CheckArea(所在区域);新增自动被 RES_AREA 角色继承;删除清理 role_resource_action ★
   controller/perm/perm.go    全部 HTTP 接口
   cmd/cmd.go                 路由 + 启动时 Reload + 静态目录
 resource/public/index.html   前端单页(所有 UI + JS,无构建步骤)★
@@ -71,10 +77,11 @@ docs/测试报告.md              31/31 场景测试报告
 
 ## HTTP 接口一览
 
-`/api/meta` `/api/roles[/{id}]`(GET) `/api/roles?actor=`(POST,委派合并) `/api/grantable?actor=`
+`/api/meta` `/api/roles[/{id}]`(GET) `/api/roles?actor=`(POST,委派合并) `/api/roles/delete?actor=`(POST,body 含 id,委派校验+级联清理) `/api/grantable?actor=`
 `/api/check`(鉴权测试) `/api/users`(POST 建用户)
 区域管理:`/api/areas`(POST,?userId= 新增/重命名/移动,写时鉴权+path 维护) `/api/areas/delete`(POST,?userId=)
 组织管理:`/api/orgs`(POST,?userId= 新增/重命名/移动) `/api/orgs/delete`(POST,?userId=)
+资源管理:`/api/resources`(POST,?userId= 新增/重命名/改类型/移动) `/api/resources/delete`(POST,?userId=)
 应用端:`/api/app-menus` `/api/visible-areas` `/api/area-resources`(均 ?userId=)
 后台:`/api/sys-menus` `/api/manage-areas` `/api/manage-orgs` `/api/manage-area-detail` `/api/manage-org-detail`
 
@@ -103,13 +110,12 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ## git 状态(2026-06-08)
 
-- 已提交到 `c699cd0`(初始化→红黑风格→后台IA重排→前台卡片化→区域增删改+海康风重构+超管→修角色高亮)。区域增删改/超管/前端重构均已落入提交,工作区此前是干净的。
-- **工作区有未提交改动(组织树增删改)**:
-  - 新增 `internal/service/org.go`(与 area.go 对称的组织增删改 + path 维护)。
-  - 改 `internal/controller/perm/perm.go`(注册 /api/orgs[/delete])、`internal/service/store.go`(OrgById)。
-  - 改 `resource/public/index.html`(组织详情面板:把只读占位换成真实 ➕/✏️/📦/🗑 按钮 + orgAdd/orgRename/orgMove/orgDelete + MANAGE_ORGS 缓存 + refreshOrgMgmt)。
-  - 文档:`docs/测试报告.md`(§十一,12/12 通过)、`CLAUDE.md`。
-  - **不改 schema/seed**:org 表与 ORG scope_type 早已存在,无需迁移;现有库直接可用。
+- 已提交到 `68d07d3`(初始化→红黑风格→后台IA重排→前台卡片化→区域增删改+海康风重构+超管→修角色高亮→组织树增删改)。组织树增删改已落入提交。
+- **工作区有未提交改动(角色删除 + created_by 修正 + 资源增删改)**:
+  - 角色删除:新增 `internal/service/role.go`(`DeleteRole`:委派校验 + 级联清理含 user_role);`perm.go` 注册 `/api/roles/delete` 并修正 created_by(只在新建时记);`index.html` 角色列表每项加 🗑(按 createdBy/unlimited 控制可见)+ `delRole` + `onActorChange` 刷新 + `.role-del` 样式。
+  - 资源增删改:新增 `internal/service/resource.go`(`SaveResource`/`DeleteResource`);`store.go` 加 `ResourceById`;`runtime.go` 的 `ManageAreaDetail` 增 `ResourceItems`(带 id/type);`perm.go` 注册 `/api/resources[/delete]`;`index.html` 区域详情"本区域资源"卡片换成 ➕/✏️/📦/🗑 + `resAddUI/resEditUI/resFormDo/resMoveUI/resMoveDo/resDelete` + `.res-row` 样式。
+  - 文档:`docs/测试报告.md`(§十二 14/14、§十三 13/13)、`CLAUDE.md`。
+  - **不改 schema/seed**:role/resource 表及相关列早已存在,无需迁移;现有库直接可用。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
@@ -119,7 +125,8 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 - ~~新增/移动区域接口(自动维护 path,移动子树批量更新子孙 path)~~ **已完成**(`service/area.go`,后台"安保区域管理"右侧已有➕/✏️/📦/🗑 按钮,真实落库)。
 - ~~**组织**的增删改真实落库~~ **已完成**(`service/org.go`,后台"人员信息→组织机构"右侧已有真实增删改按钮,§十一)。
 - `gf gen dao` 生成标准 dao 替代手写 `g.Model`。
-- 角色删除接口。资源(摄像头)的增删改落库。
-- 二次授权升级到模型 B/C(`created_by` 已预留)。
+- ~~角色删除接口~~ **已完成**(`service/role.go`,前端角色列表 🗑 按钮,§十二)。
+- ~~资源(摄像头)的增删改落库~~ **已完成**(`service/resource.go`,后台区域详情"本区域资源"卡片有 ➕/✏️/📦/🗑,§十三)。**数据树增删改三件套(区域/组织/资源)已全部完成**。
+- 二次授权升级到模型 B/C(`created_by` 已预留**且已修正可靠**)。
 - 应用端更多模块卡片的真实界面(目前非视频类是占位)。
 - 用户偏好:决策(如委派模型)倾向**先调研真实海康行为再定**;喜欢**每步有验证/测试**;前端**仿海康红黑风格**。

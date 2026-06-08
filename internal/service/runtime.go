@@ -97,18 +97,27 @@ func (s *Store) ManageOrgs(userId int) []VisibleArea {
 	return out
 }
 
+// ResourceBrief 资源管理用的精简条目(带 id/type,供后台增删改)。
+type ResourceBrief struct {
+	Id     int    `json:"id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	AreaId int    `json:"areaId"`
+}
+
 // ManageDetail 后台管理域:点击某节点的详情。
 type ManageDetail struct {
-	Accessible bool     `json:"accessible"` // false => 暂无管理权限
-	Name       string   `json:"name"`
-	Children   []string `json:"children"`  // 直接子节点
-	Resources  []string `json:"resources"` // 区域直接挂的资源(组织无)
+	Accessible    bool            `json:"accessible"` // false => 暂无管理权限
+	Name          string          `json:"name"`
+	Children      []string        `json:"children"`      // 直接子节点
+	Resources     []string        `json:"resources"`     // 区域直接挂的资源名(组织无)
+	ResourceItems []ResourceBrief `json:"resourceItems"` // 区域直接挂的资源(带 id/type,供增删改)
 }
 
 // ManageAreaDetail 点击安保区域:可管理则列出直接子区域与本区域资源;否则暂无管理权限。
 func (s *Store) ManageAreaDetail(userId, areaId int) *ManageDetail {
 	u := s.User(userId)
-	d := &ManageDetail{Children: []string{}, Resources: []string{}}
+	d := &ManageDetail{Children: []string{}, Resources: []string{}, ResourceItems: []ResourceBrief{}}
 	if u == nil {
 		return d
 	}
@@ -129,6 +138,7 @@ func (s *Store) ManageAreaDetail(userId, areaId int) *ManageDetail {
 	for _, r := range s.Resources() {
 		if r.AreaId == areaId {
 			d.Resources = append(d.Resources, r.Name)
+			d.ResourceItems = append(d.ResourceItems, ResourceBrief{Id: r.Id, Name: r.Name, Type: r.Type, AreaId: r.AreaId})
 		}
 	}
 	return d

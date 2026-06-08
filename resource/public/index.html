@@ -27,10 +27,18 @@
   .panel { background:var(--card); border-radius:var(--r-lg); box-shadow:var(--sh); border:1px solid var(--line2); }
   .role-list { width:210px; flex:none; padding:12px; }
   .role-list h3 { margin:4px 0 12px; font-size:15px; }
-  .role-item { padding:9px 12px; border-radius:var(--r); cursor:pointer; margin-bottom:4px; transition:.12s; border:1px solid transparent; }
+  .role-item { padding:9px 12px; border-radius:var(--r); cursor:pointer; margin-bottom:4px; transition:.12s; border:1px solid transparent; display:flex; align-items:center; gap:8px; }
   .role-item:hover { background:#f6f8fa; }
   .role-item.active { background:var(--brand-soft); color:var(--brand); border-color:var(--brand-line); font-weight:600; }
   .role-item small { color:var(--ink3); display:block; font-size:12px; font-weight:400; margin-top:2px; }
+  .role-item .role-nm { flex:1; min-width:0; }
+  .role-del { flex:none; color:var(--ink4); display:inline-flex; padding:3px; border-radius:4px; opacity:0; transition:.12s; }
+  .role-item:hover .role-del { opacity:1; }
+  .role-del:hover { color:var(--brand); background:#fff; }
+  .res-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .res-row:last-child { border-bottom:none; }
+  .res-row .rr-name { flex:1; min-width:0; }
+  .res-row .rr-ops { flex:none; display:flex; gap:6px; }
   .btn { border:none; border-radius:var(--r); padding:8px 16px; cursor:pointer; font-size:13px; transition:.12s; display:inline-flex; align-items:center; gap:5px; }
   .btn-primary { background:var(--brand); color:#fff; box-shadow:0 2px 6px rgba(200,18,37,.25); }
   .btn-primary:hover { background:var(--brand-d); }
@@ -671,6 +679,8 @@ function renderManageNodes(nodes, kind){
 let curManage={area:0,org:0};   // 左树当前选中节点
 let MANAGE_AREAS=[];            // 当前登录用户可见的管理区域(flat,供移动候选/取名)
 let MANAGE_ORGS=[];             // 当前登录用户可见的管理组织(flat,供移动候选/取名)
+let CUR_RES_ITEMS=[];          // 当前打开区域的资源条目(带 id/type,供资源增删改)
+let resEditId=0, resMoveTarget=0; // 资源编辑/移动的目标 id
 async function openManageNode(kind, id){
   const uid=loginUserId();
   curManage[kind]=id;
@@ -710,9 +720,81 @@ async function openManageNode(kind, id){
   }
   html+=`<div class="res-card"><div class="rc-title">子${label}(${d.children.length})</div>${d.children.length?d.children.map(c=>`<span class="badge" style="margin-right:6px">${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
   if(kind==='area'){
-    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-video')} 本区域资源(${d.resources.length})</div>${d.resources.length?d.resources.map(c=>`<span class="badge" style="margin-right:6px">${svgIco('i-video')} ${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+    CUR_RES_ITEMS = d.resourceItems||[];
+    html+=resCardHtml(d);
   }
   main.innerHTML=html;
+}
+
+// ---------- 资源(摄像头)增删改(真实落库:功能关 sys.resource + 区域数据权限) ----------
+const RES_TYPES=[['camera','摄像机'],['dome','球机'],['gun','枪机'],['ptz','云台']];
+function resTypeName(t){ const f=RES_TYPES.find(x=>x[0]===t); return f?f[1]:(t||'摄像机'); }
+function resCardHtml(d){
+  const items=d.resourceItems||[];
+  const rows = items.length ? items.map(r=>`
+    <div class="res-row">
+      <span class="rr-name">${svgIco('i-video')} ${r.name} <span class="badge">${resTypeName(r.type)}</span></span>
+      <span class="rr-ops">
+        <button class="op-btn" onclick="resEditUI(${r.id})">${svgIco('i-edit')} 编辑</button>
+        <button class="op-btn" onclick="resMoveUI(${r.id})">${svgIco('i-move')} 移动</button>
+        <button class="op-btn" onclick="resDelete(${r.id})">${svgIco('i-trash')} 删除</button>
+      </span>
+    </div>`).join('') : '<span class="muted">无</span>';
+  const typeOpts = RES_TYPES.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+  return `<div class="res-card">
+    <div class="rc-title">${svgIco('i-video')} 本区域资源(${items.length})
+      <button class="op-btn" style="float:right" onclick="resAddUI()">${svgIco('i-plus')} 新增摄像头</button>
+    </div>
+    <div id="resFormBox" style="display:none;margin:8px 0;padding:10px;background:#f6f8fa;border-radius:6px">
+      <span id="resFormTitle" style="font-weight:600;margin-right:8px">新增摄像头</span>
+      名称 <input id="resFormName" placeholder="如 3号楼-东门球机" style="padding:6px 9px;border:1px solid var(--line);border-radius:6px">
+      类型 <select id="resFormType" style="padding:6px 9px;border:1px solid var(--line);border-radius:6px">${typeOpts}</select>
+      <button class="op-btn" onclick="resFormDo()">${svgIco('i-check')} 确认</button>
+    </div>
+    <div class="res-rows">${rows}</div>
+    <div id="resMoveBox" style="display:none;margin-top:10px">
+      移动到:<select id="resMoveSel" style="padding:6px 9px;border:1px solid var(--line);border-radius:6px"></select>
+      <button class="op-btn" onclick="resMoveDo()">${svgIco('i-check')} 确认移动</button>
+    </div>
+  </div>`;
+}
+function resAddUI(){ resEditId=0; document.getElementById('resFormTitle').textContent='新增摄像头';
+  document.getElementById('resFormName').value=''; document.getElementById('resFormType').value='camera';
+  document.getElementById('resMoveBox').style.display='none'; document.getElementById('resFormBox').style.display='block'; }
+function resEditUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return; resEditId=id;
+  document.getElementById('resFormTitle').textContent='编辑摄像头';
+  document.getElementById('resFormName').value=r.name; document.getElementById('resFormType').value=r.type||'camera';
+  document.getElementById('resMoveBox').style.display='none'; document.getElementById('resFormBox').style.display='block'; }
+async function resFormDo(){
+  const name=document.getElementById('resFormName').value.trim(); if(!name){ alert('请输入资源名称'); return; }
+  const type=document.getElementById('resFormType').value;
+  const body = resEditId>0
+    ? {id:resEditId, name, type, areaId:(CUR_RES_ITEMS.find(x=>x.id===resEditId)||{}).areaId}  // 同区域=改名/类型
+    : {areaId:curManage.area, name, type};
+  try{
+    await api('/api/resources?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast((resEditId>0?'已保存:':'已新增:')+name,'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ alert('保存失败:'+e.message); }
+}
+function resMoveUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return; resMoveTarget=id;
+  const cands=MANAGE_AREAS.filter(a=>a.accessible && a.id!==r.areaId);
+  if(!cands.length){ toast('没有可移动到的目标区域'); return; }
+  document.getElementById('resMoveSel').innerHTML=cands.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  document.getElementById('resFormBox').style.display='none'; document.getElementById('resMoveBox').style.display='block'; }
+async function resMoveDo(){
+  const r=CUR_RES_ITEMS.find(x=>x.id===resMoveTarget)||{}; const target=Number(document.getElementById('resMoveSel').value);
+  try{
+    await api('/api/resources?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resMoveTarget,areaId:target,name:r.name,type:r.type})});
+    toast('已移动:'+(r.name||''),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ alert('移动失败:'+e.message); }
+}
+async function resDelete(id){
+  const r=CUR_RES_ITEMS.find(x=>x.id===id)||{}; const name=r.name||('#'+id);
+  if(!confirm('确认删除资源「'+name+'」?\n(对该资源的精细授权将一并清理)')) return;
+  try{
+    await api('/api/resources/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ alert('删除失败:'+e.message); }
 }
 
 // ---------- 区域增删改(真实落库) ----------
@@ -858,15 +940,33 @@ async function fetchGrantable(){
   GRANT = await api('/api/grantable?actor='+actorId());
   document.getElementById('actorHint').textContent = GRANT.unlimited ? '不受限,可授予全部权限' : '只能授予该操作者拥有的权限(灰色项不可勾)';
 }
-async function onActorChange(){ await fetchGrantable(); rerenderAll(); }
+async function onActorChange(){ await fetchGrantable(); rerenderAll(); await refreshRoles(); }
 
 async function refreshRoles(){
   const roles = await api('/api/roles');
   META._roles = roles;            // 供用户管理用
   if(document.getElementById('newUserRoles')) renderRoleChecks();
   const el=document.getElementById('roleList');
-  el.innerHTML = roles.map(r=>`<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})">${r.name}<small>${r.description||''}</small></div>`).join('');
+  el.innerHTML = roles.map(r=>{
+    // 删除按钮可见性:不受限/超管(GRANT.unlimited)可删任意;委派操作人只能删自己创建的(createdBy)
+    const canDel = GRANT.unlimited || Number(r.createdBy)===actorId();
+    const del = canDel ? `<span class="role-del" title="删除角色" onclick="event.stopPropagation();delRole(${r.id})">${svgIco('i-trash')}</span>` : '';
+    return `<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})"><span class="role-nm">${r.name}<small>${r.description||''}</small></span>${del}</div>`;
+  }).join('');
   if(!currentRoleId && roles.length){ loadRole(roles[0].id); }
+}
+
+// 删除角色:绑用户也直接删(后端级联清 user_role),用户失去该角色权限。
+async function delRole(id){
+  const r=(META._roles||[]).find(x=>x.id===id)||{}; const name=r.name||('#'+id);
+  if(!confirm(`确认删除角色「${name}」?\n\n绑定该角色的用户将失去这部分权限(若不再有其他角色,登录后将无任何权限)。\n此操作不可撤销。`)) return;
+  try{
+    await api('/api/roles/delete?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    if(currentRoleId===id) currentRoleId=0;
+    toast('已删除角色:'+name,'i-trash');
+    await reloadMeta();   // user_role 绑定可能变化 → 刷新用户列表/角色下拉
+    await refreshRoles();
+  }catch(e){ alert('删除失败:'+e.message); }
 }
 
 // 同步更新左侧角色列表的选中高亮(用显式 id,不依赖异步重渲染)

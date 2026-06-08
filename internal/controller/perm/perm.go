@@ -15,6 +15,7 @@ func Register(group *ghttp.RouterGroup) {
 	group.GET("/roles", listRoles)
 	group.GET("/roles/{id}", getRole)
 	group.POST("/roles", saveRole)
+	group.POST("/roles/delete", deleteRole)
 	group.GET("/grantable", grantable)
 	group.POST("/check", check)
 	// 用户管理 + 应用端体验
@@ -28,6 +29,9 @@ func Register(group *ghttp.RouterGroup) {
 	// 组织管理(真实落库:写时鉴权 + path 自动维护)
 	group.POST("/orgs", saveOrg)
 	group.POST("/orgs/delete", deleteOrg)
+	// 资源(摄像头)管理(真实落库:写时鉴权 sys.resource + 区域数据权限)
+	group.POST("/resources", saveResource)
+	group.POST("/resources/delete", deleteResource)
 	// 后台管理域体验
 	group.GET("/sys-menus", sysMenus)
 	group.GET("/manage-areas", manageAreas)
@@ -85,8 +89,13 @@ func saveRole(r *ghttp.Request) {
 	// 受控委派(二次授权)·海康式合并(模型 A):
 	//   范围内以提交为准,范围外保留角色原有权限(编辑者看不到也删不掉)。actor=0=不受限。
 	actor := r.Get("actor").Int()
-	role.CreatedBy = actor
 	old := service.S.Role(role.Id) // 编辑时取原角色;新建为 nil
+	// created_by 只在新建时记为操作人;编辑时保持原值不变(委派删除"只能删自己创建的"依赖它)。
+	if old != nil {
+		role.CreatedBy = old.CreatedBy
+	} else {
+		role.CreatedBy = actor
+	}
 	merged, preserved := service.S.MergeDelegated(actor, old, &role)
 	saved, err := service.S.SaveRole(r.Context(), merged)
 	if err != nil {
@@ -94,6 +103,15 @@ func saveRole(r *ghttp.Request) {
 		return
 	}
 	r.Response.WriteJson(g.Map{"code": 0, "message": "ok", "data": saved, "preserved": preserved})
+}
+
+// deleteRole 删除角色(委派校验 + 级联清理引用,含 user_role 绑定)。?actor=操作人,body 含 id。
+func deleteRole(r *ghttp.Request) {
+	if err := service.S.DeleteRole(r.Context(), r.Get("actor").Int(), r.Get("id").Int()); err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, true)
 }
 
 // grantable 返回操作者可授出的范围上限(供前端置灰)。?actor=用户ID,0=不受限。
@@ -164,6 +182,31 @@ func saveOrg(r *ghttp.Request) {
 // deleteOrg 删除组织(仅限无子组织、无下属用户),并清理对该节点的数据范围授权。?userId=操作人
 func deleteOrg(r *ghttp.Request) {
 	if err := service.S.DeleteOrg(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, true)
+}
+
+// saveResource 新增/重命名/改类型/移动资源(摄像头)。?userId=操作人。
+// 写时鉴权(sys.resource 菜单 + 资源所在区域的安保区域管理权限)。
+func saveResource(r *ghttp.Request) {
+	var in service.ResourceSaveInput
+	if err := r.Parse(&in); err != nil {
+		fail(r, "参数错误:"+err.Error())
+		return
+	}
+	saved, err := service.S.SaveResource(r.Context(), r.Get("userId").Int(), &in)
+	if err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, saved)
+}
+
+// deleteResource 删除资源,并清理对该资源的精细授权(role_resource_action)。?userId=操作人
+func deleteResource(r *ghttp.Request) {
+	if err := service.S.DeleteResource(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
 		fail(r, err.Error())
 		return
 	}
