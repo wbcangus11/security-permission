@@ -121,7 +121,7 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 	if g.Unlimited { // 超级管理员作为操作者:可授全部,直接采用提交
 		return sub, 0
 	}
-	menuG, areaG, orgG, resAreaG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds)
+	menuG, areaG, orgG, resAreaG, roleG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds), intSet(g.RoleIds)
 	raG := map[string]bool{}
 	for _, ra := range g.ResourceActions {
 		raG[raKey(ra.ResourceId, ra.ActionCode)] = true
@@ -154,6 +154,8 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 	preserved += p
 	res.ResourceAreaScopes, p = mergeScopes(old.ResourceAreaScopes, sub.ResourceAreaScopes, resAreaG)
 	preserved += p
+	res.RoleScopes, p = mergeScopes(old.RoleScopes, sub.RoleScopes, roleG)
+	preserved += p
 
 	// 资源操作
 	seenRA := map[string]bool{}
@@ -183,10 +185,11 @@ type Grantable struct {
 	OrgIds          []int                  `json:"orgIds"`
 	ResAreaIds      []int                  `json:"resAreaIds"`
 	ResourceActions []model.ResourceAction `json:"resourceActions"`
+	RoleIds         []int                  `json:"roleIds"` // 委派维度:可管理(可编辑/删除/再委派)的角色集
 }
 
 func (s *Store) GrantableSet(actorId int) *Grantable {
-	g := &Grantable{MenuIds: []int{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}, ResourceActions: []model.ResourceAction{}}
+	g := &Grantable{MenuIds: []int{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}, ResourceActions: []model.ResourceAction{}, RoleIds: []int{}}
 	if actorId <= 0 {
 		g.Unlimited = true
 		return g
@@ -224,5 +227,42 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 			}
 		}
 	}
+	// 委派维度:可管理角色集 = 自建角色 ∪ 自身角色的「角色范围」并集(见 ManageableRoles)
+	mset, _ := s.ManageableRoles(actorId)
+	for _, r := range s.Roles() { // 按角色 id 有序输出,便于前端/截图稳定
+		if mset[r.Id] {
+			g.RoleIds = append(g.RoleIds, r.Id)
+		}
+	}
 	return g
+}
+
+// ManageableRoles 返回操作者可管理(可编辑/删除/再委派)的角色集合。
+//
+//	manageable(actor) = { 自己创建的角色 } ∪ { actor 各有效角色的「角色范围」并集 }
+//
+// actorId<=0(不受限)或超级管理员 → unlimited=true(可管理全部角色)。单层不级联,与模型 A 自洽。
+func (s *Store) ManageableRoles(actorId int) (set map[int]bool, unlimited bool) {
+	set = map[int]bool{}
+	if actorId <= 0 {
+		return set, true
+	}
+	actor := s.User(actorId)
+	if actor == nil {
+		return set, false
+	}
+	if actor.IsSuperuser {
+		return set, true
+	}
+	for _, r := range s.Roles() { // 1) 自己创建的角色(模型 A)
+		if r.CreatedBy == actorId {
+			set[r.Id] = true
+		}
+	}
+	for _, r := range s.effectiveRoles(actor) { // 2) 显式角色范围(模型 B)
+		for _, sc := range r.RoleScopes {
+			set[sc.NodeId] = true
+		}
+	}
+	return set, false
 }

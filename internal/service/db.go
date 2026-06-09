@@ -103,6 +103,8 @@ func (s *Store) Reload(ctx context.Context) error {
 			r.OrgScopes = append(r.OrgScopes, sc)
 		case "RES_AREA":
 			r.ResourceAreaScopes = append(r.ResourceAreaScopes, sc)
+		case "ROLE":
+			r.RoleScopes = append(r.RoleScopes, sc)
 		}
 	}
 	for _, x := range ras {
@@ -190,6 +192,9 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 			return err
 		}
 		if err := insScope("RES_AREA", r.ResourceAreaScopes); err != nil {
+			return err
+		}
+		if err := insScope("ROLE", r.RoleScopes); err != nil {
 			return err
 		}
 

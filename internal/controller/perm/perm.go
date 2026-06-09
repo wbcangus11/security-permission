@@ -90,7 +90,14 @@ func saveRole(r *ghttp.Request) {
 	//   范围内以提交为准,范围外保留角色原有权限(编辑者看不到也删不掉)。actor=0=不受限。
 	actor := r.Get("actor").Int()
 	old := service.S.Role(role.Id) // 编辑时取原角色;新建为 nil
-	// created_by 只在新建时记为操作人;编辑时保持原值不变(委派删除"只能删自己创建的"依赖它)。
+	// 编辑既有角色:委派关——操作者须「可管理」该角色(对齐海康 canEdit);新建无此限(创建人即拥有者)。
+	if old != nil {
+		if err := service.S.GuardManageRole(actor, role.Id); err != nil {
+			fail(r, err.Error())
+			return
+		}
+	}
+	// created_by 只在新建时记为操作人;编辑时保持原值不变(委派"可管理角色集"含自建角色依赖它)。
 	if old != nil {
 		role.CreatedBy = old.CreatedBy
 	} else {

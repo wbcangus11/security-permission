@@ -82,6 +82,10 @@ type Role struct {
 	// 数据权限·应用域
 	ResourceAreaScopes []DataScope      `json:"resourceAreaScopes"` // 业务资源范围(粗粒度,继承新资源)
 	ResourceActions    []ResourceAction `json:"resourceActions"`    // 资源级操作精细覆盖
+
+	// 委派维度·显式角色范围(模型 B):该角色「可管理哪些其他角色」。
+	// 复用 DataScope(node_id=被管理角色 id),角色无树故 IncludeChild 恒 false。
+	RoleScopes []DataScope `json:"roleScopes"`
 }
 
 // User 账号,可绑定多个角色,归属某组织。

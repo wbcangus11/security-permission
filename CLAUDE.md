@@ -10,10 +10,11 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 ## 一句话现状
 
-功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 全部测试通过**。
+功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 显式角色范围/模型B 11 全部测试通过**。
 区域**与组织**均已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用):区域见测试报告 §九(11 项),组织见 §十一(12 项),两者共用同一套 path-维护引擎,仅「非空」判定不同(区域=无资源,组织=无子组织且无下属用户)。
 **角色**支持**真实删除**(§十二,14 项):委派校验(普通操作人只能删自己创建的 `created_by`,超管/不受限删任意)+ 级联清理(含 `user_role`,绑用户也直接删 → 用户失权);配套修正了 `created_by`(仅新建时记,编辑不覆盖)。
 **资源(摄像头)**支持**真实增删改**(§十三,13 项):功能关 `sys.resource` + 数据关 `CheckArea(所在区域)`;新增自动被覆盖该区域 RES_AREA 的角色继承;移动改 `area_id`;删除清理 `role_resource_action`。至此**数据树增删改三件套(区域/组织/资源)全部完成**。
+**委派已升级到模型 A + 模型 B**(§十四,11 项):新增**显式角色范围**——角色可配「可管理哪些其他角色」。可管理角色集 = (自己创建的 `created_by`) ∪ (本人各角色「角色范围」并集),统一驱动角色列表 canEdit/canDelete、编辑/删除门禁、及角色范围维度自身的可授范围。对照真实海康(`docs/海康对照.md`)补齐的唯一结构性差距;复用 `role_data_scope` 的 `scope_type='ROLE'`,零 DDL 迁移。
 
 ---
 
@@ -22,15 +23,13 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 1. **两个权限维度**:功能权限(角色→菜单,菜单分 SYS 系统管理域 / APP 应用域)+ 数据权限(角色→区域树/组织树/业务资源)。两者同时满足才放行。**例外:超级管理员**(`user.is_superuser`,仿海康内置 root)鉴权三关直接放行,拥有现有及将来全部权限,与数据权限模型解耦(引擎层特例,不依赖角色/数据范围)。短路点:`auth.go` 三关 + `delegation.go` 的 `userHasMenuId`/`userResAreaCovers`/`GrantableSet`/`MergeDelegated`。种子内置 admin 账号(`tools/dbinit` 幂等补列 + 确保至少一个超管)。
 2. **数据权限挂在树上,物化路径 `path` 前缀判断子树**:存 `{节点, include_child}`,不展开子节点;授权子树后**新增子节点自动继承**(`path LIKE '授权节点path%'`)。**系统只有一个根区域**,故授权根=拥有现在及将来全部区域;新增区域时必须算对 `path`=父.path+新ID+"/"。
 3. **业务资源权限两层**:区域范围(粗,继承新资源)+ 资源级操作精细配置(细;有精细=覆盖模式只给所列操作,无精细=继承区域全部操作)。
-4. **二次授权 = 受控委派,模型 A(写时校验 + 合并,不级联)**,已实测对齐海康:
-   - 已建角色有效权限**不级联**(创建人被收权,旧角色不变)。
-   - 编辑界面按创建人当前权限**实时过滤**(超范围节点前端**隐藏**)。
-   - 保存时**合并**:`最终 = (提交 ∩ 创建人可授范围) ∪ (原有 \ 创建人可授范围)`,范围外原有权限原样保留(看不到也删不掉)。
-   - 实现:`service/delegation.go` 的 `GrantableSet` 与 `MergeDelegated`。
-   - **角色删除**(`service/role.go` `DeleteRole`)的委派语义与之自洽:不受限(actor=0)/超管删任意;普通操作人须有「角色管理」菜单(`sys.person.role`)且**只能删自己创建的**(`created_by`)。绑用户也直接删(级联清 `user_role`,用户失权)。
-   - **`created_by` 语义已修正**:仅**新建**时记为操作人,**编辑**时保持原值不变(原先 `saveRole` 每次保存都覆盖,导致"创建人"不可靠;现 `perm.go` 区分 old==nil)。这是"只能删自己创建的"成立的前提。
-   - **未来若要升级**到模型 B(运行时取交集)/ C(变更级联):`role.created_by` 字段已预留(且现在可靠)。
-5. **存储**:MySQL(库 `security_permission`,root/123456)为持久层;启动 `service.S.Reload(ctx)` 全量载入内存缓存,鉴权读缓存,写角色/用户落库后刷新缓存。`role_data_scope` 一张表用 `scope_type`(AREA/ORG/RES_AREA)统一三种树范围。
+4. **二次授权 = 受控委派,模型 A(写时校验 + 合并,不级联)+ 模型 B(显式角色范围)**,已实测对齐海康:
+   - **权限维度合并(模型 A)**:已建角色有效权限**不级联**(创建人被收权,旧角色不变);编辑界面按创建人当前权限**实时过滤**(超范围节点前端**隐藏**);保存时**合并**:`最终 = (提交 ∩ 创建人可授范围) ∪ (原有 \ 创建人可授范围)`,范围外原有权限原样保留(看不到也删不掉)。实现:`service/delegation.go` 的 `GrantableSet` 与 `MergeDelegated`(5 个维度:菜单/区域/组织/资源操作/**角色范围**)。
+   - **可管理角色集(模型 B)**:`manageable(actor) = (自己创建的 created_by) ∪ (本人各角色「角色范围」RoleScopes 并集)`,单层不级联。统一驱动:角色列表 canEdit/canDelete、编辑/删除门禁、角色范围维度自身的可授范围(`Grantable.RoleIds`)。实现:`delegation.go` 的 `ManageableRoles`/`GrantableSet`;`role.go` 的 `GuardManageRole`(编辑删除共用门禁);`perm.go` saveRole 编辑门禁。对齐海康原文「可选择的角色范围 = 勾选的角色 ∪ 用户自行创建的角色」。
+   - **角色删除**(`service/role.go` `DeleteRole`):不受限(actor=0)/超管删任意;普通操作人须有「角色管理」菜单(`sys.person.role`)且角色在 `manageable` 集内。绑用户也直接删(级联清 `user_role`,用户失权);**并清理别的角色对被删角色的 `scope_type='ROLE'` 引用**(与删区域清授权引用对称)。
+   - **`created_by` 语义**:仅**新建**时记为操作人,**编辑**时保持原值不变(`perm.go` 区分 old==nil)。这是 `manageable` 集含「自建角色」那一半的前提。
+   - 角色范围存储复用 `role_data_scope`(`scope_type='ROLE'`,`node_id`=被管理角色 id,角色无树故 `include_child` 不参与判定);**模型 C(变更级联)**仍可后续升级。
+5. **存储**:MySQL(库 `security_permission`,root/123456)为持久层;启动 `service.S.Reload(ctx)` 全量载入内存缓存,鉴权读缓存,写角色/用户落库后刷新缓存。`role_data_scope` 一张表用 `scope_type`(AREA/ORG/RES_AREA/**ROLE**)统一三种树范围 + 角色范围(模型 B)。
 6. **前端两大块对应两个域**:应用端=应用域(看监控,RES_AREA);系统管理后台=系统域(系统菜单 + 安保区域管理 AREA + 组织管理 ORG)。"应用域有权 ≠ 管理域有权"(如李四能看监控但后台为空)。
 
 ---
@@ -44,11 +43,11 @@ internal/
     store.go                 内存缓存 + 读方法
     db.go                    MySQL 加载(Reload)/ 写回(SaveRole, SaveUser)
     auth.go                  鉴权引擎(菜单/区域/组织/资源 三关)★
-    delegation.go            二次授权:GrantableSet + MergeDelegated ★
+    delegation.go            二次授权:GrantableSet(含 RoleIds)+ MergeDelegated(5 维含角色范围)+ ManageableRoles(模型B 可管理角色集)★
     runtime.go               应用端/后台体验:可见树、资源、菜单(VisibleAreas/ManageAreas/ManageOrgs/AreaResources/SysMenus/AppMenus…)
     area.go                  区域增删改:写时鉴权 + path 自动维护(SaveArea 新增/重命名/移动 + DeleteArea)★
     org.go                   组织增删改:与 area.go 完全对称,功能关=人员信息 sys.person.info,删除前置=无子组织且无下属用户 ★
-    role.go                  角色删除:委派校验(不受限/超管删任意;普通操作人=功能关 sys.person.role + 仅删自建 created_by)+ 级联清理(含 user_role,绑用户也直接删)★
+    role.go                  角色删除 + GuardManageRole(编辑/删除共用门禁=功能关 sys.person.role + 角色在 manageable 集);级联清理(含 user_role + 清别角色的 ROLE 范围引用)★
     resource.go              资源(摄像头)增删改:功能关 sys.resource + 数据关 CheckArea(所在区域);新增自动被 RES_AREA 角色继承;删除清理 role_resource_action ★
   controller/perm/perm.go    全部 HTTP 接口
   cmd/cmd.go                 路由 + 启动时 Reload + 静态目录
@@ -115,7 +114,10 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
   - 角色删除:`internal/service/role.go`(`DeleteRole`:委派校验 + 级联清理含 user_role);`perm.go` 注册 `/api/roles/delete` 并修正 created_by(只在新建时记、编辑不覆盖);`index.html` 角色列表每项 🗑(按 createdBy/unlimited 控制可见)+ `delRole` + `onActorChange` 刷新 + `.role-del` 样式。
   - 资源增删改:`internal/service/resource.go`(`SaveResource`/`DeleteResource`);`store.go` 加 `ResourceById`;`runtime.go` 的 `ManageAreaDetail` 增 `ResourceItems`(带 id/type);`perm.go` 注册 `/api/resources[/delete]`;`index.html` 区域详情"本区域资源"卡片 ➕/✏️/📦/🗑 + `resAddUI/resEditUI/resFormDo/resMoveUI/resMoveDo/resDelete` + `.res-row` 样式。
   - **不改 schema/seed**:role/resource 表及相关列早已存在,无需迁移;现有库直接可用。
-- **工作区干净**(仅本次对本「git 状态」小节的刷新尚未提交)。
+- **未提交(等用户确认)**:
+  - 海康对照调研 → `docs/海康对照.md`(新增)。
+  - **模型 B 显式角色范围**:`model/permission.go`(Role 加 `RoleScopes`)、`service/db.go`(Reload/SaveRole 加 `ROLE` 类型读写)、`service/delegation.go`(`Grantable.RoleIds`/`GrantableSet`/`MergeDelegated` 第5维/`ManageableRoles`)、`service/role.go`(`GuardManageRole` + 删除清 ROLE 引用)、`controller/perm/perm.go`(saveRole 编辑门禁)、`index.html`(「角色范围」子 Tab + 树 + `roleCanManage`/🔒 只读)、`docs/{测试报告,权限设计说明}.md`、本 CLAUDE.md。
+  - **零 DDL 迁移**:角色范围复用 `role_data_scope` 的 `scope_type='ROLE'`(列宽够用),现有库直接可用,无需改 schema/seed/dbinit。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
@@ -127,6 +129,6 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 - `gf gen dao` 生成标准 dao 替代手写 `g.Model`。
 - ~~角色删除接口~~ **已完成**(`service/role.go`,前端角色列表 🗑 按钮,§十二)。
 - ~~资源(摄像头)的增删改落库~~ **已完成**(`service/resource.go`,后台区域详情"本区域资源"卡片有 ➕/✏️/📦/🗑,§十三)。**数据树增删改三件套(区域/组织/资源)已全部完成**。
-- 二次授权升级到模型 B/C(`created_by` 已预留**且已修正可靠**)。
+- ~~二次授权升级到模型 B(显式角色范围)~~ **已完成**(`delegation.go` `ManageableRoles`/`role.go` `GuardManageRole`,前端「角色范围」子 Tab,§十四)。**模型 C(变更级联)** 仍可后续做。
 - 应用端更多模块卡片的真实界面(目前非视频类是占位)。
 - 用户偏好:决策(如委派模型)倾向**先调研真实海康行为再定**;喜欢**每步有验证/测试**;前端**仿海康红黑风格**。
