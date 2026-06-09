@@ -237,8 +237,18 @@ func (s *Store) AreaResources(userId, areaId int) *AreaResourcesView {
 			continue
 		}
 		rv := ResourceView{Id: r.Id, Name: r.Name, Area: s.nodeName("area", r.AreaId)}
+		anyAllowed := false
 		for _, act := range acts {
-			rv.Actions = append(rv.Actions, ActionAllow{Code: act.Code, Name: act.Name, Allowed: s.CheckResource(u, r.Id, act.Code).Allow})
+			ok := s.CheckResource(u, r.Id, act.Code).Allow
+			if ok {
+				anyAllowed = true
+			}
+			rv.Actions = append(rv.Actions, ActionAllow{Code: act.Code, Name: act.Name, Allowed: ok})
+		}
+		// 资源级可见(L2,对齐海康):该角色对此资源无任何操作权 → 应用端不列出(隐藏)。
+		// 仅当精细模式且零操作时才会触发;继承(无精细)恒有全部操作 → 始终可见。
+		if !anyAllowed {
+			continue
 		}
 		v.Resources = append(v.Resources, rv)
 	}

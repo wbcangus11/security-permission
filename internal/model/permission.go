@@ -79,9 +79,12 @@ type Role struct {
 	AreaScopes []DataScope `json:"areaScopes"` // 安保区域管理权限
 	OrgScopes  []DataScope `json:"orgScopes"`  // 组织管理权限
 
-	// 数据权限·应用域
-	ResourceAreaScopes []DataScope      `json:"resourceAreaScopes"` // 业务资源范围(粗粒度,继承新资源)
-	ResourceActions    []ResourceAction `json:"resourceActions"`    // 资源级操作精细覆盖
+	// 数据权限·应用域(两级:区域范围 粗 + 资源级 细)
+	ResourceAreaScopes []DataScope      `json:"resourceAreaScopes"` // L1 业务资源范围(粗粒度,继承新资源)
+	ResourceActions    []ResourceAction `json:"resourceActions"`    // L2 资源级操作精细覆盖
+	// L2「精细模式」资源集:进入精细=该资源只授予 ResourceActions 列出的操作(覆盖)。
+	// 显式持久化(独立于操作行数),使「精细+0操作」可表达=该资源零操作→应用端资源级不可见。
+	ResourceOverrides []int `json:"resourceOverrides"`
 
 	// 委派维度·显式角色范围(模型 B):该角色「可管理哪些其他角色」。
 	// 复用 DataScope(node_id=被管理角色 id),角色无树故 IncludeChild 恒 false。

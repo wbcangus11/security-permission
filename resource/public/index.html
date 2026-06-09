@@ -349,7 +349,7 @@
           <div id="tree-appmenu"></div>
         </div>
         <div data-subpane="res" style="display:none">
-          <div class="tip">先按区域勾定「资源范围」（粗粒度，继承新资源）；下方对范围内已存在资源做操作项精细配置（勾选「精细」后仅授予所选操作，否则继承区域=全部操作）。</div>
+          <div class="tip">两级数据权限：①「资源范围」按区域勾定（粗粒度，继承新资源）；②下方对范围内资源做精细配置（勾「精细」后仅授予所选操作，否则继承区域=全部操作）。<b>勾「精细」但一个操作都不勾 = 该资源零权限 → 应用端资源级不可见（从列表隐藏）。</b></div>
           <strong>资源权限范围</strong>
           <div id="tree-resarea" style="margin:8px 0 16px"></div>
           <strong>资源操作精细配置</strong>
@@ -440,7 +440,7 @@ function roleCanManage(id){ return GRANT.unlimited || (GRANT.roleIds||[]).includ
 // 「角色范围」树节点:扁平角色列表(每个角色一个根,无子节点),排除当前编辑角色自身
 function roleNodes(){ return ALL_ROLES.filter(r=>r.id!==currentRoleId).map(r=>({id:r.id,name:r.name,children:[]})); }
 
-function blankRole(){ return {id:0,name:'',description:'',menuIds:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[],resourceActions:[],roleScopes:[]}; }
+function blankRole(){ return {id:0,name:'',description:'',menuIds:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[],resourceActions:[],roleScopes:[],resourceOverrides:[]}; }
 
 // ---------- 通用请求 ----------
 async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json(); if(j.code!==0) throw new Error(j.message); return j.data; }
@@ -1014,6 +1014,8 @@ async function loadRole(id){
   document.getElementById('roleReadonly').style.display = editable ? 'none' : 'block';
   // 资源精细配置
   for(const k in resOverride) delete resOverride[k];
+  // 精细模式 = 显式 resourceOverrides ∪ 有操作行(兼容旧数据);零操作的精细资源也要还原成 mode=true(空操作)
+  (role.resourceOverrides||[]).forEach(rid=>{ if(!resOverride[rid]) resOverride[rid]={mode:true,actions:new Set()}; });
   (role.resourceActions||[]).forEach(ra=>{ if(!resOverride[ra.resourceId]) resOverride[ra.resourceId]={mode:true,actions:new Set()}; resOverride[ra.resourceId].actions.add(ra.actionCode); });
   rerenderAll(); // 切换角色不必重拉/重建列表,高亮已在开头同步更新
 }
@@ -1089,9 +1091,11 @@ async function saveRole(){
     orgScopes: extractScopes(buildTree(META.orgs), checked.org),
     resourceAreaScopes: extractScopes(buildTree(META.areas), checked.resarea),
     resourceActions: [],
+    resourceOverrides: [],
     roleScopes: extractScopes(roleNodes(), checked.rolescope)
   };
-  Object.keys(resOverride).forEach(rid=>{ const ov=resOverride[rid]; if(ov.mode){ ov.actions.forEach(ac=>r.resourceActions.push({resourceId:Number(rid),actionCode:ac})); } });
+  // 精细模式持久化:mode=true 的资源记入 resourceOverrides(即便零操作),使「精细+0操作」=资源级不可见
+  Object.keys(resOverride).forEach(rid=>{ const ov=resOverride[rid]; if(ov.mode){ r.resourceOverrides.push(Number(rid)); ov.actions.forEach(ac=>r.resourceActions.push({resourceId:Number(rid),actionCode:ac})); } });
   if(!r.name){ alert('角色名称不能为空'); return; }
   const vbox=document.getElementById('violations'); vbox.style.display='none'; vbox.innerHTML='';
   const resp=await fetch('/api/roles?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});

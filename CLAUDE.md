@@ -10,11 +10,12 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 ## 一句话现状
 
-功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 显式角色范围/模型B 11 全部测试通过**。
+功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 显式角色范围/模型B 11 + 资源级可见 6 全部测试通过**。
 区域**与组织**均已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用):区域见测试报告 §九(11 项),组织见 §十一(12 项),两者共用同一套 path-维护引擎,仅「非空」判定不同(区域=无资源,组织=无子组织且无下属用户)。
 **角色**支持**真实删除**(§十二,14 项):委派校验(普通操作人只能删自己创建的 `created_by`,超管/不受限删任意)+ 级联清理(含 `user_role`,绑用户也直接删 → 用户失权);配套修正了 `created_by`(仅新建时记,编辑不覆盖)。
 **资源(摄像头)**支持**真实增删改**(§十三,13 项):功能关 `sys.resource` + 数据关 `CheckArea(所在区域)`;新增自动被覆盖该区域 RES_AREA 的角色继承;移动改 `area_id`;删除清理 `role_resource_action`。至此**数据树增删改三件套(区域/组织/资源)全部完成**。
 **委派已升级到模型 A + 模型 B**(§十四,11 项):新增**显式角色范围**——角色可配「可管理哪些其他角色」。可管理角色集 = (自己创建的 `created_by`) ∪ (本人各角色「角色范围」并集),统一驱动角色列表 canEdit/canDelete、编辑/删除门禁、及角色范围维度自身的可授范围。对照真实海康(`docs/海康对照.md`)补齐的唯一结构性差距;复用 `role_data_scope` 的 `scope_type='ROLE'`,零 DDL 迁移。
+**应用端资源级可见**(§十五,6 项):业务资源两级数据权限补齐 L2 可见性——精细模式且零操作=该资源应用端列表隐藏(对齐海康「区域级继承 + 资源级查看」)。「精细模式」显式持久化(`Role.ResourceOverrides`,复用 `role_data_scope` `scope_type='RESOVR'`,零 DDL,向后兼容)。
 
 ---
 
@@ -22,7 +23,7 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 1. **两个权限维度**:功能权限(角色→菜单,菜单分 SYS 系统管理域 / APP 应用域)+ 数据权限(角色→区域树/组织树/业务资源)。两者同时满足才放行。**例外:超级管理员**(`user.is_superuser`,仿海康内置 root)鉴权三关直接放行,拥有现有及将来全部权限,与数据权限模型解耦(引擎层特例,不依赖角色/数据范围)。短路点:`auth.go` 三关 + `delegation.go` 的 `userHasMenuId`/`userResAreaCovers`/`GrantableSet`/`MergeDelegated`。种子内置 admin 账号(`tools/dbinit` 幂等补列 + 确保至少一个超管)。
 2. **数据权限挂在树上,物化路径 `path` 前缀判断子树**:存 `{节点, include_child}`,不展开子节点;授权子树后**新增子节点自动继承**(`path LIKE '授权节点path%'`)。**系统只有一个根区域**,故授权根=拥有现在及将来全部区域;新增区域时必须算对 `path`=父.path+新ID+"/"。
-3. **业务资源权限两层**:区域范围(粗,继承新资源)+ 资源级操作精细配置(细;有精细=覆盖模式只给所列操作,无精细=继承区域全部操作)。
+3. **业务资源权限两层**:区域范围(粗,继承新资源)+ 资源级操作精细配置(细;有精细=覆盖模式只给所列操作,无精细=继承区域全部操作)。**资源级可见**(对齐海康前台两级):精细模式且零操作=该资源零权限→应用端列表隐藏;为此「精细模式」显式持久化(`Role.ResourceOverrides`,复用 `role_data_scope` `scope_type='RESOVR'`,零 DDL),`auth.go` `hasOverride = ResourceOverrides ∪ 有操作行`(兼容旧数据),`runtime.go` `AreaResources` 过滤零操作资源,`delegation.go` 把精细标记并入合并(第6维)。
 4. **二次授权 = 受控委派,模型 A(写时校验 + 合并,不级联)+ 模型 B(显式角色范围)**,已实测对齐海康:
    - **权限维度合并(模型 A)**:已建角色有效权限**不级联**(创建人被收权,旧角色不变);编辑界面按创建人当前权限**实时过滤**(超范围节点前端**隐藏**);保存时**合并**:`最终 = (提交 ∩ 创建人可授范围) ∪ (原有 \ 创建人可授范围)`,范围外原有权限原样保留(看不到也删不掉)。实现:`service/delegation.go` 的 `GrantableSet` 与 `MergeDelegated`(5 个维度:菜单/区域/组织/资源操作/**角色范围**)。
    - **可管理角色集(模型 B)**:`manageable(actor) = (自己创建的 created_by) ∪ (本人各角色「角色范围」RoleScopes 并集)`,单层不级联。统一驱动:角色列表 canEdit/canDelete、编辑/删除门禁、角色范围维度自身的可授范围(`Grantable.RoleIds`)。实现:`delegation.go` 的 `ManageableRoles`/`GrantableSet`;`role.go` 的 `GuardManageRole`(编辑删除共用门禁);`perm.go` saveRole 编辑门禁。对齐海康原文「可选择的角色范围 = 勾选的角色 ∪ 用户自行创建的角色」。
@@ -115,7 +116,8 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
   - **模型 B 显式角色范围**:`model/permission.go`(Role 加 `RoleScopes`)、`service/db.go`(Reload/SaveRole 加 `ROLE` 类型读写)、`service/delegation.go`(`Grantable.RoleIds`/`GrantableSet`/`MergeDelegated` 第5维/`ManageableRoles`)、`service/role.go`(`GuardManageRole` + 删除清 ROLE 引用)、`controller/perm/perm.go`(saveRole 编辑门禁)、`index.html`(「角色范围」子 Tab + 树 + `roleCanManage`/🔒 只读;顺修 `renderResTable` 二次渲染 NPE)、`docs/{测试报告 §十四,权限设计说明 5.3}`。
   - **零 DDL 迁移**:角色范围复用 `role_data_scope` 的 `scope_type='ROLE'`(列宽够用),现有库直接可用,无需改 schema/seed/dbinit。
 - `61ad052` 内容回顾(已落库):角色删除(`role.go` `DeleteRole` + `/api/roles/delete` + created_by 修正)、资源增删改(`resource.go` + 区域详情卡片 ➕/✏️/📦/🗑)。均不改 schema/seed。
-- **工作区干净**(仅本次对本「git 状态」小节的刷新尚未提交)。
+- HEAD=`da8d608`(8489620 之后跟一条"刷新 git 状态小节"提交)。
+- **未提交(等用户确认)· 应用端资源级可见(§十五)**:`model/permission.go`(Role 加 `ResourceOverrides`)、`service/db.go`(RESOVR 读写)、`service/auth.go`(`CheckResource` 精细判定=ResourceOverrides∪操作行,兼容旧数据)、`service/delegation.go`(`MergeDelegated` 第6维=精细标记)、`service/runtime.go`(`AreaResources` 过滤零操作资源)、`index.html`(saveRole/loadRole 持久化精细模式 + tip)、`docs/{测试报告 §十五,权限设计说明 3.3.1}`、本 CLAUDE.md。**零 DDL**(复用 `role_data_scope` `scope_type='RESOVR'`)。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---

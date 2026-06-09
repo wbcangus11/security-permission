@@ -123,8 +123,10 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 	}
 	menuG, areaG, orgG, resAreaG, roleG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds), intSet(g.RoleIds)
 	raG := map[string]bool{}
+	resOvrG := map[int]bool{} // 可精细配置的资源 = 操作者对其至少有一个可授操作
 	for _, ra := range g.ResourceActions {
 		raG[raKey(ra.ResourceId, ra.ActionCode)] = true
+		resOvrG[ra.ResourceId] = true
 	}
 
 	res := &model.Role{Id: sub.Id, Name: sub.Name, Description: sub.Description, CreatedBy: sub.CreatedBy}
@@ -170,6 +172,22 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 		if !raG[k] && !seenRA[k] {
 			res.ResourceActions = append(res.ResourceActions, ra)
 			seenRA[k] = true
+			preserved++
+		}
+	}
+
+	// 资源精细模式标记(同菜单逻辑:范围内取提交,范围外保留原有)
+	seenOvr := map[int]bool{}
+	for _, id := range sub.ResourceOverrides {
+		if resOvrG[id] {
+			res.ResourceOverrides = append(res.ResourceOverrides, id)
+			seenOvr[id] = true
+		}
+	}
+	for _, id := range old.ResourceOverrides {
+		if !resOvrG[id] && !seenOvr[id] {
+			res.ResourceOverrides = append(res.ResourceOverrides, id)
+			seenOvr[id] = true
 			preserved++
 		}
 	}

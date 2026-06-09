@@ -105,6 +105,8 @@ func (s *Store) Reload(ctx context.Context) error {
 			r.ResourceAreaScopes = append(r.ResourceAreaScopes, sc)
 		case "ROLE":
 			r.RoleScopes = append(r.RoleScopes, sc)
+		case "RESOVR":
+			r.ResourceOverrides = append(r.ResourceOverrides, x.NodeId) // node_id = 精细模式资源 id
 		}
 	}
 	for _, x := range ras {
@@ -196,6 +198,14 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 		}
 		if err := insScope("ROLE", r.RoleScopes); err != nil {
 			return err
+		}
+		// 资源「精细模式」标记(node_id=资源 id,include_child 不参与判定)
+		for _, resId := range r.ResourceOverrides {
+			if _, err := tx.Model("role_data_scope").Ctx(ctx).Data(g.Map{
+				"role_id": r.Id, "scope_type": "RESOVR", "node_id": resId, "include_child": false,
+			}).Insert(); err != nil {
+				return err
+			}
 		}
 
 		if _, err := tx.Model("role_resource_action").Ctx(ctx).Where("role_id", r.Id).Delete(); err != nil {

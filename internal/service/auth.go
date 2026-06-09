@@ -141,7 +141,15 @@ func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) 
 		d.Trace = append(d.Trace, "角色「"+r.Name+"」业务范围「"+scopeName+"」覆盖资源所在区域")
 
 		// 2) 精细配置覆盖 or 继承
+		//    精细模式判定:显式 ResourceOverrides ∪ 有操作行(兼容旧数据)。
+		//    精细且零操作 → granted 恒 false → 该资源零权限 → 应用端资源级不可见(AreaResources 过滤)。
 		hasOverride, granted := false, false
+		for _, id := range r.ResourceOverrides {
+			if id == resourceId {
+				hasOverride = true
+				break
+			}
+		}
 		for _, ra := range r.ResourceActions {
 			if ra.ResourceId == resourceId {
 				hasOverride = true
