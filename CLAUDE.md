@@ -110,14 +110,14 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ## git 状态(2026-06-09)
 
-- 已提交到 `8489620`(初始化→…→角色删除+资源增删改(`61ad052`)→**海康真实平台对照验证 + 委派模型B 显式角色范围**)。
+- 已提交到 `38c7022`(初始化→…→角色删除+资源增删改(`61ad052`)→海康对照+委派模型B(`8489620`)→**应用端资源级可见(`38c7022`)**)。
 - `8489620` 内容回顾(已落库):
   - 海康对照:`docs/海康对照.md`(CDP 登录真实 iSecure Center,逐项校验设计;核心全对,唯一差距=显式角色范围)。
   - **模型 B 显式角色范围**:`model/permission.go`(Role 加 `RoleScopes`)、`service/db.go`(Reload/SaveRole 加 `ROLE` 类型读写)、`service/delegation.go`(`Grantable.RoleIds`/`GrantableSet`/`MergeDelegated` 第5维/`ManageableRoles`)、`service/role.go`(`GuardManageRole` + 删除清 ROLE 引用)、`controller/perm/perm.go`(saveRole 编辑门禁)、`index.html`(「角色范围」子 Tab + 树 + `roleCanManage`/🔒 只读;顺修 `renderResTable` 二次渲染 NPE)、`docs/{测试报告 §十四,权限设计说明 5.3}`。
   - **零 DDL 迁移**:角色范围复用 `role_data_scope` 的 `scope_type='ROLE'`(列宽够用),现有库直接可用,无需改 schema/seed/dbinit。
+- `38c7022` 内容回顾(已落库)· **应用端资源级可见(§十五)**:`model/permission.go`(Role 加 `ResourceOverrides`)、`service/db.go`(RESOVR 读写)、`service/auth.go`(`CheckResource` 精细判定=ResourceOverrides∪操作行,兼容旧数据)、`service/delegation.go`(`MergeDelegated` 第6维=精细标记)、`service/runtime.go`(`AreaResources` 过滤零操作资源)、`index.html`(saveRole/loadRole 持久化精细模式 + tip)、`docs/{测试报告 §十五,权限设计说明 3.3.1}`。**零 DDL**(复用 `role_data_scope` `scope_type='RESOVR'`)。
 - `61ad052` 内容回顾(已落库):角色删除(`role.go` `DeleteRole` + `/api/roles/delete` + created_by 修正)、资源增删改(`resource.go` + 区域详情卡片 ➕/✏️/📦/🗑)。均不改 schema/seed。
-- HEAD=`da8d608`(8489620 之后跟一条"刷新 git 状态小节"提交)。
-- **未提交(等用户确认)· 应用端资源级可见(§十五)**:`model/permission.go`(Role 加 `ResourceOverrides`)、`service/db.go`(RESOVR 读写)、`service/auth.go`(`CheckResource` 精细判定=ResourceOverrides∪操作行,兼容旧数据)、`service/delegation.go`(`MergeDelegated` 第6维=精细标记)、`service/runtime.go`(`AreaResources` 过滤零操作资源)、`index.html`(saveRole/loadRole 持久化精细模式 + tip)、`docs/{测试报告 §十五,权限设计说明 3.3.1}`、本 CLAUDE.md。**零 DDL**(复用 `role_data_scope` `scope_type='RESOVR'`)。
+- **工作区干净**(仅本次对本「git 状态」小节的刷新尚未提交)。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
