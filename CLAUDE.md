@@ -108,14 +108,14 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ---
 
-## git 状态(2026-06-08)
+## git 状态(2026-06-09)
 
-- 已提交到 `68d07d3`(初始化→红黑风格→后台IA重排→前台卡片化→区域增删改+海康风重构+超管→修角色高亮→组织树增删改)。组织树增删改已落入提交。
-- **工作区有未提交改动(角色删除 + created_by 修正 + 资源增删改)**:
-  - 角色删除:新增 `internal/service/role.go`(`DeleteRole`:委派校验 + 级联清理含 user_role);`perm.go` 注册 `/api/roles/delete` 并修正 created_by(只在新建时记);`index.html` 角色列表每项加 🗑(按 createdBy/unlimited 控制可见)+ `delRole` + `onActorChange` 刷新 + `.role-del` 样式。
-  - 资源增删改:新增 `internal/service/resource.go`(`SaveResource`/`DeleteResource`);`store.go` 加 `ResourceById`;`runtime.go` 的 `ManageAreaDetail` 增 `ResourceItems`(带 id/type);`perm.go` 注册 `/api/resources[/delete]`;`index.html` 区域详情"本区域资源"卡片换成 ➕/✏️/📦/🗑 + `resAddUI/resEditUI/resFormDo/resMoveUI/resMoveDo/resDelete` + `.res-row` 样式。
-  - 文档:`docs/测试报告.md`(§十二 14/14、§十三 13/13)、`CLAUDE.md`。
+- 已提交到 `61ad052`(初始化→红黑风格→后台IA重排→前台卡片化→区域增删改+海康风重构+超管→修角色高亮→组织树增删改→**角色删除 + created_by 修正 + 资源增删改**)。
+- `61ad052` 内容回顾(已落库):
+  - 角色删除:`internal/service/role.go`(`DeleteRole`:委派校验 + 级联清理含 user_role);`perm.go` 注册 `/api/roles/delete` 并修正 created_by(只在新建时记、编辑不覆盖);`index.html` 角色列表每项 🗑(按 createdBy/unlimited 控制可见)+ `delRole` + `onActorChange` 刷新 + `.role-del` 样式。
+  - 资源增删改:`internal/service/resource.go`(`SaveResource`/`DeleteResource`);`store.go` 加 `ResourceById`;`runtime.go` 的 `ManageAreaDetail` 增 `ResourceItems`(带 id/type);`perm.go` 注册 `/api/resources[/delete]`;`index.html` 区域详情"本区域资源"卡片 ➕/✏️/📦/🗑 + `resAddUI/resEditUI/resFormDo/resMoveUI/resMoveDo/resDelete` + `.res-row` 样式。
   - **不改 schema/seed**:role/resource 表及相关列早已存在,无需迁移;现有库直接可用。
+- **工作区干净**(仅本次对本「git 状态」小节的刷新尚未提交)。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
