@@ -109,15 +109,13 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ## git 状态(2026-06-09)
 
-- 已提交到 `61ad052`(初始化→红黑风格→后台IA重排→前台卡片化→区域增删改+海康风重构+超管→修角色高亮→组织树增删改→**角色删除 + created_by 修正 + 资源增删改**)。
-- `61ad052` 内容回顾(已落库):
-  - 角色删除:`internal/service/role.go`(`DeleteRole`:委派校验 + 级联清理含 user_role);`perm.go` 注册 `/api/roles/delete` 并修正 created_by(只在新建时记、编辑不覆盖);`index.html` 角色列表每项 🗑(按 createdBy/unlimited 控制可见)+ `delRole` + `onActorChange` 刷新 + `.role-del` 样式。
-  - 资源增删改:`internal/service/resource.go`(`SaveResource`/`DeleteResource`);`store.go` 加 `ResourceById`;`runtime.go` 的 `ManageAreaDetail` 增 `ResourceItems`(带 id/type);`perm.go` 注册 `/api/resources[/delete]`;`index.html` 区域详情"本区域资源"卡片 ➕/✏️/📦/🗑 + `resAddUI/resEditUI/resFormDo/resMoveUI/resMoveDo/resDelete` + `.res-row` 样式。
-  - **不改 schema/seed**:role/resource 表及相关列早已存在,无需迁移;现有库直接可用。
-- **未提交(等用户确认)**:
-  - 海康对照调研 → `docs/海康对照.md`(新增)。
-  - **模型 B 显式角色范围**:`model/permission.go`(Role 加 `RoleScopes`)、`service/db.go`(Reload/SaveRole 加 `ROLE` 类型读写)、`service/delegation.go`(`Grantable.RoleIds`/`GrantableSet`/`MergeDelegated` 第5维/`ManageableRoles`)、`service/role.go`(`GuardManageRole` + 删除清 ROLE 引用)、`controller/perm/perm.go`(saveRole 编辑门禁)、`index.html`(「角色范围」子 Tab + 树 + `roleCanManage`/🔒 只读)、`docs/{测试报告,权限设计说明}.md`、本 CLAUDE.md。
+- 已提交到 `8489620`(初始化→…→角色删除+资源增删改(`61ad052`)→**海康真实平台对照验证 + 委派模型B 显式角色范围**)。
+- `8489620` 内容回顾(已落库):
+  - 海康对照:`docs/海康对照.md`(CDP 登录真实 iSecure Center,逐项校验设计;核心全对,唯一差距=显式角色范围)。
+  - **模型 B 显式角色范围**:`model/permission.go`(Role 加 `RoleScopes`)、`service/db.go`(Reload/SaveRole 加 `ROLE` 类型读写)、`service/delegation.go`(`Grantable.RoleIds`/`GrantableSet`/`MergeDelegated` 第5维/`ManageableRoles`)、`service/role.go`(`GuardManageRole` + 删除清 ROLE 引用)、`controller/perm/perm.go`(saveRole 编辑门禁)、`index.html`(「角色范围」子 Tab + 树 + `roleCanManage`/🔒 只读;顺修 `renderResTable` 二次渲染 NPE)、`docs/{测试报告 §十四,权限设计说明 5.3}`。
   - **零 DDL 迁移**:角色范围复用 `role_data_scope` 的 `scope_type='ROLE'`(列宽够用),现有库直接可用,无需改 schema/seed/dbinit。
+- `61ad052` 内容回顾(已落库):角色删除(`role.go` `DeleteRole` + `/api/roles/delete` + created_by 修正)、资源增删改(`resource.go` + 区域详情卡片 ➕/✏️/📦/🗑)。均不改 schema/seed。
+- **工作区干净**(仅本次对本「git 状态」小节的刷新尚未提交)。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
