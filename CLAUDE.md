@@ -115,18 +115,18 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ## git 状态(2026-06-10)
 
-- 已提交到 `38c7022`(初始化→…→角色删除+资源增删改(`61ad052`)→海康对照+委派模型B(`8489620`)→**应用端资源级可见(`38c7022`)**)。
+- 已提交到 `0930fc6`(初始化→…→海康对照+委派模型B(`8489620`)→应用端资源级可见(`38c7022`)→**数据权限下推+懒加载分页+海康式搜索·前后台(`0930fc6`)**)。
 - `8489620` 内容回顾(已落库):
   - 海康对照:`docs/海康对照.md`(CDP 登录真实 iSecure Center,逐项校验设计;核心全对,唯一差距=显式角色范围)。
   - **模型 B 显式角色范围**:`model/permission.go`(Role 加 `RoleScopes`)、`service/db.go`(Reload/SaveRole 加 `ROLE` 类型读写)、`service/delegation.go`(`Grantable.RoleIds`/`GrantableSet`/`MergeDelegated` 第5维/`ManageableRoles`)、`service/role.go`(`GuardManageRole` + 删除清 ROLE 引用)、`controller/perm/perm.go`(saveRole 编辑门禁)、`index.html`(「角色范围」子 Tab + 树 + `roleCanManage`/🔒 只读;顺修 `renderResTable` 二次渲染 NPE)、`docs/{测试报告 §十四,权限设计说明 5.3}`。
   - **零 DDL 迁移**:角色范围复用 `role_data_scope` 的 `scope_type='ROLE'`(列宽够用),现有库直接可用,无需改 schema/seed/dbinit。
 - `38c7022` 内容回顾(已落库)· **应用端资源级可见(§十五)**:`model/permission.go`(Role 加 `ResourceOverrides`)、`service/db.go`(RESOVR 读写)、`service/auth.go`(`CheckResource` 精细判定=ResourceOverrides∪操作行,兼容旧数据)、`service/delegation.go`(`MergeDelegated` 第6维=精细标记)、`service/runtime.go`(`AreaResources` 过滤零操作资源)、`index.html`(saveRole/loadRole 持久化精细模式 + tip)、`docs/{测试报告 §十五,权限设计说明 3.3.1}`。**零 DDL**(复用 `role_data_scope` `scope_type='RESOVR'`)。
 - `61ad052` 内容回顾(已落库):角色删除(`role.go` `DeleteRole` + `/api/roles/delete` + created_by 修正)、资源增删改(`resource.go` + 区域详情卡片 ➕/✏️/📦/🗑)。均不改 schema/seed。
-- **未提交(工作区,待用户确认提交)· 数据权限下推 + 懒加载分页(§十六)**:
-  - 新增 `internal/service/paging.go`(scope→SQL WHERE 下推 + 按层懒加载树 + 列表分页)、`tools/genbulk/`(造数工具)、`docs/设计导读.md`(新人入门导读)。
-  - 改 `internal/controller/perm/perm.go`(新接口 area-children/area-search/manage-area-children;area-resources 加分页)、`internal/service/runtime.go`(`ManageAreaDetail` 改 COUNT 子区域不平铺,加 ctx)、`resource/public/index.html`(懒加载树 `lazyTreeLevel`/`lazyTreeNode` + 「加载更多」+ 树搜索框 + 移动选择器弹框;顺带 `extractScopes` 区分 includeChild true/false)、`CLAUDE.md` + `docs/{测试报告 §十六,设计导读,权限设计说明 §3.4}`。
-  - **搜索对齐真实海康**(用户提供 PixPin 截图为据):`SearchAreas` 改为返回局部树所需的祖先链(`AncestorRef`/`areaAncestors`,替代旧 `Crumb`)+ 硬上限 `searchLimit=500`;前端 `searchTreeInto`/`renderSearchTree`/`hlMatch` 把匹配项拼成命中分支树、子串高亮、超 500 给「搜索结果过多,仅展示前 500 条」横幅。
-  - **已端到端验证**:`genbulk` 造 150 栋(搜索 500 截断用 200 栋=600 区域),curl 验 14 项 + 截图验前端 3 项(懒加载树/资源分页/搜索树+高亮),见测试报告 §十六 **17/17**。**零 DDL**(只读 `area.path`/`idx_path`)。
+- `0930fc6` 内容回顾(已落库)· **数据权限下推 + 懒加载分页 + 海康式搜索(§十六)**:
+  - 新增 `internal/service/paging.go`(scope→SQL WHERE 下推 + 按层懒加载树 + 列表分页 + `SearchAreas`)、`tools/genbulk/`(造数工具)、`docs/设计导读.md`(新人入门导读)。
+  - 改 `internal/controller/perm/perm.go`(新接口 area-children/area-search/manage-area-children;area-resources 加分页)、`internal/service/runtime.go`(`ManageAreaDetail` 改 COUNT 子区域不平铺,加 ctx)、`resource/public/index.html`(懒加载树 `lazyTreeLevel`/`lazyTreeNode` + 「加载更多」+ 树搜索框 + 移动选择器弹框;顺带 `extractScopes` 区分 includeChild true/false)、`docs/{测试报告 §十六,设计导读,权限设计说明 §3.4}`。
+  - **搜索对齐真实海康 · 前后台双树**:`SearchAreas`(scope=app/manage 共用核心,可见性 WHERE 下推)返回局部树祖先链(`AncestorRef`/`areaAncestors`)+ 硬上限 `searchLimit=500`;前端 `mountTreeSearch` 同时挂应用端(`appAreaTree`/scope=app)与后台管理(`manageAreaTree`/scope=manage)两棵树,共用 `searchTreeInto`/`renderSearchTree`/`hlMatch` 拼命中分支树、子串高亮、超 500 给「搜索结果过多,仅展示前 500 条」横幅。
+  - **已端到端验证**:curl 验前后台双树各用户(李四 600→截 500、张三按 RES_AREA/AREA 各自域过滤、admin 超管 All)+ 截图验前端(应用端搜索树/高亮/截断 + **后台管理树搜索** admin「压测」截断横幅+高亮),见测试报告 §十六 **17/17**。**零 DDL**(只读 `area.path`/`idx_path`)。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
