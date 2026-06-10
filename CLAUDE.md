@@ -10,12 +10,13 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 ## 一句话现状
 
-功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 显式角色范围/模型B 11 + 资源级可见 6 全部测试通过**。
+功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 显式角色范围/模型B 11 + 资源级可见 6 + 数据下推分页 17 全部测试通过**。
 区域**与组织**均已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用):区域见测试报告 §九(11 项),组织见 §十一(12 项),两者共用同一套 path-维护引擎,仅「非空」判定不同(区域=无资源,组织=无子组织且无下属用户)。
 **角色**支持**真实删除**(§十二,14 项):委派校验(普通操作人只能删自己创建的 `created_by`,超管/不受限删任意)+ 级联清理(含 `user_role`,绑用户也直接删 → 用户失权);配套修正了 `created_by`(仅新建时记,编辑不覆盖)。
 **资源(摄像头)**支持**真实增删改**(§十三,13 项):功能关 `sys.resource` + 数据关 `CheckArea(所在区域)`;新增自动被覆盖该区域 RES_AREA 的角色继承;移动改 `area_id`;删除清理 `role_resource_action`。至此**数据树增删改三件套(区域/组织/资源)全部完成**。
 **委派已升级到模型 A + 模型 B**(§十四,11 项):新增**显式角色范围**——角色可配「可管理哪些其他角色」。可管理角色集 = (自己创建的 `created_by`) ∪ (本人各角色「角色范围」并集),统一驱动角色列表 canEdit/canDelete、编辑/删除门禁、及角色范围维度自身的可授范围。对照真实海康(`docs/海康对照.md`)补齐的唯一结构性差距;复用 `role_data_scope` 的 `scope_type='ROLE'`,零 DDL 迁移。
 **应用端资源级可见**(§十五,6 项):业务资源两级数据权限补齐 L2 可见性——精细模式且零操作=该资源应用端列表隐藏(对齐海康「区域级继承 + 资源级查看」)。「精细模式」显式持久化(`Role.ResourceOverrides`,复用 `role_data_scope` `scope_type='RESOVR'`,零 DDL,向后兼容)。
+**数据权限下推 + 懒加载分页**(§十六,17 项):把数据权限从「点查鉴权」扩展到「列表过滤 + 分页下推 SQL」,支撑大数据量。区域树**按层懒加载**(每次只查一层 `parent_id`)、资源列表**分页**,数据权限作为 SQL WHERE **下推数据库**(含子树授权→`path LIKE '根path%'` 走 `idx_path`;仅本节点→`id=节点`;根含子树/超管→不加过滤;无范围→空结果)。鉴权(`auth.go` 点查,读缓存微秒级)与过滤分页(`paging.go` 列表,scope 拼进 WHERE)互补。应用树(RES_AREA)/管理树(AREA)/移动选择器共用 `paging.go` 同一核心(`scopePicker` 注入差异)。**搜索对齐真实海康**:结果按局部树展示(`SearchAreas` 回传祖先链 `Ancestors`,前端拼命中分支 + 匹配高亮)、**最多前 500 条**(`searchLimit`,超出给横幅)、同样叠加可见性 WHERE 下推。配 `tools/genbulk` 造数(园区A 下 150 栋楼=450 区域+900 摄像头,触发分页;搜索 500 截断验证用 `genbulk 200`)。**零 DDL**(只读 `area.path`/`idx_path`)。
 
 ---
 
@@ -46,6 +47,7 @@ internal/
     auth.go                  鉴权引擎(菜单/区域/组织/资源 三关)★
     delegation.go            二次授权:GrantableSet(含 RoleIds)+ MergeDelegated(5 维含角色范围)+ ManageableRoles(模型B 可管理角色集)★
     runtime.go               应用端/后台体验:可见树、资源、菜单(VisibleAreas/ManageAreas/ManageOrgs/AreaResources/SysMenus/AppMenus…)
+    paging.go                数据权限「用」之二:scope→SQL WHERE 下推 + 按层懒加载树 + 列表分页(treeScopeFilter/areaScopeWhere/AreaChildren/ManageAreaChildren/SearchAreas/AreaResourcesPaged)★
     area.go                  区域增删改:写时鉴权 + path 自动维护(SaveArea 新增/重命名/移动 + DeleteArea)★
     org.go                   组织增删改:与 area.go 完全对称,功能关=人员信息 sys.person.info,删除前置=无子组织且无下属用户 ★
     role.go                  角色删除 + GuardManageRole(编辑/删除共用门禁=功能关 sys.person.role + 角色在 manageable 集);级联清理(含 user_role + 清别角色的 ROLE 范围引用)★
@@ -56,10 +58,13 @@ resource/public/index.html   前端单页(所有 UI + JS,无构建步骤)★
 manifest/sql/schema.sql      建表 DDL(幂等)
 manifest/sql/seed.sql        种子数据
 tools/dbinit/main.go         幂等初始化:建表 + 空库才灌种子(保留已有数据)
+tools/genbulk/main.go        造数(演示/压测):园区A 下批量生成区域+摄像头,触发懒加载分页;`压测` 前缀幂等可清(`go run ./tools/genbulk clean`)
 tools/debug-build.ps1        带重试的 debug 二进制构建(绕 360 拦截,见下)
 tools/shot.mjs               UI 截图验证(零依赖,CDP 驱动 Chrome):node tools/shot.mjs out.png "页面内JS" [等待ms]
+docs/设计导读.md              新人入门:一步步看懂设计的阅读路线(心智模型→引擎→难点,边读边验证)
 docs/权限设计说明.md          通俗设计文档
-docs/测试报告.md              31/31 场景测试报告
+docs/测试报告.md              场景测试报告(核心+各专项)
+docs/海康对照.md              真实海康 iSecure Center 对照验证
 ```
 
 ## 前端 UI 结构(index.html,纯 JS 无框架)
@@ -82,8 +87,8 @@ docs/测试报告.md              31/31 场景测试报告
 区域管理:`/api/areas`(POST,?userId= 新增/重命名/移动,写时鉴权+path 维护) `/api/areas/delete`(POST,?userId=)
 组织管理:`/api/orgs`(POST,?userId= 新增/重命名/移动) `/api/orgs/delete`(POST,?userId=)
 资源管理:`/api/resources`(POST,?userId= 新增/重命名/改类型/移动) `/api/resources/delete`(POST,?userId=)
-应用端:`/api/app-menus` `/api/visible-areas` `/api/area-resources`(均 ?userId=)
-后台:`/api/sys-menus` `/api/manage-areas` `/api/manage-orgs` `/api/manage-area-detail` `/api/manage-org-detail`
+应用端:`/api/app-menus` `/api/visible-areas`(全量,旧) `/api/area-children`(按层懒加载+分页 ?parentId=&page=&size=) `/api/area-search`(?q=&scope=app|manage) `/api/area-resources`(资源分页 ?areaId=&page=&size=)(均 ?userId=)
+后台:`/api/sys-menus` `/api/manage-areas`(全量,旧) `/api/manage-area-children`(按层懒加载+分页 AREA 域) `/api/manage-orgs` `/api/manage-area-detail` `/api/manage-org-detail`
 
 ---
 
@@ -108,7 +113,7 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ---
 
-## git 状态(2026-06-09)
+## git 状态(2026-06-10)
 
 - 已提交到 `38c7022`(初始化→…→角色删除+资源增删改(`61ad052`)→海康对照+委派模型B(`8489620`)→**应用端资源级可见(`38c7022`)**)。
 - `8489620` 内容回顾(已落库):
@@ -117,7 +122,11 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
   - **零 DDL 迁移**:角色范围复用 `role_data_scope` 的 `scope_type='ROLE'`(列宽够用),现有库直接可用,无需改 schema/seed/dbinit。
 - `38c7022` 内容回顾(已落库)· **应用端资源级可见(§十五)**:`model/permission.go`(Role 加 `ResourceOverrides`)、`service/db.go`(RESOVR 读写)、`service/auth.go`(`CheckResource` 精细判定=ResourceOverrides∪操作行,兼容旧数据)、`service/delegation.go`(`MergeDelegated` 第6维=精细标记)、`service/runtime.go`(`AreaResources` 过滤零操作资源)、`index.html`(saveRole/loadRole 持久化精细模式 + tip)、`docs/{测试报告 §十五,权限设计说明 3.3.1}`。**零 DDL**(复用 `role_data_scope` `scope_type='RESOVR'`)。
 - `61ad052` 内容回顾(已落库):角色删除(`role.go` `DeleteRole` + `/api/roles/delete` + created_by 修正)、资源增删改(`resource.go` + 区域详情卡片 ➕/✏️/📦/🗑)。均不改 schema/seed。
-- **工作区干净**(仅本次对本「git 状态」小节的刷新尚未提交)。
+- **未提交(工作区,待用户确认提交)· 数据权限下推 + 懒加载分页(§十六)**:
+  - 新增 `internal/service/paging.go`(scope→SQL WHERE 下推 + 按层懒加载树 + 列表分页)、`tools/genbulk/`(造数工具)、`docs/设计导读.md`(新人入门导读)。
+  - 改 `internal/controller/perm/perm.go`(新接口 area-children/area-search/manage-area-children;area-resources 加分页)、`internal/service/runtime.go`(`ManageAreaDetail` 改 COUNT 子区域不平铺,加 ctx)、`resource/public/index.html`(懒加载树 `lazyTreeLevel`/`lazyTreeNode` + 「加载更多」+ 树搜索框 + 移动选择器弹框;顺带 `extractScopes` 区分 includeChild true/false)、`CLAUDE.md` + `docs/{测试报告 §十六,设计导读,权限设计说明 §3.4}`。
+  - **搜索对齐真实海康**(用户提供 PixPin 截图为据):`SearchAreas` 改为返回局部树所需的祖先链(`AncestorRef`/`areaAncestors`,替代旧 `Crumb`)+ 硬上限 `searchLimit=500`;前端 `searchTreeInto`/`renderSearchTree`/`hlMatch` 把匹配项拼成命中分支树、子串高亮、超 500 给「搜索结果过多,仅展示前 500 条」横幅。
+  - **已端到端验证**:`genbulk` 造 150 栋(搜索 500 截断用 200 栋=600 区域),curl 验 14 项 + 截图验前端 3 项(懒加载树/资源分页/搜索树+高亮),见测试报告 §十六 **17/17**。**零 DDL**(只读 `area.path`/`idx_path`)。
 - **重要约定:用户明确要求"我说提交再提交",不要自动 git commit。** 改完等用户确认。
 
 ---
@@ -130,5 +139,6 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 - ~~角色删除接口~~ **已完成**(`service/role.go`,前端角色列表 🗑 按钮,§十二)。
 - ~~资源(摄像头)的增删改落库~~ **已完成**(`service/resource.go`,后台区域详情"本区域资源"卡片有 ➕/✏️/📦/🗑,§十三)。**数据树增删改三件套(区域/组织/资源)已全部完成**。
 - ~~二次授权升级到模型 B(显式角色范围)~~ **已完成**(`delegation.go` `ManageableRoles`/`role.go` `GuardManageRole`,前端「角色范围」子 Tab,§十四)。**模型 C(变更级联)** 仍可后续做。
+- ~~大数据量:区域树/资源列表全量载入内存的扩展性问题~~ **已完成**(`service/paging.go` 数据权限下推 SQL + 懒加载分页,§十六)。**后续可对称做**:组织树同样懒加载分页(现仍全量 `ManageOrgs`)、资源全局搜索框、`area-children` 的 `HasChildren` 批量预取优化。
 - 应用端更多模块卡片的真实界面(目前非视频类是占位)。
 - 用户偏好:决策(如委派模型)倾向**先调研真实海康行为再定**;喜欢**每步有验证/测试**;前端**仿海康红黑风格**。

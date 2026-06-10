@@ -21,6 +21,8 @@ func Register(group *ghttp.RouterGroup) {
 	// 用户管理 + 应用端体验
 	group.POST("/users", saveUser)
 	group.GET("/visible-areas", visibleAreas)
+	group.GET("/area-children", areaChildren)
+	group.GET("/area-search", areaSearch)
 	group.GET("/area-resources", areaResources)
 	group.GET("/app-menus", appMenus)
 	// 区域管理(真实落库:写时鉴权 + path 自动维护)
@@ -35,6 +37,7 @@ func Register(group *ghttp.RouterGroup) {
 	// 后台管理域体验
 	group.GET("/sys-menus", sysMenus)
 	group.GET("/manage-areas", manageAreas)
+	group.GET("/manage-area-children", manageAreaChildren)
 	group.GET("/manage-orgs", manageOrgs)
 	group.GET("/manage-area-detail", manageAreaDetail)
 	group.GET("/manage-org-detail", manageOrgDetail)
@@ -225,9 +228,22 @@ func visibleAreas(r *ghttp.Request) {
 	ok(r, service.S.VisibleAreas(r.Get("userId").Int()))
 }
 
-// areaResources 应用端:点击某区域时该用户能看到的资源 + 各操作是否有权。?userId=&areaId=
+// areaResources 应用端:点击某区域时该用户能看到的资源 + 各操作是否有权(分页,权限下推 SQL)。
+// ?userId=&areaId=&page=&size=(page/size 缺省 1/100)
 func areaResources(r *ghttp.Request) {
-	ok(r, service.S.AreaResources(r.Get("userId").Int(), r.Get("areaId").Int()))
+	ok(r, service.S.AreaResourcesPaged(r.Context(), r.Get("userId").Int(), r.Get("areaId").Int(), r.Get("page").Int(), r.Get("size").Int()))
+}
+
+// areaChildren 应用端:某节点下"可见的"直接子区域,按层懒加载 + 分页(过滤 + 分页下推 SQL)。
+// ?userId=&parentId=&page=&size=(parentId 缺省 0=根层;page/size 缺省 1/100)
+func areaChildren(r *ghttp.Request) {
+	ok(r, service.S.AreaChildren(r.Context(), r.Get("userId").Int(), r.Get("parentId").Int(), r.Get("page").Int(), r.Get("size").Int()))
+}
+
+// areaSearch 区域树搜索框:按名称搜索可见区域(全树下推 SQL + 权限过滤,分页)。
+// ?userId=&q=&scope=app|manage&page=&size=(scope 缺省 app=RES_AREA;manage=AREA)
+func areaSearch(r *ghttp.Request) {
+	ok(r, service.S.SearchAreas(r.Context(), r.Get("userId").Int(), r.Get("q").String(), r.Get("scope").String(), r.Get("page").Int(), r.Get("size").Int()))
 }
 
 // appMenus 应用端:某用户可见的应用菜单(功能权限)。?userId=
@@ -240,9 +256,15 @@ func sysMenus(r *ghttp.Request) {
 	ok(r, service.S.SysMenus(r.Get("userId").Int()))
 }
 
-// manageAreas 后台:某用户可管理的安保区域树(带 accessible)。?userId=
+// manageAreas 后台:某用户可管理的安保区域树(带 accessible)。?userId=(全量,旧接口,保留)
 func manageAreas(r *ghttp.Request) {
 	ok(r, service.S.ManageAreas(r.Get("userId").Int()))
+}
+
+// manageAreaChildren 后台:某节点下"可管理/可见的"直接子区域,按层懒加载 + 分页(AREA 数据权限,下推 SQL)。
+// ?userId=&parentId=&page=&size=(parentId 缺省 0=根层;page/size 缺省 1/100)
+func manageAreaChildren(r *ghttp.Request) {
+	ok(r, service.S.ManageAreaChildren(r.Context(), r.Get("userId").Int(), r.Get("parentId").Int(), r.Get("page").Int(), r.Get("size").Int()))
 }
 
 // manageOrgs 后台:某用户可管理的组织树(带 accessible)。?userId=
@@ -252,7 +274,7 @@ func manageOrgs(r *ghttp.Request) {
 
 // manageAreaDetail 后台:点击某区域的管理详情。?userId=&areaId=
 func manageAreaDetail(r *ghttp.Request) {
-	ok(r, service.S.ManageAreaDetail(r.Get("userId").Int(), r.Get("areaId").Int()))
+	ok(r, service.S.ManageAreaDetail(r.Context(), r.Get("userId").Int(), r.Get("areaId").Int()))
 }
 
 // manageOrgDetail 后台:点击某组织的管理详情。?userId=&orgId=

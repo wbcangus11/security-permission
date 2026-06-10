@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
 	"strings"
+
+	"github.com/gogf/gf/v2/frame/g"
 
 	"security-permission/internal/model"
 )
@@ -109,37 +112,39 @@ type ResourceBrief struct {
 type ManageDetail struct {
 	Accessible    bool            `json:"accessible"` // false => 暂无管理权限
 	Name          string          `json:"name"`
-	Children      []string        `json:"children"`      // 直接子节点
+	ParentId      int             `json:"parentId"`      // 父节点 id(区域用,供删除后回焦/移动)
+	ChildCount    int             `json:"childCount"`    // 直接子节点数(区域懒加载:不平铺子节点,只给数量)
+	Children      []string        `json:"children"`      // 直接子节点名(组织仍用;区域已改为左树懒加载)
 	Resources     []string        `json:"resources"`     // 区域直接挂的资源名(组织无)
 	ResourceItems []ResourceBrief `json:"resourceItems"` // 区域直接挂的资源(带 id/type,供增删改)
 }
 
-// ManageAreaDetail 点击安保区域:可管理则列出直接子区域与本区域资源;否则暂无管理权限。
-func (s *Store) ManageAreaDetail(userId, areaId int) *ManageDetail {
+// ManageAreaDetail 点击安保区域:可管理则给出子区域数量 + 本区域直接资源;否则暂无管理权限。
+// 子区域由左侧树懒加载展开,不在详情里平铺;子区域数量与资源都走 DB 索引查询,避免全表扫描(支撑大数据量)。
+func (s *Store) ManageAreaDetail(ctx context.Context, userId, areaId int) *ManageDetail {
 	u := s.User(userId)
 	d := &ManageDetail{Children: []string{}, Resources: []string{}, ResourceItems: []ResourceBrief{}}
 	if u == nil {
 		return d
 	}
-	for _, a := range s.Areas() {
-		if a.Id == areaId {
-			d.Name = a.Name
-		}
+	area := s.AreaById(areaId)
+	if area == nil {
+		return d
 	}
+	d.Name = area.Name
+	d.ParentId = area.ParentId
 	if !s.CheckArea(u, areaId).Allow {
 		return d // accessible=false
 	}
 	d.Accessible = true
-	for _, a := range s.Areas() {
-		if a.ParentId == areaId {
-			d.Children = append(d.Children, a.Name)
-		}
-	}
-	for _, r := range s.Resources() {
-		if r.AreaId == areaId {
-			d.Resources = append(d.Resources, r.Name)
-			d.ResourceItems = append(d.ResourceItems, ResourceBrief{Id: r.Id, Name: r.Name, Type: r.Type, AreaId: r.AreaId})
-		}
+	// 子区域数量:cheap COUNT 走 idx_parent(不平铺,左树懒加载展开)
+	d.ChildCount, _ = g.Model("area").Ctx(ctx).Where("parent_id", areaId).Count()
+	// 本区域直接挂的资源:走 idx_area;直接资源通常很少,封顶 500 防御
+	var rs []ResourceBrief
+	_ = g.Model("resource").Ctx(ctx).Fields("id,name,type,area_id").Where("area_id", areaId).Order("id asc").Limit(500).Scan(&rs)
+	for _, r := range rs {
+		d.Resources = append(d.Resources, r.Name)
+		d.ResourceItems = append(d.ResourceItems, r)
 	}
 	return d
 }
