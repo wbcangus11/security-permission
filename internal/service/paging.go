@@ -355,6 +355,98 @@ func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, pa
 	return out
 }
 
+// ---------- 角色配置树:按层惰性加载(显式「包含子节点」,整层一次返回不分页) ----------
+//
+// 与应用端/后台树(AreaChildren)不同:这里按「操作者可授范围」(委派)过滤,而非登录用户的数据范围;
+// 且整层一次返回(不分页)——因为角色树的勾选判断(子树覆盖/继承)需要同层兄弟节点全部在手,分页会切断判断依据。
+
+// RoleTreeNode 角色配置区域树的一个节点。
+type RoleTreeNode struct {
+	Id          int    `json:"id"`
+	ParentId    int    `json:"parentId"`
+	Name        string `json:"name"`
+	HasChildren bool   `json:"hasChildren"` // 是否有子区域(决定展开箭头)
+	CanCheck    bool   `json:"canCheck"`    // 操作者是否可授该节点(false=仅结构展示,不给勾选框)
+}
+
+// roleTreeGrantable 操作者在区域树某域(kind=area 管理域 / resarea 应用域)的可授节点集 + 其 path。
+// actorId<=0 或超管 ⇒ unlimited(可授全部);否则只遍历区域(不碰菜单/资源),比 GrantableSet 轻。
+func (s *Store) roleTreeGrantable(actorId int, kind string) (set map[int]bool, paths []string, unlimited bool) {
+	set = map[int]bool{}
+	if actorId <= 0 {
+		return set, nil, true
+	}
+	actor := s.User(actorId)
+	if actor == nil {
+		return set, nil, false
+	}
+	if actor.IsSuperuser {
+		return set, nil, true
+	}
+	for _, a := range s.Areas() {
+		ok := false
+		if kind == "resarea" {
+			ok = s.userResAreaCovers(actor, a.Id)
+		} else {
+			ok = s.CheckArea(actor, a.Id).Allow
+		}
+		if ok {
+			set[a.Id] = true
+			if a.Path != "" {
+				paths = append(paths, a.Path)
+			}
+		}
+	}
+	return set, paths, false
+}
+
+// RoleAreaChildren 角色配置树:父节点下「整一层」可见子区域(不分页),带 canCheck/hasChildren。
+// 可见 = 操作者可授(canCheck)或其子孙中有可授节点(仅作结构展示)。kind=area|resarea 决定可授范围来源。
+func (s *Store) RoleAreaChildren(ctx context.Context, actorId, parentId int, kind string) []RoleTreeNode {
+	out := []RoleTreeNode{}
+	set, paths, unlimited := s.roleTreeGrantable(actorId, kind)
+	var rows []struct {
+		Id       int
+		ParentId int
+		Name     string
+		Path     string
+	}
+	if err := g.Model("area").Ctx(ctx).Where("parent_id", parentId).
+		Fields("id,parent_id,name,path").Order("sort asc,id asc").Scan(&rows); err != nil {
+		return out
+	}
+	ids := make([]int, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.Id)
+	}
+	childParents := map[int]bool{}
+	if len(ids) > 0 {
+		var pps []struct{ ParentId int }
+		_ = g.Model("area").Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", ids).Scan(&pps)
+		for _, p := range pps {
+			childParents[p.ParentId] = true
+		}
+	}
+	for _, r := range rows {
+		canCheck := unlimited || set[r.Id]
+		if !canCheck && !hasGrantPrefix(r.Path, paths) {
+			continue // 自身不可授、子孙也无可授 → 隐藏(对齐海康:看不到操作者无权的部分)
+		}
+		out = append(out, RoleTreeNode{Id: r.Id, ParentId: r.ParentId, Name: r.Name, HasChildren: childParents[r.Id], CanCheck: canCheck})
+	}
+	return out
+}
+
+// hasGrantPrefix 是否存在「严格在 path 之下」的可授节点(=该节点有可授子孙,需作结构展示)。
+func hasGrantPrefix(path string, grantPaths []string) bool {
+	for _, gp := range grantPaths {
+		if len(gp) > len(path) && strings.HasPrefix(gp, path) {
+			return true
+		}
+	}
+	return false
+}
+
 // ---------- 资源:分页 + 权限下推(应用域 RES_AREA) ----------
 
 // AreaResourcesPage 某区域(含子树)下用户有权看的资源,分页。

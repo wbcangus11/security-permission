@@ -24,6 +24,7 @@ func Register(group *ghttp.RouterGroup) {
 	group.GET("/area-children", areaChildren)
 	group.GET("/area-search", areaSearch)
 	group.GET("/area-resources", areaResources)
+	group.GET("/role-area-children", roleAreaChildren)
 	group.GET("/app-menus", appMenus)
 	// 区域管理(真实落库:写时鉴权 + path 自动维护)
 	group.POST("/areas", saveArea)
@@ -244,6 +245,12 @@ func areaChildren(r *ghttp.Request) {
 // ?userId=&q=&scope=app|manage&page=&size=(scope 缺省 app=RES_AREA;manage=AREA)
 func areaSearch(r *ghttp.Request) {
 	ok(r, service.S.SearchAreas(r.Context(), r.Get("userId").Int(), r.Get("q").String(), r.Get("scope").String(), r.Get("page").Int(), r.Get("size").Int()))
+}
+
+// roleAreaChildren 角色配置树:操作者可授范围内、父节点下整一层子区域(惰性加载,不分页)。
+// ?actor=操作者&parentId=父节点(0=根)&kind=area|resarea
+func roleAreaChildren(r *ghttp.Request) {
+	ok(r, service.S.RoleAreaChildren(r.Context(), r.Get("actor").Int(), r.Get("parentId").Int(), r.Get("kind").String()))
 }
 
 // appMenus 应用端:某用户可见的应用菜单(功能权限)。?userId=
