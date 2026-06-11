@@ -119,6 +119,11 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	if s.areaNameTaken(parent.Id, in.Name, 0) {
 		return nil, gerror.New("同级已存在同名区域:" + in.Name)
 	}
+	// 创建即授权:父区域若是「仅本节点」授权(include_child=false),新区域不会被现有数据范围
+	// 自动继承 → 创建者建完却看不到自己建的区域。此时把「新区域(含子树)」补进赋予创建者建权的
+	// 那个角色,确保创建者立刻能在区域树/角色配置里看到并管理它(对齐「谁建谁能看」)。
+	// 父若已是子树授权,新区域本就自动继承,grantRoleId=0 不重复记,保持数据干净。
+	grantRoleId := s.areaAutoGrantRole(actor, parent)
 	var newId int64
 	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		res, err := tx.Model("area").Ctx(ctx).
@@ -131,7 +136,14 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		}
 		// 物化路径含自身;授权了父子树的角色自此自动覆盖新区域(无需改 role_data_scope)
 		path := parent.Path + strconv.FormatInt(newId, 10) + "/"
-		_, err = tx.Model("area").Ctx(ctx).Data(g.Map{"path": path}).Where("id", newId).Update()
+		if _, err = tx.Model("area").Ctx(ctx).Data(g.Map{"path": path}).Where("id", newId).Update(); err != nil {
+			return err
+		}
+		if grantRoleId > 0 {
+			_, err = tx.Model("role_data_scope").Ctx(ctx).Data(g.Map{
+				"role_id": grantRoleId, "scope_type": "AREA", "node_id": newId, "include_child": true,
+			}).Insert()
+		}
 		return err
 	})
 	if err != nil {
@@ -141,6 +153,39 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		return nil, err
 	}
 	return s.AreaById(int(newId)), nil
+}
+
+// areaAutoGrantRole 决定「创建即授权」是否需要补一条 AREA 范围、补给哪个角色。
+// 返回 roleId>0 表示要把新区域授给该角色;返回 0 表示新区域本就会被自动继承(无需补)或操作人是超管。
+// 规则:
+//   - 超管 → 0(本就看全部)。
+//   - 若操作人已有「含子树且覆盖父区域」的授权 → 新区域会自动继承 → 0(不重复记)。
+//   - 否则取「第一个授权覆盖了父区域(直接节点或子树)的角色」= 赋予其建权的角色,补给它。
+func (s *Store) areaAutoGrantRole(actor *model.User, parent *model.Area) int {
+	if actor == nil || actor.IsSuperuser || parent == nil {
+		return 0
+	}
+	coveringRole := 0     // 第一个覆盖父区域的角色(赋予建权来源)
+	childInherits := false // 父已落在某含子树授权内 → 新子区域自动继承
+	for _, r := range s.effectiveRoles(actor) {
+		for _, sc := range r.AreaScopes {
+			a := s.AreaById(sc.NodeId)
+			if a == nil || a.Path == "" {
+				continue
+			}
+			subtreeCoversParent := sc.IncludeChild && strings.HasPrefix(parent.Path, a.Path)
+			if (sc.NodeId == parent.Id || subtreeCoversParent) && coveringRole == 0 {
+				coveringRole = r.Id
+			}
+			if subtreeCoversParent {
+				childInherits = true
+			}
+		}
+	}
+	if childInherits {
+		return 0
+	}
+	return coveringRole
 }
 
 // updateArea 重命名 + 可选移动:移动需对本节点和新父都有权,且防环(新父不能是自己或后代)。
