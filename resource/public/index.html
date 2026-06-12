@@ -294,10 +294,11 @@
 
   <!-- 角色编辑器 -->
   <div class="panel editor">
-    <div class="form-row" style="background:#fdecec;padding:10px;border-radius:4px">
-      <label style="width:auto;margin-right:8px">操作者(创建人)</label>
-      <select id="actor" onchange="onActorChange()" style="padding:6px 8px;border:1px solid #dcdfe6;border-radius:4px"></select>
-      <span class="muted" id="actorHint" style="margin-left:10px"></span>
+    <div class="form-row" style="background:#fdecec;padding:10px;border-radius:4px;display:block">
+      <label style="width:auto;margin-right:6px">操作者</label>
+      <b id="actorName"></b>
+      <span class="muted" style="margin-left:8px">当前登录用户即操作者:只能查看自己创建的、及自己角色被授予查看的角色;仅自己创建的可编辑/删除。</span>
+      <span class="muted" id="actorHint" style="margin-left:8px"></span>
     </div>
     <h2>基本信息</h2>
     <div class="form-row"><label>角色名称</label><input id="roleName" placeholder="请输入角色名称"></div>
@@ -362,7 +363,7 @@
     </div>
 
     <div class="violations" id="violations"></div>
-    <div id="roleReadonly" class="tip" style="display:none;background:#fdecec;color:var(--brand)">只读:当前操作者不在该角色的可管理范围内(非自建、且未被显式授予「角色范围」),无法保存修改。</div>
+    <div id="roleReadonly" class="tip" style="display:none;background:#fdecec;color:var(--brand)">只读:该角色非当前操作者创建,仅可查看(被授予「角色范围」的角色也仅供查看/再委派,不能编辑),无法保存修改。</div>
     <div class="footer-bar">
       <button class="btn btn-primary" id="btnSaveRole" onclick="saveRole()">保存</button>
       <button class="btn btn-default" onclick="loadRole(currentRoleId)">重置</button>
@@ -427,7 +428,9 @@ const checked = {         // 各树的勾选状态: id -> true
 const resOverride = {};   // resourceId -> {mode:bool, actions:Set}
 let GRANT = {unlimited:true}; // 操作者可授出的上限,用于置灰
 let ALL_ROLES = [];       // 最近一次拉取的角色列表(供「角色范围」树用)
-function actorId(){ return Number(document.getElementById('actor').value||0); }
+// 角色管理一律以「当前登录」用户身份运作(已移除独立「操作者」下拉,避免越权):
+// 登录谁就以谁的身份看/建/改角色,可见与可编辑/删除均按该身份判定。
+function actorId(){ return loginUserId(); }
 // 某 id 在该树是否可授(不受限或在允许集合内)
 function grantAllows(kind, id){
   if(GRANT.unlimited) return true;
@@ -435,8 +438,11 @@ function grantAllows(kind, id){
   return (GRANT[m]||[]).includes(id);
 }
 function grantAllowsResAction(resId, code){ if(GRANT.unlimited) return true; return (GRANT.resourceActions||[]).some(x=>x.resourceId===resId&&x.actionCode===code); }
-// 操作者能否管理(编辑/删除)某角色:不受限或在可管理角色集内
-function roleCanManage(id){ return GRANT.unlimited || (GRANT.roleIds||[]).includes(Number(id)); }
+// 角色管理列表的两个维度(对齐用户要求):
+//   可见(出现在列表)= 不受限/超管 ∪ 自建 ∪ 被授予「角色范围」(后端折进 GRANT.roleIds)
+//   可编辑/删除      = 不受限/超管 ∪ 仅自建(created_by==当前操作者);角色范围内的角色只读
+function roleCanSee(id){ return GRANT.unlimited || (GRANT.roleIds||[]).includes(Number(id)) || roleCanManage(id); } // 自建(可编辑/删除)的角色恒可见——即便 GRANT 尚未刷新(刚新建)
+function roleCanManage(id){ if(GRANT.unlimited) return true; const r=(ALL_ROLES||[]).find(x=>x.id===Number(id)); return !!r && r.createdBy===actorId(); }
 // 「角色范围」树节点:扁平角色列表(每个角色一个根,无子节点),排除当前编辑角色自身
 function roleNodes(){ return ALL_ROLES.filter(r=>r.id!==currentRoleId).map(r=>({id:r.id,name:r.name,children:[]})); }
 
@@ -657,8 +663,7 @@ function applyScopes(roots, scopes, store){
 // ---------- 初始化 ----------
 async function init(){
   await reloadMeta();
-  await fetchGrantable();
-  await refreshRoles();
+  await refreshRolePanel();   // 以当前登录用户身份初始化角色面板(grantable+列表+树+编辑门禁)
   renderTesterTarget();
   await loadAppView();   // 默认进应用端
   await loadSysView();
@@ -671,7 +676,6 @@ async function reloadMeta(){
   const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}${u.isSuperuser?' ★超管':''}</option>`).join('');
   document.getElementById('tUser').innerHTML = userOpts;
   document.getElementById('loginUser').innerHTML = userOpts;
-  document.getElementById('actor').innerHTML = '<option value="0">系统管理员(不受限)</option>'+userOpts;
   // 用户管理:组织下拉 + 角色复选 + 用户列表
   document.getElementById('newUserOrg').innerHTML = META.orgs.map(o=>`<option value="${o.id}">${o.name}</option>`).join('');
   renderRoleChecks();
@@ -684,7 +688,7 @@ function switchView(v){
   document.querySelectorAll('.main-tab').forEach(e=>e.classList.toggle('active',e.dataset.view===v));
   document.querySelectorAll('.main-view').forEach(e=>e.classList.toggle('active',e.id==='view-'+v));
 }
-async function onLoginChange(){ await loadAppView(); await loadSysView(); }
+async function onLoginChange(){ await loadAppView(); await loadSysView(); await refreshRolePanel(); }
 async function loadAppView(){
   const uid=loginUserId();
   // 应用菜单(功能权限)→ 卡片
@@ -1200,15 +1204,18 @@ async function createUser(){
 }
 async function fetchGrantable(){
   GRANT = await api('/api/grantable?actor='+actorId());
-  document.getElementById('actorHint').textContent = GRANT.unlimited ? '不受限,可授予全部权限' : '只能授予该操作者拥有的权限(灰色项不可勾)';
+  const nm=(META.users||[]).find(u=>u.id===actorId()); // 操作者=当前登录用户
+  const an=document.getElementById('actorName'); if(an) an.textContent=nm?nm.name+(nm.isSuperuser?' ★超管':''):('#'+actorId());
+  const ah=document.getElementById('actorHint'); if(ah) ah.textContent = GRANT.unlimited ? '(超管/不受限,可见并可管理全部角色)' : '';
 }
-async function onActorChange(){
+// 角色面板随「当前登录」用户刷新(操作者即登录用户):grantable + 列表 + 树 + 编辑门禁。
+async function refreshRolePanel(){
   await fetchGrantable(); rerenderAll(); await refreshRoles();
-  // 切换操作者后,重算当前角色的可编辑性(只读/禁用保存)
+  // 登录用户变 → 重算当前角色的可编辑性(只读/禁用保存)
   if(currentRoleId){ const editable=roleCanManage(currentRoleId);
     document.getElementById('btnSaveRole').disabled=!editable;
     document.getElementById('roleReadonly').style.display=editable?'none':'block'; }
-  renderRoleAreaTrees(); // 操作者变 → canCheck/可编辑性变,惰性区域树重拉(放最后,读到最新 editable)
+  renderRoleAreaTrees(); // 登录用户变 → canCheck/可编辑性变,惰性区域树重拉(放最后,读到最新 editable)
 }
 
 async function refreshRoles(){
@@ -1217,14 +1224,19 @@ async function refreshRoles(){
   ALL_ROLES = roles;              // 供「角色范围」树用
   if(document.getElementById('newUserRoles')) renderRoleChecks();
   const el=document.getElementById('roleList');
-  el.innerHTML = roles.map(r=>{
-    // 可管理(编辑/删除)= 不受限/超管 ∪ 自建 ∪ 被显式授予「角色范围」(后端已折进 GRANT.roleIds)
-    const canDel = roleCanManage(r.id);
-    const del = canDel ? `<span class="role-del" title="删除角色" onclick="event.stopPropagation();delRole(${r.id})">${svgIco('i-trash')}</span>` : '';
-    const lock = canDel ? '' : ' <span class="muted" title="不在可管理角色范围,只读">🔒</span>';
+  // 列表只显示「可见」角色:自建 ∪ 被授予「角色范围」(后端折进 GRANT.roleIds);其余不可见
+  const visible = roles.filter(r=>roleCanSee(r.id));
+  el.innerHTML = visible.map(r=>{
+    // 可编辑/删除 = 不受限/超管 ∪ 仅自建;角色范围内的角色只读(可见但不能编辑/删除)
+    const canEdit = roleCanManage(r.id);
+    const del = canEdit ? `<span class="role-del" title="删除角色" onclick="event.stopPropagation();delRole(${r.id})">${svgIco('i-trash')}</span>` : '';
+    const lock = canEdit ? '' : ' <span class="muted" title="非自己创建的角色,只读(仅可查看,不能编辑/删除)">🔒</span>';
     return `<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})"><span class="role-nm">${r.name}${lock}<small>${r.description||''}</small></span>${del}</div>`;
   }).join('');
-  if(!currentRoleId && roles.length){ loadRole(roles[0].id); }
+  const visIds=new Set(visible.map(r=>r.id));
+  if(currentRoleId && !visIds.has(currentRoleId)) currentRoleId=0; // 当前角色对该登录用户不可见 → 取消选中
+  if(!currentRoleId && visible.length){ loadRole(visible[0].id); }
+  else if(!visible.length){ newRole(); el.innerHTML='<div class="muted" style="padding:8px">无可见角色:你只能看到自己创建的、或自己角色被授予查看的角色。可点下方「新建角色」创建(归你所有)。</div>'; }
 }
 
 // 删除角色:绑用户也直接删(后端级联清 user_role),用户失去该角色权限。
@@ -1236,6 +1248,7 @@ async function delRole(id){
     if(currentRoleId===id) currentRoleId=0;
     toast('已删除角色:'+name,'i-trash');
     await reloadMeta();   // user_role 绑定可能变化 → 刷新用户列表/角色下拉
+    await fetchGrantable(); // 与新建/编辑对称:角色变更后刷新可授范围(角色范围委派树同步)
     await refreshRoles();
   }catch(e){ alert('删除失败:'+e.message); }
 }
@@ -1260,7 +1273,7 @@ async function loadRole(id){
   applyScopes(buildTree(META.orgs), role.orgScopes||[], checked.org);
   rtApplyScopes('resarea', role.resourceAreaScopes||[]);
   applyScopes(roleNodes(), role.roleScopes||[], checked.rolescope); // 角色范围(扁平,无子树)
-  // 编辑门禁(对齐海康 canEdit):非可管理范围 → 只读,禁用保存
+  // 编辑门禁(对齐海康 canEdit):非自己创建的角色 → 只读,禁用保存(角色范围内的角色可见但只读)
   const editable = roleCanManage(id);
   document.getElementById('btnSaveRole').disabled = !editable;
   document.getElementById('roleReadonly').style.display = editable ? 'none' : 'block';
@@ -1360,6 +1373,7 @@ async function saveRole(){
   if(j.preserved>0) msg+=`\n(保留了 ${j.preserved} 项你无权查看/修改的范围外权限)`;
   alert(msg);
   currentRoleId=j.data.id;
+  await fetchGrantable(); // 新建/编辑后刷新可授范围:新角色进入 GRANT.roleIds(列表恒见 + 角色范围委派树同步)
   await refreshRoles();
   await loadRole(currentRoleId); // 重新载入合并后的结果
 }

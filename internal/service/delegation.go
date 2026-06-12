@@ -245,7 +245,8 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 			}
 		}
 	}
-	// 委派维度:可管理角色集 = 自建角色 ∪ 自身角色的「角色范围」并集(见 ManageableRoles)
+	// 委派维度:可见 + 可再委派的角色集 = 自建角色 ∪ 自身角色的「角色范围」并集(见 ManageableRoles)。
+	// 前端用它(GRANT.roleIds)既过滤角色列表「可见」,又置灰「角色范围」委派树。
 	mset, _ := s.ManageableRoles(actorId)
 	for _, r := range s.Roles() { // 按角色 id 有序输出,便于前端/截图稳定
 		if mset[r.Id] {
@@ -255,11 +256,13 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 	return g
 }
 
-// ManageableRoles 返回操作者可管理(可编辑/删除/再委派)的角色集合。
+// ManageableRoles 返回操作者「可见 + 可再委派」的角色集合(角色管理列表可见性 + 「角色范围」委派上限)。
 //
 //	manageable(actor) = { 自己创建的角色 } ∪ { actor 各有效角色的「角色范围」并集 }
 //
-// actorId<=0(不受限)或超级管理员 → unlimited=true(可管理全部角色)。单层不级联,与模型 A 自洽。
+// 注意:可见 ≠ 可编辑/删除。可编辑/删除仅限自建角色(见 OwnedRoles + GuardManageRole);
+// 角色范围内的角色对本操作者只读(列表可见、可作为他人角色范围再委派,但不能编辑/删除)。
+// actorId<=0(不受限)或超级管理员 → unlimited=true(可见全部角色)。单层不级联,与模型 A 自洽。
 func (s *Store) ManageableRoles(actorId int) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
 	if actorId <= 0 {
@@ -280,6 +283,34 @@ func (s *Store) ManageableRoles(actorId int) (set map[int]bool, unlimited bool) 
 	for _, r := range s.effectiveRoles(actor) { // 2) 显式角色范围(模型 B)
 		for _, sc := range r.RoleScopes {
 			set[sc.NodeId] = true
+		}
+	}
+	return set, false
+}
+
+// OwnedRoles 返回操作者「可编辑/删除」的角色集合 = 仅自己创建的角色(created_by)。
+//
+// 与 ManageableRoles 区分(对齐用户对角色管理列表的要求):
+//   - 自建角色(created_by==actor):列表可见 + 可编辑 + 可删除;
+//   - 角色范围(显式勾选)角色:列表可见 + 可作为「角色范围」再委派,但只读(不可编辑/删除)。
+//
+// 即:可见 = ManageableRoles(自建 ∪ 角色范围),可编辑/删除 = OwnedRoles(仅自建)。
+// actorId<=0(不受限)或超级管理员 → unlimited=true(可编辑/删除全部角色)。
+func (s *Store) OwnedRoles(actorId int) (set map[int]bool, unlimited bool) {
+	set = map[int]bool{}
+	if actorId <= 0 {
+		return set, true
+	}
+	actor := s.User(actorId)
+	if actor == nil {
+		return set, false
+	}
+	if actor.IsSuperuser {
+		return set, true
+	}
+	for _, r := range s.Roles() {
+		if r.CreatedBy == actorId {
+			set[r.Id] = true
 		}
 	}
 	return set, false
