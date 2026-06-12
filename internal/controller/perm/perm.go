@@ -9,43 +9,9 @@ import (
 	"security-permission/internal/service"
 )
 
-// Register 把所有接口注册到给定路由组。
+// Register 把所有接口按 GoFrame 规范路由注册到给定路由组。
 func Register(group *ghttp.RouterGroup) {
-	group.GET("/meta", meta)
-	group.GET("/roles", listRoles)
-	group.GET("/roles/{id}", getRole)
-	group.POST("/roles", saveRole)
-	group.POST("/roles/delete", deleteRole)
-	group.GET("/grantable", grantable)
-	group.POST("/check", check)
-	// 用户管理 + 应用端体验
-	group.GET("/users", listUsers)
-	group.GET("/users/{id}", getUser)
-	group.POST("/users", saveUser)
-	group.POST("/users/delete", deleteUser)
-	group.GET("/visible-areas", visibleAreas)
-	group.GET("/area-children", areaChildren)
-	group.GET("/area-search", areaSearch)
-	group.GET("/area-resources", areaResources)
-	group.GET("/role-area-children", roleAreaChildren)
-	group.GET("/app-menus", appMenus)
-	// 区域管理(真实落库:写时鉴权 + path 自动维护)
-	group.POST("/areas", saveArea)
-	group.POST("/areas/reorder", reorderArea)
-	group.POST("/areas/delete", deleteArea)
-	// 组织管理(真实落库:写时鉴权 + path 自动维护)
-	group.POST("/orgs", saveOrg)
-	group.POST("/orgs/delete", deleteOrg)
-	// 资源(摄像头)管理(真实落库:写时鉴权 sys.resource + 区域数据权限)
-	group.POST("/resources", saveResource)
-	group.POST("/resources/delete", deleteResource)
-	// 后台管理域体验
-	group.GET("/sys-menus", sysMenus)
-	group.GET("/manage-areas", manageAreas)
-	group.GET("/manage-area-children", manageAreaChildren)
-	group.GET("/manage-orgs", manageOrgs)
-	group.GET("/manage-area-detail", manageAreaDetail)
-	group.GET("/manage-org-detail", manageOrgDetail)
+	group.Bind(NewV1())
 }
 
 func ok(r *ghttp.Request, data interface{}) {

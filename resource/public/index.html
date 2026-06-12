@@ -562,7 +562,7 @@ function resAreaCovers(areaId){ const sc=rtScopes('resarea'), p=rtPath(areaId);
 }
 // 拉取某层(后端按操作者可授范围过滤),写入 index/childrenOf;若父为子树授权则新子继承勾选(级联)。
 async function rtFetch(kind, parentId){
-  const list=await api(`/api/role-area-children?actor=${actorId()}&parentId=${parentId}&kind=${kind}`)||[];
+  const list=await api(`/api/role/area-children?actor=${actorId()}&parentId=${parentId}&kind=${kind}`)||[];
   const st=roleTree[kind]; const inheritSub = parentId!==0 && st.chk[parentId] && st.sub[parentId];
   list.forEach(n=>{ st.index[n.id]=n; if(inheritSub){ st.chk[n.id]=true; st.sub[n.id]=true; } });
   st.childrenOf[parentId]=list.map(n=>n.id);
@@ -735,7 +735,7 @@ async function init(){
 async function reloadMeta(){
   META = await api('/api/meta');
   META._areaById = {}; (META.areas||[]).forEach(a=>META._areaById[a.id]=a); // path 查询(惰性区域树的覆盖/继承判断用)
-  META._roles = await api('/api/roles');
+  META._roles = await api('/api/role/list');
   const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}${u.isSuperuser?' ★超管':''}</option>`).join('');
   document.getElementById('tUser').innerHTML = userOpts;
   document.getElementById('loginUser').innerHTML = userOpts;
@@ -760,7 +760,7 @@ async function onLoginChange(){ syncLoginDisplay(); await loadAppView(); await l
 async function loadAppView(){
   const uid=loginUserId();
   // 应用菜单(功能权限)→ 卡片
-  const menus=await api('/api/app-menus?userId='+uid);
+  const menus=await api('/api/app/menu?userId='+uid);
   renderAppCards(menus);
   // 视频监控模块用的可见区域树(按层懒加载 + 分页)
   await loadAppAreaRoot();
@@ -875,7 +875,7 @@ function lazyTreeNode(n, opts){
   return node;
 }
 // 应用端浏览树(RES_AREA 数据权限)
-function appTreeOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'该用户无任何可见区域', icon:'i-area', activeSel:'#appAreaTree .area-node', onClick:(n)=>openArea(n.id), defaultExpandRoot:true }; }
+function appTreeOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/app/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'该用户无任何可见区域', icon:'i-area', activeSel:'#appAreaTree .area-node', onClick:(n)=>openArea(n.id), defaultExpandRoot:true }; }
 async function loadAppAreaRoot(){ mountTreeSearch('appAreaTree','app', appTreeOpts, renderAppTreeRoot); await renderAppTreeRoot(); }
 async function renderAppTreeRoot(){ const el=document.getElementById('appAreaTree'); el.innerHTML=''; await lazyTreeLevel(el, 0, 1, true, appTreeOpts()); }
 // 树搜索框:挂到树容器上方;输入即搜(全树扫描 + 权限过滤,后端下推),清空恢复懒加载树
@@ -891,7 +891,7 @@ function mountTreeSearch(treeElId, scope, optsFn, restoreFn){
 // 搜索:对齐真实海康——结果按「局部树」展示(命中分支的祖先作上下文,匹配项高亮),最多前 500 条,超出给提示。
 async function searchTreeInto(treeElId, q, scope, opts){
   const uid=loginUserId(); const el=document.getElementById(treeElId);
-  const d=await api(`/api/area-search?userId=${uid}&scope=${scope}&q=${encodeURIComponent(q)}`);
+  const d=await api(`/api/app/area-search?userId=${uid}&scope=${scope}&q=${encodeURIComponent(q)}`);
   el.innerHTML='';
   const items=d.items||[];
   // 截断提示(对齐海康原文:搜索结果过多,仅展示前 500 条,建议缩小搜索范围。)
@@ -936,7 +936,7 @@ function hlMatch(name,q){
 // 点击区域:分页拉取其子树内、用户有权的资源(权限下推 SQL)。
 async function openArea(areaId){
   const uid=loginUserId();
-  const d=await api(`/api/area-resources?userId=${uid}&areaId=${areaId}&page=1&size=${RES_PAGE}`);
+  const d=await api(`/api/app/resource-list?userId=${uid}&areaId=${areaId}&page=1&size=${RES_PAGE}`);
   const main=document.getElementById('appMain');
   if(!d.accessible){
     main.innerHTML=`<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-lock"></use></svg></div>暂无操作权限<div class="muted" style="margin-top:8px">「${d.areaName}」仅用于导航,你没有该区域资源的权限</div></div>`;
@@ -958,7 +958,7 @@ function renderResMore(d, uid, areaId){
     const btn=document.createElement('div'); btn.className='area-more';
     btn.style.cssText='cursor:pointer;color:var(--brand);padding:8px 0;font-size:13px';
     btn.textContent=`加载更多(${shown}/${d.total})`;
-    btn.onclick=async()=>{ const nd=await api(`/api/area-resources?userId=${uid}&areaId=${areaId}&page=${d.page+1}&size=${d.size}`); appendResCards(nd.resources); renderResMore(nd, uid, areaId); };
+    btn.onclick=async()=>{ const nd=await api(`/api/app/resource-list?userId=${uid}&areaId=${areaId}&page=${d.page+1}&size=${d.size}`); appendResCards(nd.resources); renderResMore(nd, uid, areaId); };
     box.appendChild(btn);
   }
 }
@@ -978,7 +978,7 @@ function showSysPanel(panel, name){
 }
 async function loadSysView(){
   const uid=loginUserId();
-  const menus=await api('/api/sys-menus?userId='+uid);
+  const menus=await api('/api/manage/menu?userId='+uid);
   const navEl=document.getElementById('sysMenus');
   navEl.innerHTML = menus.length
     ? menus.map(m=>`<div class="nav-item ${m.parentId?'child':''}" data-code="${m.code}" onclick="onSysMenu('${m.code}','${m.name}',this)">${svgIco(sysIcon(m.code))}<span>${m.name}</span></div>`).join('')
@@ -988,7 +988,7 @@ async function loadSysView(){
   if(def){ const el=navEl.querySelector(`[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
   else { showSysPanel('none'); }
   await loadManageAreaRoot(); // 安保区域:按层懒加载 + 分页(AREA 数据权限)
-  MANAGE_ORGS = await api('/api/manage-orgs?userId='+uid);
+  MANAGE_ORGS = await api('/api/manage/org-tree?userId='+uid);
   renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
   document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
   document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
@@ -1017,7 +1017,7 @@ let resEditId=0, resMoveTarget=0; // 资源编辑/移动的目标 id
 async function openManageNode(kind, id){
   const uid=loginUserId();
   curManage[kind]=id;
-  const url = kind==='area' ? `/api/manage-area-detail?userId=${uid}&areaId=${id}` : `/api/manage-org-detail?userId=${uid}&orgId=${id}`;
+  const url = kind==='area' ? `/api/manage/area-detail?userId=${uid}&areaId=${id}` : `/api/manage/org-detail?userId=${uid}&orgId=${id}`;
   const d=await api(url);
   const main=document.getElementById(kind==='area'?'sysMainArea':'sysMainOrg');
   const label = kind==='area' ? '区域' : '组织';
@@ -1104,7 +1104,7 @@ async function resFormDo(){
     ? {id:resEditId, name, type, areaId:(CUR_RES_ITEMS.find(x=>x.id===resEditId)||{}).areaId}  // 同区域=改名/类型
     : {areaId:curManage.area, name, type};
   try{
-    await api('/api/resources?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await api('/api/manage/resource-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     toast((resEditId>0?'已保存:':'已新增:')+name,'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('保存失败', e); }
 }
@@ -1113,7 +1113,7 @@ function resMoveUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return;
 async function resMoveDo(target){
   const r=CUR_RES_ITEMS.find(x=>x.id===resMoveTarget)||{};
   try{
-    await api('/api/resources?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resMoveTarget,areaId:target.id,name:r.name,type:r.type})});
+    await api('/api/manage/resource-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resMoveTarget,areaId:target.id,name:r.name,type:r.type})});
     closeMovePicker(); toast('已移动:'+(r.name||''),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('移动失败', e); }
 }
@@ -1121,7 +1121,7 @@ async function resDelete(id){
   const r=CUR_RES_ITEMS.find(x=>x.id===id)||{}; const name=r.name||('#'+id);
   if(!(await modalConfirm('确认删除资源「'+name+'」?\n(对该资源的精细授权将一并清理)'))) return;
   try{
-    await api('/api/resources/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/manage/resource-delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('删除失败', e); }
 }
@@ -1129,7 +1129,7 @@ async function resDelete(id){
 // ---------- 区域增删改(真实落库) ----------
 function manageAreaName(id){ return (curAreaNode&&curAreaNode.id===id)?curAreaNode.name:('#'+id); }
 // 后台管理树(AREA 数据权限):按层懒加载 + 分页,复用 lazyTree
-function manageAreaTreeOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/manage-area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可见区域', icon:'i-area', activeSel:'#manageAreaTree .area-node', onClick:(n)=>openManageNode('area', n.id), defaultExpandRoot:true }; }
+function manageAreaTreeOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/manage/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可见区域', icon:'i-area', activeSel:'#manageAreaTree .area-node', onClick:(n)=>openManageNode('area', n.id), defaultExpandRoot:true }; }
 async function loadManageAreaRoot(){ mountTreeSearch('manageAreaTree','manage', manageAreaTreeOpts, renderManageTreeRoot); await renderManageTreeRoot(); }
 async function renderManageTreeRoot(){ const el=document.getElementById('manageAreaTree'); el.innerHTML=''; await lazyTreeLevel(el, 0, 1, true, manageAreaTreeOpts()); }
 // 操作成功后:重渲染懒加载树 + 刷新元数据(角色编辑器/应用端的区域树),并重新打开 focusId 详情
@@ -1143,7 +1143,7 @@ async function refreshAreaMgmt(focusId){
 async function areaAdd(){
   const name=await modalPrompt('新子区域名称:'); if(!name||!name.trim()) return;
   try{
-    await api('/api/areas?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.area,name:name.trim()})});
+    await api('/api/manage/area-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.area,name:name.trim()})});
     toast('已新增子区域:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('新增失败', e); }
 }
@@ -1151,23 +1151,23 @@ async function areaRename(){
   const cur=manageAreaName(curManage.area);
   const name=await modalPrompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
   try{
-    await api('/api/areas?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,name:name.trim()})});
+    await api('/api/manage/area-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,name:name.trim()})});
     toast('已重命名为:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('重命名失败', e); }
 }
 // 移动:弹出懒加载树选择器,导航到目标点选(只能选 accessible 节点);写时后端再校验防环/权限/重名
-function areaPickerOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/manage-area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
+function areaPickerOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/manage/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
 function areaMoveUI(){ if(!curManage.area) return; openMovePicker('移动「'+manageAreaName(curManage.area)+'」到…', areaPickerOpts(), areaMoveDo); }
 async function areaMoveDo(target){
   try{
-    await api('/api/areas?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target.id,name:manageAreaName(curManage.area)})});
+    await api('/api/manage/area-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target.id,name:manageAreaName(curManage.area)})});
     closeMovePicker(); toast('已移动到:'+target.name,'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('移动失败', e); }
 }
 async function areaReorder(direction){
   if(!curManage.area) return;
   try{
-    await api('/api/areas/reorder?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,direction})});
+    await api('/api/manage/area-reorder?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,direction})});
     toast(direction==='up'?'已上移':'已下移','i-check');
     await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('排序失败', e); }
@@ -1203,7 +1203,7 @@ async function areaDelete(){
   if(!(await modalConfirm('确认删除区域「'+name+'」?\n(仅允许删除无子区域、无资源的区域;对该区域的授权记录将一并清理)'))) return;
   const pid=(curAreaNode&&curAreaNode.parentId)||0;
   try{
-    await api('/api/areas/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
+    await api('/api/manage/area-delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
     toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(pid);
   }catch(e){ await modalError('删除失败', e); }
 }
@@ -1212,7 +1212,7 @@ function manageOrgName(id){ const o=MANAGE_ORGS.find(x=>x.id===id); return o?o.n
 // 操作成功后:刷新左树 + 元数据(角色编辑器的组织树 / 用户管理的所属组织下拉),并重新打开 focusId
 async function refreshOrgMgmt(focusId){
   const uid=loginUserId();
-  MANAGE_ORGS = await api('/api/manage-orgs?userId='+uid);
+  MANAGE_ORGS = await api('/api/manage/org-tree?userId='+uid);
   renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
   await reloadMeta();
   if(focusId && MANAGE_ORGS.some(x=>x.id===focusId)) await openManageNode('org', focusId);
@@ -1221,7 +1221,7 @@ async function refreshOrgMgmt(focusId){
 async function orgAdd(){
   const name=await modalPrompt('新子组织名称:'); if(!name||!name.trim()) return;
   try{
-    await api('/api/orgs?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.org,name:name.trim()})});
+    await api('/api/manage/org-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.org,name:name.trim()})});
     toast('已新增子组织:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
   }catch(e){ await modalError('新增失败', e); }
 }
@@ -1229,7 +1229,7 @@ async function orgRename(){
   const cur=manageOrgName(curManage.org);
   const name=await modalPrompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
   try{
-    await api('/api/orgs?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,name:name.trim()})});
+    await api('/api/manage/org-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,name:name.trim()})});
     toast('已重命名为:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
   }catch(e){ await modalError('重命名失败', e); }
 }
@@ -1249,7 +1249,7 @@ function orgMoveUI(){
 async function orgMoveDo(){
   const target=Number(document.getElementById('orgMoveSel').value||0); if(!target) return;
   try{
-    await api('/api/orgs?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,parentId:target,name:manageOrgName(curManage.org)})});
+    await api('/api/manage/org-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,parentId:target,name:manageOrgName(curManage.org)})});
     toast('已移动到:'+manageOrgName(target),'i-check'); await refreshOrgMgmt(curManage.org);
   }catch(e){ await modalError('移动失败', e); }
 }
@@ -1258,7 +1258,7 @@ async function orgDelete(){
   if(!(await modalConfirm('确认删除组织「'+name+'」?\n(仅允许删除无子组织、无下属用户的组织;对该组织的授权记录将一并清理)'))) return;
   const pid=(MANAGE_ORGS.find(x=>x.id===curManage.org)||{}).parentId||0;
   try{
-    await api('/api/orgs/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org})});
+    await api('/api/manage/org-delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org})});
     toast('已删除:'+name,'i-trash'); await refreshOrgMgmt(pid);
   }catch(e){ await modalError('删除失败', e); }
 }
@@ -1378,7 +1378,7 @@ async function saveUser(){
   const roleIds=[...document.querySelectorAll('#editUserRoles input:checked')].map(c=>Number(c.value));
   const isSuperuser=document.getElementById('editUserSuper').checked;
   try{
-    const saved=await api('/api/users?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,orgId,roleIds,isSuperuser})});
+    const saved=await api('/api/user/save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,orgId,roleIds,isSuperuser})});
     EDIT_USER_ID=saved.id;
     await reloadMeta();
     await loadSysView();
@@ -1392,7 +1392,7 @@ async function deleteUser(){
   if(!u) return;
   if(!(await modalConfirm('确认删除账号「'+u.name+'」?\n用户与角色绑定将一并清理。'))) return;
   try{
-    await api('/api/users/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/user/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     EDIT_USER_ID=0;
     await reloadMeta();
     await loadSysView();
@@ -1401,7 +1401,7 @@ async function deleteUser(){
   }catch(e){ await modalError('删除失败', e); }
 }
 async function fetchGrantable(){
-  GRANT = await api('/api/grantable?actor='+actorId());
+  GRANT = await api('/api/role/grantable?actor='+actorId());
   const nm=(META.users||[]).find(u=>u.id===actorId()); // 操作者=当前登录用户
   const an=document.getElementById('actorName'); if(an) an.textContent=nm?nm.name+(nm.isSuperuser?' ★超管':''):('#'+actorId());
   const ah=document.getElementById('actorHint'); if(ah) ah.textContent = GRANT.unlimited ? '(超管/不受限,可见并可管理全部角色)' : '';
@@ -1418,7 +1418,7 @@ async function refreshRolePanel(){
 }
 
 async function refreshRoles(){
-  const roles = await api('/api/roles');
+  const roles = await api('/api/role/list');
   META._roles = roles;            // 供用户管理用
   ALL_ROLES = roles;              // 供「角色范围」树用
   if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>u.id===EDIT_USER_ID) : null);
@@ -1443,7 +1443,7 @@ async function delRole(id){
   const r=(META._roles||[]).find(x=>x.id===id)||{}; const name=r.name||('#'+id);
   if(!(await modalConfirm(`确认删除角色「${name}」?\n\n绑定该角色的用户将失去这部分权限(若不再有其他角色,登录后将无任何权限)。\n此操作不可撤销。`))) return;
   try{
-    await api('/api/roles/delete?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/role/delete?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     if(currentRoleId===id) currentRoleId=0;
     toast('已删除角色:'+name,'i-trash');
     await reloadMeta();   // user_role 绑定可能变化 → 刷新用户列表/角色下拉
@@ -1460,7 +1460,7 @@ function highlightRole(id){
 async function loadRole(id){
   if(!id){ return; }
   currentRoleId=id; highlightRole(id); // 立即高亮,不等异步重渲染
-  role = await api('/api/roles/'+id);
+  role = await api('/api/role/detail?id='+id);
   document.getElementById('roleName').value=role.name||'';
   document.getElementById('roleDesc').value=role.description||'';
   // 菜单勾选
@@ -1565,7 +1565,7 @@ async function saveRole(){
   Object.keys(resOverride).forEach(rid=>{ const ov=resOverride[rid]; if(ov.mode){ r.resourceOverrides.push(Number(rid)); ov.actions.forEach(ac=>r.resourceActions.push({resourceId:Number(rid),actionCode:ac})); } });
   if(!r.name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
   const vbox=document.getElementById('violations'); vbox.style.display='none'; vbox.innerHTML='';
-  const resp=await fetch('/api/roles?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
+  const resp=await fetch('/api/role/save?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
   const j=await resp.json();
   if(j.code!==0){ await modalAlert('保存失败:'+j.message,'操作失败','i-x'); return; }
   let msg='已保存:'+j.data.name;
@@ -1593,7 +1593,7 @@ async function runCheck(){
   const body={ userId:Number(document.getElementById('tUser').value), type };
   const t=document.getElementById('tTarget').value;
   if(type==='menu') body.code=t; else if(type==='resource'){ body.resourceId=Number(t); body.action=document.getElementById('tAction').value; } else body.nodeId=Number(t);
-  try{ const d=await api('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  try{ const d=await api('/api/auth/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const el=document.getElementById('checkResult');
     el.className='result '+(d.allow?'allow':'deny');
     el.innerHTML=`<strong>${d.allow?svgIco('i-check')+'允许':svgIco('i-x')+'拒绝'}</strong> — ${d.reason}`+
