@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>权限设计学习路线图</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #20252d;
+      --muted: #697281;
+      --line: #d9dee7;
+      --brand: #c91623;
+      --brand-dark: #89111c;
+      --navy: #1d2733;
+      --green: #167a4a;
+      --amber: #9a6111;
+      --blue: #2367a8;
+      --shadow: 0 12px 30px rgba(22, 31, 46, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      line-height: 1.65;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--navy), #12171d 62%, var(--brand-dark));
+      color: #fff;
+      padding: 44px 24px 34px;
+    }
+
+    .wrap {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #ffd9dc;
+      font-size: 13px;
+      letter-spacing: 0;
+      margin-bottom: 12px;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 3px;
+      background: var(--brand);
+      border-radius: 2px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 860px;
+      margin: 18px 0 0;
+      color: #d7dde7;
+      font-size: 17px;
+    }
+
+    main {
+      padding: 28px 0 48px;
+    }
+
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: -36px;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat b {
+      display: block;
+      color: var(--brand);
+      font-size: 24px;
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    section {
+      margin-top: 26px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .section-head {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .content {
+      padding: 22px 24px 24px;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 18px;
+    }
+
+    .phase {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 18px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--brand);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .phase:nth-child(2) {
+      border-left-color: var(--blue);
+    }
+
+    .phase:nth-child(3) {
+      border-left-color: var(--green);
+    }
+
+    .phase:nth-child(4) {
+      border-left-color: var(--amber);
+    }
+
+    .phase:nth-child(5) {
+      border-left-color: #6b4aa0;
+    }
+
+    .phase:nth-child(6) {
+      border-left-color: #2b7c7d;
+    }
+
+    .phase-time {
+      color: var(--brand);
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .phase h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .phase p {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .chip {
+      border: 1px solid #cfd6df;
+      background: #f7f9fb;
+      color: #35404d;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .cols {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .box h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li {
+      margin: 7px 0;
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #eef1f5;
+      color: #1e3348;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.94em;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    .flow-step {
+      position: relative;
+      min-height: 118px;
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--brand);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .flow-step span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .check {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px 14px;
+      background: #fff;
+    }
+
+    .check strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .check span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .callout {
+      border-left: 5px solid var(--brand);
+      background: #fff5f6;
+      padding: 16px 18px;
+      border-radius: 8px;
+      color: #4d2529;
+    }
+
+    .kbd {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 12px;
+      padding: 12px 14px;
+      background: #151b22;
+      color: #e9eef5;
+      border-radius: 8px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    footer {
+      color: var(--muted);
+      text-align: center;
+      padding: 26px 0 8px;
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .quick-grid,
+      .cols,
+      .flow,
+      .checklist {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .phase {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .wrap {
+        width: min(100% - 24px, 1180px);
+      }
+
+      header {
+        padding: 34px 14px 52px;
+      }
+
+      .quick-grid,
+      .cols,
+      .flow,
+      .checklist {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head,
+      .content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="eyebrow">GoFrame v2 RBAC + 数据权限学习路线</div>
+      <h1>权限设计学习路线图</h1>
+      <p class="subtitle">
+        按“先概念、再引擎、后委派、最后扩展”的顺序学习这套仿海康 iSecure Center 的权限模型。
+        每一阶段都对应具体文档、代码锚点和可复验场景。
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="quick-grid">
+      <div class="stat">
+        <b>2</b>
+        <span>核心维度：功能权限 + 数据权限</span>
+      </div>
+      <div class="stat">
+        <b>3</b>
+        <span>数据对象：区域树、组织树、业务资源</span>
+      </div>
+      <div class="stat">
+        <b>6</b>
+        <span>学习阶段：从心智模型到分页下推</span>
+      </div>
+      <div class="stat">
+        <b>1</b>
+        <span>关键技巧：物化路径前缀匹配子树</span>
+      </div>
+    </div>
+
+    <section>
+      <div class="section-head">
+        <h2>先记住一张图</h2>
+        <p class="hint">所有访问决策都围绕这条主线展开。</p>
+      </div>
+      <div class="content">
+        <div class="flow">
+          <div class="flow-step">
+            <strong>用户</strong>
+            <span>用户不直接配权限，只绑定一个或多个角色。</span>
+          </div>
+          <div class="flow-step">
+            <strong>角色</strong>
+            <span>角色承载菜单、区域、组织、资源、角色范围。</span>
+          </div>
+          <div class="flow-step">
+            <strong>功能关</strong>
+            <span>看用户角色是否拥有对应菜单或功能码。</span>
+          </div>
+          <div class="flow-step">
+            <strong>数据关</strong>
+            <span>看目标对象是否落在授权树范围内。</span>
+          </div>
+          <div class="flow-step">
+            <strong>操作关</strong>
+            <span>业务资源还要判断单资源动作是否被覆盖授权。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>六阶段路线</h2>
+        <p class="hint">建议按顺序推进。前两阶段不写代码，第三阶段开始边读边在浏览器验证。</p>
+      </div>
+      <div class="content timeline">
+        <article class="phase">
+          <div class="phase-time">第 0 阶段<br />20 分钟</div>
+          <div>
+            <h3>建立权限地图</h3>
+            <p>目标是听懂这个系统在解决什么问题：普通 RBAC 只管页面入口，这里还要管区域、组织、摄像头和二次授权。</p>
+            <ul>
+              <li>读 <code>docs/权限设计说明.md</code> 的第 1-5 节。</li>
+              <li>读 <code>docs/海康对照.md</code> 的“一句话结论”和“逐项对照表”。</li>
+              <li>产出一句自己的理解：访问 = 功能关 + 数据关，超管例外。</li>
+            </ul>
+            <div class="chips">
+              <span class="chip">RBAC</span>
+              <span class="chip">SYS / APP 双域</span>
+              <span class="chip">超管短路</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-time">第 1 阶段<br />30 分钟</div>
+          <div>
+            <h3>吃透领域模型</h3>
+            <p>先把名词表学清楚，后面所有代码都只是操作这些结构。</p>
+            <ul>
+              <li>读 <code>internal/model/permission.go</code>。</li>
+              <li>重点看 <code>Role</code>、<code>User</code>、<code>DataScope</code>、<code>Area.Path</code>、<code>Org.Path</code>。</li>
+              <li>回答：为什么数据权限只存 <code>{node, include_child}</code>，不展开存所有子节点？</li>
+            </ul>
+            <div class="chips">
+              <span class="chip">Role.MenuIds</span>
+              <span class="chip">Role.AreaScopes</span>
+              <span class="chip">ResourceOverrides</span>
+              <span class="chip">CreatedBy</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-time">第 2 阶段<br />60 分钟</div>
+          <div>
+            <h3>读懂只读鉴权引擎</h3>
+            <p>这是最核心、也最值得先读懂的代码。它只判断能不能访问，不负责保存权限。</p>
+            <ul>
+              <li>读 <code>internal/service/auth.go</code>。</li>
+              <li>顺序看 <code>Decision</code>、<code>CheckMenu</code>、<code>checkTreeScope</code>、<code>CheckResource</code>。</li>
+              <li>重点理解 <code>strings.HasPrefix(targetPath, scopePath)</code> 如何表达“授权子树”。</li>
+            </ul>
+            <div class="chips">
+              <span class="chip">功能关</span>
+              <span class="chip">树范围</span>
+              <span class="chip">资源覆盖</span>
+              <span class="chip">Trace</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-time">第 3 阶段<br />45 分钟</div>
+          <div>
+            <h3>用页面复验三条经典场景</h3>
+            <p>不要只看代码。打开页面，用“鉴权测试”面板看引擎返回的 reason 和 trace。</p>
+            <ul>
+              <li>李四看 102 球机实时预览：应允许。</li>
+              <li>李四看 102 球机远程回放：应拒绝，因为资源精细只给 live。</li>
+              <li>张三访问园区A管理域：应拒绝，因为 AREA 范围未覆盖。</li>
+            </ul>
+            <div class="kbd">go run ./tools/dbinit
+go run main.go
+浏览器打开 http://127.0.0.1:8000/</div>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-time">第 4 阶段<br />90 分钟</div>
+          <div>
+            <h3>攻克受控委派</h3>
+            <p>这是最容易绕的部分：创建或编辑角色时，操作者只能授出自己当前可授的范围，但保存时要保留他看不见的旧权限。</p>
+            <ul>
+              <li>读 <code>internal/service/delegation.go</code> 的 <code>GrantableSet</code> 和 <code>MergeDelegated</code>。</li>
+              <li>读 <code>internal/service/role.go</code> 的 <code>GuardManageRole</code>。</li>
+              <li>背下合并公式：<code>(提交 ∩ 可授范围) ∪ (原有 \ 可授范围)</code>。</li>
+              <li>区分可见角色 <code>ManageableRoles</code> 和可编辑删除角色 <code>OwnedRoles</code>。</li>
+            </ul>
+            <div class="chips">
+              <span class="chip">模型 A</span>
+              <span class="chip">模型 B</span>
+              <span class="chip">角色范围</span>
+              <span class="chip">created_by</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="phase">
+          <div class="phase-time">第 5 阶段<br />60 分钟</div>
+          <div>
+            <h3>理解列表、分页和写操作</h3>
+            <p>鉴权是“已知目标能不能访问”，分页是“未知列表哪些可见”。这两类问题不能用同一种实现方式。</p>
+            <ul>
+              <li>读 <code>internal/service/paging.go</code>，看 scope 如何变成 SQL WHERE。</li>
+              <li>读 <code>internal/service/area.go</code>、<code>org.go</code>、<code>resource.go</code>，看写操作如何同时过功能关和数据关。</li>
+              <li>读 <code>resource/public/index.html</code>，理解前端如何按可授范围隐藏或置灰节点。</li>
+            </ul>
+            <div class="chips">
+              <span class="chip">SQL 下推</span>
+              <span class="chip">懒加载树</span>
+              <span class="chip">搜索 500 截断</span>
+              <span class="chip">写时鉴权</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>重点代码锚点</h2>
+        <p class="hint">按这个顺序读代码，比按目录从上到下读更容易建立结构。</p>
+      </div>
+      <div class="content cols">
+        <div class="box">
+          <h3>核心模型</h3>
+          <ul>
+            <li><code>internal/model/permission.go</code></li>
+            <li><code>manifest/sql/schema.sql</code></li>
+            <li><code>manifest/sql/seed.sql</code></li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3>鉴权与委派</h3>
+          <ul>
+            <li><code>internal/service/auth.go</code></li>
+            <li><code>internal/service/delegation.go</code></li>
+            <li><code>internal/service/role.go</code></li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3>体验与接口</h3>
+          <ul>
+            <li><code>internal/service/runtime.go</code></li>
+            <li><code>internal/service/paging.go</code></li>
+            <li><code>internal/controller/perm/perm.go</code></li>
+            <li><code>resource/public/index.html</code></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>四个必做练习</h2>
+        <p class="hint">做完这些，基本能从业务现象倒推到代码实现。</p>
+      </div>
+      <div class="content checklist">
+        <div class="check">
+          <strong>练习 1：一条资源鉴权链路</strong>
+          <span>用李四验证 102 球机 live/playback 的差异，再回到 <code>CheckResource</code> 对 trace。</span>
+        </div>
+        <div class="check">
+          <strong>练习 2：一条树权限链路</strong>
+          <span>用张三验证事件图片测试可管理、园区A不可管理，再回到 <code>checkTreeScope</code> 看 path 前缀。</span>
+        </div>
+        <div class="check">
+          <strong>练习 3：一次角色保存链路</strong>
+          <span>从前端保存角色开始，追到 <code>perm.go</code>、<code>MergeDelegated</code>、<code>SaveRole</code>、<code>Reload</code>。</span>
+        </div>
+        <div class="check">
+          <strong>练习 4：一次分页过滤链路</strong>
+          <span>看 <code>/api/area-children</code> 如何把用户范围变成 SQL 条件，而不是全量取回再过滤。</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>学习完成标准</h2>
+        <p class="hint">不用背代码，能稳定回答这些问题就算入门。</p>
+      </div>
+      <div class="content">
+        <div class="callout">
+          <ul>
+            <li>能解释“应用端有权不等于后台管理有权”。</li>
+            <li>能解释为什么授权父节点子树后，未来新增子节点自动继承。</li>
+            <li>能解释资源权限里“区域继承”和“单资源精细覆盖”的优先级。</li>
+            <li>能解释为什么编辑角色时要保留操作者看不见的旧权限。</li>
+            <li>能区分角色“可见”和“可编辑/删除”的不同来源。</li>
+            <li>能说明为什么列表分页必须把权限下推到 SQL。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    基于本仓库 CLAUDE.md、权限设计说明、设计导读、测试报告和海康对照整理。
+  </footer>
+</body>
+</html>

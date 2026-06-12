@@ -7,10 +7,11 @@ import (
 	"security-permission/internal/model"
 )
 
-// 受控委派(二次授权)—— 模型 A:写时校验,不级联。
+// 受控委派(二次授权)—— 模型 A:写时合并 + 运行时按创建人当前权限收窄。
 //
 // 规则:保存角色时,新角色的权限必须 ⊆ 操作者(创建人)的有效权限。
-// 校验通过后子角色权限独立存储;之后操作者权限变化不影响已建角色。
+// 校验通过后子角色权限独立存储;运行时再与创建人的当前有效权限取交集,
+// 避免上级收回创建人权限后,被委派出去的角色继续保有旧权限。
 // actorId<=0 视为系统管理员/不受限。
 
 // ---------- 单角色级判断(供"新角色"求权限用) ----------
@@ -46,11 +47,18 @@ func (s *Store) roleAllowsTree(scopes []model.DataScope, kind string, nodeId int
 // ---------- 操作者(用户)级判断 ----------
 
 func (s *Store) userHasMenuId(u *model.User, menuId int) bool {
+	return s.userHasMenuIdWithSkip(u, menuId, nil)
+}
+
+func (s *Store) userHasMenuIdWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
 	if isSuper(u) { // 超级管理员拥有全部菜单 → SysMenus/AppMenus 自动返回全集
 		return true
 	}
 	for _, r := range s.effectiveRoles(u) {
-		if roleHasMenuId(r, menuId) {
+		if roleSkipped(skip, r.Id) {
+			continue
+		}
+		if roleHasMenuId(r, menuId) && s.creatorAllowsMenu(r, menuId, skip) {
 			return true
 		}
 	}
@@ -58,11 +66,18 @@ func (s *Store) userHasMenuId(u *model.User, menuId int) bool {
 }
 
 func (s *Store) userResAreaCovers(u *model.User, areaId int) bool {
+	return s.userResAreaCoversWithSkip(u, areaId, nil)
+}
+
+func (s *Store) userResAreaCoversWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
 	if isSuper(u) { // 超级管理员覆盖全部区域资源 → 应用端可见全部
 		return true
 	}
 	for _, r := range s.effectiveRoles(u) {
-		if s.roleAllowsTree(r.ResourceAreaScopes, "area", areaId) {
+		if roleSkipped(skip, r.Id) {
+			continue
+		}
+		if s.roleAllowsTree(r.ResourceAreaScopes, "area", areaId) && s.creatorAllowsResArea(r, areaId, skip) {
 			return true
 		}
 	}
@@ -262,7 +277,8 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 //
 // 注意:可见 ≠ 可编辑/删除。可编辑/删除仅限自建角色(见 OwnedRoles + GuardManageRole);
 // 角色范围内的角色对本操作者只读(列表可见、可作为他人角色范围再委派,但不能编辑/删除)。
-// actorId<=0(不受限)或超级管理员 → unlimited=true(可见全部角色)。单层不级联,与模型 A 自洽。
+// actorId<=0(不受限)或超级管理员 → unlimited=true(可见全部角色)。
+// 这里的角色范围仍按单层集合计算;区域/组织/资源权限是否生效由 auth.go 运行时收窄。
 func (s *Store) ManageableRoles(actorId int) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
 	if actorId <= 0 {

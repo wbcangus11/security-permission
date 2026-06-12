@@ -14,6 +14,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -33,6 +34,11 @@ type AreaSaveInput struct {
 	Id       int    `json:"id"`
 	ParentId int    `json:"parentId"`
 	Name     string `json:"name"`
+}
+
+type AreaReorderInput struct {
+	Id        int    `json:"id"`
+	Direction string `json:"direction"` // up/down
 }
 
 // SaveArea 新增或更新(重命名/移动)区域,写时鉴权,成功后刷新缓存。actorId=操作人。
@@ -95,6 +101,78 @@ func (s *Store) DeleteArea(ctx context.Context, actorId, areaId int) error {
 	return s.Reload(ctx)
 }
 
+func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInput) error {
+	actor, err := s.checkAreaWriter(actorId)
+	if err != nil {
+		return err
+	}
+	target := s.AreaById(in.Id)
+	if target == nil {
+		return gerror.New("区域不存在")
+	}
+	if target.ParentId == 0 {
+		return gerror.New("根区域不允许排序")
+	}
+	if d := s.CheckArea(actor, target.Id); !d.Allow {
+		return gerror.New("无权调整「" + target.Name + "」排序:" + d.Reason)
+	}
+	if in.Direction != "up" && in.Direction != "down" {
+		return gerror.New("排序方向只能是 up/down")
+	}
+
+	siblings := make([]*model.Area, 0)
+	for _, a := range s.Areas() {
+		if a.ParentId == target.ParentId {
+			siblings = append(siblings, a)
+		}
+	}
+	sort.Slice(siblings, func(i, j int) bool {
+		if siblings[i].Sort == siblings[j].Sort {
+			return siblings[i].Id < siblings[j].Id
+		}
+		return siblings[i].Sort < siblings[j].Sort
+	})
+
+	idx := -1
+	for i, a := range siblings {
+		if a.Id == target.Id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return gerror.New("区域不存在")
+	}
+	swapIdx := idx - 1
+	if in.Direction == "down" {
+		swapIdx = idx + 1
+	}
+	if swapIdx < 0 || swapIdx >= len(siblings) {
+		return nil
+	}
+	if d := s.CheckArea(actor, siblings[swapIdx].Id); !d.Allow {
+		return gerror.New("无权与相邻区域「" + siblings[swapIdx].Name + "」换序:" + d.Reason)
+	}
+
+	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		siblings[idx], siblings[swapIdx] = siblings[swapIdx], siblings[idx]
+		for i, a := range siblings {
+			nextSort := (i + 1) * 10
+			if a.Sort == nextSort {
+				continue
+			}
+			if _, err := tx.Model("area").Ctx(ctx).Data(g.Map{"sort": nextSort}).Where("id", a.Id).Update(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return s.Reload(ctx)
+}
+
 // checkAreaWriter 写操作公共前置:操作人存在 + 功能关(sys.area 菜单)。
 func (s *Store) checkAreaWriter(actorId int) (*model.User, error) {
 	actor := s.User(actorId)
@@ -124,10 +202,11 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	// 那个角色,确保创建者立刻能在区域树/角色配置里看到并管理它(对齐「谁建谁能看」)。
 	// 父若已是子树授权,新区域本就自动继承,grantRoleId=0 不重复记,保持数据干净。
 	grantRoleId := s.areaAutoGrantRole(actor, parent)
+	nextSort := s.nextAreaSort(parent.Id)
 	var newId int64
 	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		res, err := tx.Model("area").Ctx(ctx).
-			Data(g.Map{"parent_id": parent.Id, "name": in.Name, "path": ""}).Insert()
+			Data(g.Map{"parent_id": parent.Id, "name": in.Name, "path": "", "sort": nextSort}).Insert()
 		if err != nil {
 			return err
 		}
@@ -155,6 +234,16 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	return s.AreaById(int(newId)), nil
 }
 
+func (s *Store) nextAreaSort(parentId int) int {
+	maxSort := 0
+	for _, a := range s.Areas() {
+		if a.ParentId == parentId && a.Sort > maxSort {
+			maxSort = a.Sort
+		}
+	}
+	return maxSort + 10
+}
+
 // areaAutoGrantRole 决定「创建即授权」是否需要补一条 AREA 范围、补给哪个角色。
 // 返回 roleId>0 表示要把新区域授给该角色;返回 0 表示新区域本就会被自动继承(无需补)或操作人是超管。
 // 规则:
@@ -165,7 +254,7 @@ func (s *Store) areaAutoGrantRole(actor *model.User, parent *model.Area) int {
 	if actor == nil || actor.IsSuperuser || parent == nil {
 		return 0
 	}
-	coveringRole := 0     // 第一个覆盖父区域的角色(赋予建权来源)
+	coveringRole := 0      // 第一个覆盖父区域的角色(赋予建权来源)
 	childInherits := false // 父已落在某含子树授权内 → 新子区域自动继承
 	for _, r := range s.effectiveRoles(actor) {
 		for _, sc := range r.AreaScopes {

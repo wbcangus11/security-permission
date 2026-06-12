@@ -79,37 +79,32 @@ func (f treeFilter) covers(path string, id int) bool {
 	return false
 }
 
-// treeScopeFilter 从内存缓存计算用户某类树范围的过滤(几条 scope 根,便宜)。
-func (s *Store) treeScopeFilter(u *model.User, pick scopePicker) treeFilter {
+// treeScopeFilter 从内存缓存计算用户某类树范围的过滤。
+// 注意:这里必须使用运行时鉴权后的有效范围,不能直接翻译角色存储范围。
+// 否则创建人被上级收权后,点鉴权会拒绝,但列表/树分页仍会把旧范围查出来。
+func (s *Store) treeScopeFilter(u *model.User, kind string) treeFilter {
 	if isSuper(u) {
 		return treeFilter{All: true}
 	}
 	f := treeFilter{}
-	seenPrefix := map[string]bool{}
 	seenExact := map[int]bool{}
-	for _, r := range s.effectiveRoles(u) {
-		for _, sc := range pick(r) {
-			a := s.AreaById(sc.NodeId)
-			if a == nil || a.Path == "" {
-				continue // 悬挂引用
-			}
-			if sc.IncludeChild {
-				if a.ParentId == 0 { // 根含子树 = 拥有现在及将来全部区域
-					return treeFilter{All: true}
-				}
-				if !seenPrefix[a.Path] {
-					seenPrefix[a.Path] = true
-					f.Prefixes = append(f.Prefixes, a.Path)
-					f.RootPaths = append(f.RootPaths, a.Path)
-				}
-			} else if !seenExact[a.Id] {
-				seenExact[a.Id] = true
-				f.ExactIds = append(f.ExactIds, a.Id)
-				f.RootPaths = append(f.RootPaths, a.Path)
-			}
+	for _, a := range s.Areas() {
+		if a.Path == "" {
+			continue
+		}
+		ok := false
+		if kind == "area" {
+			ok = s.CheckArea(u, a.Id).Allow
+		} else {
+			ok = s.userResAreaCovers(u, a.Id)
+		}
+		if ok && !seenExact[a.Id] {
+			seenExact[a.Id] = true
+			f.ExactIds = append(f.ExactIds, a.Id)
+			f.RootPaths = append(f.RootPaths, a.Path)
 		}
 	}
-	if len(f.Prefixes) == 0 && len(f.ExactIds) == 0 {
+	if len(f.ExactIds) == 0 {
 		f.None = true
 	}
 	return f
@@ -118,17 +113,19 @@ func (s *Store) treeScopeFilter(u *model.User, pick scopePicker) treeFilter {
 // treeNavAncestors 计算"导航祖先"id 集合:自己无权、但其子孙在范围内的区域。
 // 这些节点要在树里显示(否则用户点不进去看自己有权的深层节点)。
 // 它正好 = 各 scope 根 path 上的所有 id(path 形如 /1/3/4/,段就是祖先 id 链),小而可枚举。
-func (s *Store) treeNavAncestors(u *model.User, pick scopePicker) map[int]bool {
+func (s *Store) treeNavAncestors(u *model.User, kind string) map[int]bool {
 	out := map[int]bool{}
 	if isSuper(u) {
 		return out // 全可见,无需导航补集
 	}
-	for _, r := range s.effectiveRoles(u) {
-		for _, sc := range pick(r) {
-			a := s.AreaById(sc.NodeId)
-			if a == nil {
-				continue
-			}
+	for _, a := range s.Areas() {
+		ok := false
+		if kind == "area" {
+			ok = s.CheckArea(u, a.Id).Allow
+		} else {
+			ok = s.userResAreaCovers(u, a.Id)
+		}
+		if ok {
 			for _, seg := range strings.Split(strings.Trim(a.Path, "/"), "/") {
 				if seg == "" {
 					continue
@@ -177,9 +174,9 @@ type AreaNode struct {
 	Id          int           `json:"id"`
 	ParentId    int           `json:"parentId"`
 	Name        string        `json:"name"`
-	Accessible  bool          `json:"accessible"`           // false=仅导航祖先(点进去无权限)
-	HasChildren bool          `json:"hasChildren"`          // 是否有"可见的"子节点(决定是否显示展开箭头)
-	Ancestors   []AncestorRef `json:"ancestors,omitempty"`  // 祖先链(root..parent),仅搜索结果用:前端据此拼局部树展示
+	Accessible  bool          `json:"accessible"`          // false=仅导航祖先(点进去无权限)
+	HasChildren bool          `json:"hasChildren"`         // 是否有"可见的"子节点(决定是否显示展开箭头)
+	Ancestors   []AncestorRef `json:"ancestors,omitempty"` // 祖先链(root..parent),仅搜索结果用:前端据此拼局部树展示
 }
 
 // AncestorRef 祖先节点引用(搜索结果按树展示用:把匹配节点的 root..parent 链回传给前端拼局部树,对齐海康搜索)。
@@ -239,24 +236,24 @@ type PagedAreas struct {
 
 // AreaChildren 应用端(RES_AREA):某节点下"可见的"直接子区域,分页。
 func (s *Store) AreaChildren(ctx context.Context, userId, parentId, page, size int) *PagedAreas {
-	return s.areaChildrenBy(ctx, userId, parentId, page, size, pickResAreaScopes)
+	return s.areaChildrenBy(ctx, userId, parentId, page, size, "resarea")
 }
 
 // ManageAreaChildren 后台管理域(AREA):某节点下"可管理/可见的"直接子区域,分页。
 func (s *Store) ManageAreaChildren(ctx context.Context, userId, parentId, page, size int) *PagedAreas {
-	return s.areaChildrenBy(ctx, userId, parentId, page, size, pickAreaScopes)
+	return s.areaChildrenBy(ctx, userId, parentId, page, size, "area")
 }
 
 // areaChildrenBy 通用核心:可见 = 范围内(accessible)或导航祖先;过滤 + 分页全部下推 SQL。
-func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size int, pick scopePicker) *PagedAreas {
+func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size int, kind string) *PagedAreas {
 	page, size = normPage(page, size)
 	out := &PagedAreas{Items: []AreaNode{}, Page: page, Size: size}
 	u := s.User(userId)
 	if u == nil {
 		return out
 	}
-	f := s.treeScopeFilter(u, pick)
-	nav := s.treeNavAncestors(u, pick)
+	f := s.treeScopeFilter(u, kind)
+	nav := s.treeNavAncestors(u, kind)
 
 	m := g.Model("area").Ctx(ctx).Where("parent_id", parentId)
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
@@ -324,12 +321,12 @@ func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, pa
 	if u == nil || q == "" {
 		return out
 	}
-	pick := pickResAreaScopes
+	kind := "resarea"
 	if scope == "manage" {
-		pick = pickAreaScopes
+		kind = "area"
 	}
-	f := s.treeScopeFilter(u, pick)
-	nav := s.treeNavAncestors(u, pick)
+	f := s.treeScopeFilter(u, kind)
+	nav := s.treeNavAncestors(u, kind)
 	m := g.Model("area").Ctx(ctx).Where("name LIKE ?", "%"+q+"%")
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
@@ -479,7 +476,7 @@ func (s *Store) AreaResourcesPaged(ctx context.Context, userId, areaId, page, si
 	}
 	out.Accessible = true
 
-	f := s.treeScopeFilter(u, pickResAreaScopes)
+	f := s.treeScopeFilter(u, "resarea")
 	m := g.Model("resource").Ctx(ctx).
 		LeftJoin("area", "area.id = resource.area_id").
 		Where("area.path LIKE ?", area.Path+"%") // 限定 areaId 子树
@@ -503,8 +500,16 @@ func (s *Store) AreaResourcesPaged(ctx context.Context, userId, areaId, page, si
 	acts := s.Actions()
 	for _, row := range rows {
 		rv := ResourceView{Id: row.Id, Name: row.Name, Area: s.nodeName("area", row.AreaId)}
+		anyAllowed := false
 		for _, act := range acts {
-			rv.Actions = append(rv.Actions, ActionAllow{Code: act.Code, Name: act.Name, Allowed: s.CheckResource(u, row.Id, act.Code).Allow})
+			allowed := s.CheckResource(u, row.Id, act.Code).Allow
+			if allowed {
+				anyAllowed = true
+			}
+			rv.Actions = append(rv.Actions, ActionAllow{Code: act.Code, Name: act.Name, Allowed: allowed})
+		}
+		if !anyAllowed {
+			continue
 		}
 		out.Resources = append(out.Resources, rv)
 	}

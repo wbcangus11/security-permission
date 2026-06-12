@@ -19,7 +19,10 @@ func Register(group *ghttp.RouterGroup) {
 	group.GET("/grantable", grantable)
 	group.POST("/check", check)
 	// 用户管理 + 应用端体验
+	group.GET("/users", listUsers)
+	group.GET("/users/{id}", getUser)
 	group.POST("/users", saveUser)
+	group.POST("/users/delete", deleteUser)
 	group.GET("/visible-areas", visibleAreas)
 	group.GET("/area-children", areaChildren)
 	group.GET("/area-search", areaSearch)
@@ -28,6 +31,7 @@ func Register(group *ghttp.RouterGroup) {
 	group.GET("/app-menus", appMenus)
 	// 区域管理(真实落库:写时鉴权 + path 自动维护)
 	group.POST("/areas", saveArea)
+	group.POST("/areas/reorder", reorderArea)
 	group.POST("/areas/delete", deleteArea)
 	// 组织管理(真实落库:写时鉴权 + path 自动维护)
 	group.POST("/orgs", saveOrg)
@@ -130,6 +134,20 @@ func grantable(r *ghttp.Request) {
 	ok(r, service.S.GrantableSet(r.Get("actor").Int()))
 }
 
+func listUsers(r *ghttp.Request) {
+	ok(r, service.S.Users())
+}
+
+func getUser(r *ghttp.Request) {
+	id := r.Get("id").Int()
+	user := service.S.User(id)
+	if user == nil {
+		fail(r, "用户不存在")
+		return
+	}
+	ok(r, user)
+}
+
 // saveUser 新增或更新用户(含角色绑定)。请求体即 model.User 的 JSON。
 func saveUser(r *ghttp.Request) {
 	var u model.User
@@ -141,12 +159,20 @@ func saveUser(r *ghttp.Request) {
 		fail(r, "用户名不能为空")
 		return
 	}
-	saved, err := service.S.SaveUser(r.Context(), &u)
+	saved, err := service.S.SaveUserManaged(r.Context(), r.Get("userId").Int(), &u)
 	if err != nil {
 		fail(r, "保存失败:"+err.Error())
 		return
 	}
 	ok(r, saved)
+}
+
+func deleteUser(r *ghttp.Request) {
+	if err := service.S.DeleteUser(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, true)
 }
 
 // saveArea 新增/重命名/移动区域。?userId=操作人。
@@ -168,6 +194,19 @@ func saveArea(r *ghttp.Request) {
 // deleteArea 删除区域(仅限无子区域、无资源),并清理对该节点的数据范围授权。?userId=操作人
 func deleteArea(r *ghttp.Request) {
 	if err := service.S.DeleteArea(r.Context(), r.Get("userId").Int(), r.Get("id").Int()); err != nil {
+		fail(r, err.Error())
+		return
+	}
+	ok(r, true)
+}
+
+func reorderArea(r *ghttp.Request) {
+	var in service.AreaReorderInput
+	if err := r.Parse(&in); err != nil {
+		fail(r, "参数错误:"+err.Error())
+		return
+	}
+	if err := service.S.ReorderArea(r.Context(), r.Get("userId").Int(), &in); err != nil {
 		fail(r, err.Error())
 		return
 	}

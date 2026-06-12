@@ -35,6 +35,86 @@ func (s *Store) effectiveRoles(u *model.User) []*model.Role {
 	return roles
 }
 
+func withSkippedRole(skip map[int]bool, roleId int) map[int]bool {
+	next := make(map[int]bool, len(skip)+1)
+	for id, ok := range skip {
+		next[id] = ok
+	}
+	next[roleId] = true
+	return next
+}
+
+func roleSkipped(skip map[int]bool, roleId int) bool {
+	return skip != nil && skip[roleId]
+}
+
+func (s *Store) creatorByRole(r *model.Role) *model.User {
+	if r == nil || r.CreatedBy <= 0 {
+		return nil
+	}
+	return s.User(r.CreatedBy)
+}
+
+// delegatedRoleUncapped 判断角色是否无需被创建人当前权限收窄。
+// created_by=0 表示系统/超管创建;创建人是超管时也不收窄。
+func (s *Store) delegatedRoleUncapped(r *model.Role) bool {
+	if r == nil || r.CreatedBy <= 0 {
+		return true
+	}
+	creator := s.User(r.CreatedBy)
+	return creator != nil && creator.IsSuperuser
+}
+
+func (s *Store) creatorAllowsMenu(r *model.Role, menuId int, skip map[int]bool) bool {
+	if s.delegatedRoleUncapped(r) {
+		return true
+	}
+	creator := s.creatorByRole(r)
+	if creator == nil {
+		return false
+	}
+	return s.userHasMenuIdWithSkip(creator, menuId, withSkippedRole(skip, r.Id))
+}
+
+func (s *Store) creatorAllowsTree(r *model.Role, kind string, nodeId int, skip map[int]bool) bool {
+	if s.delegatedRoleUncapped(r) {
+		return true
+	}
+	creator := s.creatorByRole(r)
+	if creator == nil {
+		return false
+	}
+	d := s.checkTreeScopeWithSkip(creator, nodeId, kind, func(x *model.Role) []model.DataScope {
+		if kind == "area" {
+			return x.AreaScopes
+		}
+		return x.OrgScopes
+	}, withSkippedRole(skip, r.Id))
+	return d.Allow
+}
+
+func (s *Store) creatorAllowsResArea(r *model.Role, areaId int, skip map[int]bool) bool {
+	if s.delegatedRoleUncapped(r) {
+		return true
+	}
+	creator := s.creatorByRole(r)
+	if creator == nil {
+		return false
+	}
+	return s.userResAreaCoversWithSkip(creator, areaId, withSkippedRole(skip, r.Id))
+}
+
+func (s *Store) creatorAllowsResourceAction(r *model.Role, resourceId int, actionCode string, skip map[int]bool) bool {
+	if s.delegatedRoleUncapped(r) {
+		return true
+	}
+	creator := s.creatorByRole(r)
+	if creator == nil {
+		return false
+	}
+	return s.checkResourceWithSkip(creator, resourceId, actionCode, withSkippedRole(skip, r.Id)).Allow
+}
+
 // CheckMenu 功能关:用户任一角色拥有该菜单 code 即放行。
 func (s *Store) CheckMenu(u *model.User, menuCode string) *Decision {
 	if isSuper(u) {
@@ -49,6 +129,10 @@ func (s *Store) CheckMenu(u *model.User, menuCode string) *Decision {
 	for _, r := range s.effectiveRoles(u) {
 		for _, mid := range r.MenuIds {
 			if mid == menu.Id {
+				if !s.creatorAllowsMenu(r, mid, nil) {
+					d.Trace = append(d.Trace, "角色「"+r.Name+"」拥有该菜单,但已超出创建人当前可授权范围")
+					continue
+				}
 				d.Allow = true
 				d.Reason = "角色「" + r.Name + "」拥有菜单「" + menu.Name + "」"
 				d.Trace = append(d.Trace, d.Reason)
@@ -62,16 +146,16 @@ func (s *Store) CheckMenu(u *model.User, menuCode string) *Decision {
 
 // CheckArea 数据关(管理域):目标区域是否落在某角色的安保区域授权范围内。
 func (s *Store) CheckArea(u *model.User, areaId int) *Decision {
-	return s.checkTreeScope(u, areaId, "area", func(r *model.Role) []model.DataScope { return r.AreaScopes })
+	return s.checkTreeScopeWithSkip(u, areaId, "area", func(r *model.Role) []model.DataScope { return r.AreaScopes }, nil)
 }
 
 // CheckOrg 数据关(管理域):目标组织是否落在某角色的组织授权范围内。
 func (s *Store) CheckOrg(u *model.User, orgId int) *Decision {
-	return s.checkTreeScope(u, orgId, "org", func(r *model.Role) []model.DataScope { return r.OrgScopes })
+	return s.checkTreeScopeWithSkip(u, orgId, "org", func(r *model.Role) []model.DataScope { return r.OrgScopes }, nil)
 }
 
 // checkTreeScope 树范围判断的通用实现:精确命中节点,或在含子节点的授权子树内(path 前缀)。
-func (s *Store) checkTreeScope(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope) *Decision {
+func (s *Store) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope, skip map[int]bool) *Decision {
 	if isSuper(u) {
 		return superDecision("数据权限")
 	}
@@ -82,14 +166,25 @@ func (s *Store) checkTreeScope(u *model.User, nodeId int, kind string, pick func
 		return d
 	}
 	for _, r := range s.effectiveRoles(u) {
+		if roleSkipped(skip, r.Id) {
+			continue
+		}
 		for _, sc := range pick(r) {
 			if sc.NodeId == nodeId {
+				if !s.creatorAllowsTree(r, kind, nodeId, skip) {
+					d.Trace = append(d.Trace, "角色「"+r.Name+"」直接授权了该节点,但已超出创建人当前可授权范围")
+					continue
+				}
 				d.Allow, d.Reason = true, "角色「"+r.Name+"」直接授权了该节点"
 				d.Trace = append(d.Trace, d.Reason)
 				return d
 			}
 			if sc.IncludeChild {
 				if scPath := s.nodePath(kind, sc.NodeId); scPath != "" && strings.HasPrefix(targetPath, scPath) {
+					if !s.creatorAllowsTree(r, kind, nodeId, skip) {
+						d.Trace = append(d.Trace, "角色「"+r.Name+"」授权的子树「"+s.nodeName(kind, sc.NodeId)+"」包含该节点,但已超出创建人当前可授权范围")
+						continue
+					}
 					d.Allow = true
 					d.Reason = "角色「" + r.Name + "」授权的子树「" + s.nodeName(kind, sc.NodeId) + "」包含该节点"
 					d.Trace = append(d.Trace, d.Reason)
@@ -108,6 +203,10 @@ func (s *Store) checkTreeScope(u *model.User, nodeId int, kind string, pick func
 //   - 若该资源存在精细配置(ResourceActions 里有该资源的条目),则仅授予列出的操作(覆盖模式);
 //   - 否则,资源所在区域在业务范围内即默认授予全部操作(继承模式,新增资源自动生效)。
 func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) *Decision {
+	return s.checkResourceWithSkip(u, resourceId, actionCode, nil)
+}
+
+func (s *Store) checkResourceWithSkip(u *model.User, resourceId int, actionCode string, skip map[int]bool) *Decision {
 	if isSuper(u) {
 		return superDecision("业务资源操作权限")
 	}
@@ -120,6 +219,9 @@ func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) 
 	areaPath := s.nodePath("area", res.AreaId)
 
 	for _, r := range s.effectiveRoles(u) {
+		if roleSkipped(skip, r.Id) {
+			continue
+		}
 		// 1) 资源所在区域是否在该角色的业务资源范围内
 		inScope := false
 		var scopeName string
@@ -136,6 +238,10 @@ func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) 
 			}
 		}
 		if !inScope {
+			continue
+		}
+		if !s.creatorAllowsResArea(r, res.AreaId, skip) {
+			d.Trace = append(d.Trace, "角色「"+r.Name+"」业务范围「"+scopeName+"」覆盖资源所在区域,但已超出创建人当前资源范围")
 			continue
 		}
 		d.Trace = append(d.Trace, "角色「"+r.Name+"」业务范围「"+scopeName+"」覆盖资源所在区域")
@@ -160,11 +266,19 @@ func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) 
 		}
 		if hasOverride {
 			if granted {
+				if !s.creatorAllowsResourceAction(r, resourceId, actionCode, skip) {
+					d.Trace = append(d.Trace, "角色「"+r.Name+"」精细授权了该资源的「"+s.actionName(actionCode)+"」,但已超出创建人当前可授权操作")
+					continue
+				}
 				d.Allow, d.Reason = true, "角色「"+r.Name+"」精细授权了该资源的「"+s.actionName(actionCode)+"」"
 				d.Trace = append(d.Trace, d.Reason)
 				return d
 			}
 			d.Trace = append(d.Trace, "角色「"+r.Name+"」对该资源有精细配置但未含「"+s.actionName(actionCode)+"」")
+			continue
+		}
+		if !s.creatorAllowsResourceAction(r, resourceId, actionCode, skip) {
+			d.Trace = append(d.Trace, "角色「"+r.Name+"」按区域范围继承该操作,但已超出创建人当前可授权操作")
 			continue
 		}
 		d.Allow, d.Reason = true, "角色「"+r.Name+"」按区域范围继承,默认授予全部操作"

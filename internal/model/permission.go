@@ -20,6 +20,7 @@ type Area struct {
 	ParentId int    `json:"parentId"`
 	Name     string `json:"name"`
 	Path     string `json:"path"`
+	Sort     int    `json:"sort"`
 }
 
 // Org 组织(树形),结构与 Area 相同。
