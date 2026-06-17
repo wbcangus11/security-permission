@@ -86,10 +86,6 @@ type Role struct {
 	// L2「精细模式」资源集:进入精细=该资源只授予 ResourceActions 列出的操作(覆盖)。
 	// 显式持久化(独立于操作行数),使「精细+0操作」可表达=该资源零操作→应用端资源级不可见。
 	ResourceOverrides []int `json:"resourceOverrides"`
-
-	// 委派维度·显式角色范围(模型 B):该角色「可管理哪些其他角色」。
-	// 复用 DataScope(node_id=被管理角色 id),角色无树故 IncludeChild 恒 false。
-	RoleScopes []DataScope `json:"roleScopes"`
 }
 
 // User 账号,可绑定多个角色,归属某组织。

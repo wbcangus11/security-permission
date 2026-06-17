@@ -103,8 +103,6 @@ func (s *Store) Reload(ctx context.Context) error {
 			r.OrgScopes = append(r.OrgScopes, sc)
 		case "RES_AREA":
 			r.ResourceAreaScopes = append(r.ResourceAreaScopes, sc)
-		case "ROLE":
-			r.RoleScopes = append(r.RoleScopes, sc)
 		case "RESOVR":
 			r.ResourceOverrides = append(r.ResourceOverrides, x.NodeId) // node_id = 精细模式资源 id
 		}
@@ -194,9 +192,6 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 			return err
 		}
 		if err := insScope("RES_AREA", r.ResourceAreaScopes); err != nil {
-			return err
-		}
-		if err := insScope("ROLE", r.RoleScopes); err != nil {
 			return err
 		}
 		// 资源「精细模式」标记(node_id=资源 id,include_child 不参与判定)

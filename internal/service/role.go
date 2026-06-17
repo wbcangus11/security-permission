@@ -2,12 +2,12 @@ package service
 
 // 角色删除:写时鉴权 + 级联清理引用。
 //
-// 鉴权规则(委派语义,模型 A + 显式角色范围模型 B,自洽):
+// 鉴权规则(委派语义,模型 A):
 //   不受限(actorId<=0,即"系统管理员")或超级管理员:可删任意角色;
 //   普通操作人(委派者):
 //     功能关——须有「角色管理」菜单(sys.person.role);
 //     委派关——只能删「自己创建」的角色:owned(actor) = created_by==actor。
-//   说明:被授予「角色范围」的角色虽在列表可见,但只读(不可编辑/删除);只有自建角色或不受限/超管可删。
+//   说明:只有自建角色或不受限/超管可删。
 //        种子/系统创建的角色 created_by=0,普通操作人删不了,只有不受限/超管能删。
 //
 // 删除策略(对齐用户约定):角色即便仍绑着用户也直接删,不拦。
@@ -42,7 +42,7 @@ func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
 				return err
 			}
 		}
-		// 清理别的角色对「被删角色」的「角色范围」引用(模型 B,与 DeleteArea 清授权引用对称)
+		// 兼容清理历史版本遗留的 ROLE 范围引用。
 		if _, err := tx.Model("role_data_scope").Ctx(ctx).Where("scope_type", "ROLE").Where("node_id", roleId).Delete(); err != nil {
 			return err
 		}
@@ -61,7 +61,6 @@ func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
 //	普通操作人 → 须有「角色管理」菜单(功能关)且目标角色为「自己创建」(委派关)。
 //
 // 可编辑/删除范围 = OwnedRoles:仅自己创建的角色(created_by)。
-// 注意:被显式授予「角色范围」的角色在列表中可见、可再委派,但只读——故不在此放行集内。
 func (s *Store) GuardManageRole(actorId, roleId int) error {
 	if actorId <= 0 {
 		return nil
@@ -81,7 +80,7 @@ func (s *Store) GuardManageRole(actorId, roleId int) error {
 		if target := s.Role(roleId); target != nil {
 			name = target.Name
 		}
-		return gerror.New("无权管理角色「" + name + "」:仅可编辑/删除自己创建的角色(被授予「角色范围」的角色只读)")
+		return gerror.New("无权管理角色「" + name + "」:仅可编辑/删除自己创建的角色")
 	}
 	return nil
 }

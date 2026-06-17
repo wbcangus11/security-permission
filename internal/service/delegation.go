@@ -136,7 +136,7 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 	if g.Unlimited { // 超级管理员作为操作者:可授全部,直接采用提交
 		return sub, 0
 	}
-	menuG, areaG, orgG, resAreaG, roleG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds), intSet(g.RoleIds)
+	menuG, areaG, orgG, resAreaG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds)
 	raG := map[string]bool{}
 	resOvrG := map[int]bool{} // 可精细配置的资源 = 操作者对其至少有一个可授操作
 	for _, ra := range g.ResourceActions {
@@ -171,9 +171,6 @@ func (s *Store) MergeDelegated(actorId int, old, sub *model.Role) (*model.Role, 
 	preserved += p
 	res.ResourceAreaScopes, p = mergeScopes(old.ResourceAreaScopes, sub.ResourceAreaScopes, resAreaG)
 	preserved += p
-	res.RoleScopes, p = mergeScopes(old.RoleScopes, sub.RoleScopes, roleG)
-	preserved += p
-
 	// 资源操作
 	seenRA := map[string]bool{}
 	for _, ra := range sub.ResourceActions {
@@ -218,7 +215,7 @@ type Grantable struct {
 	OrgIds          []int                  `json:"orgIds"`
 	ResAreaIds      []int                  `json:"resAreaIds"`
 	ResourceActions []model.ResourceAction `json:"resourceActions"`
-	RoleIds         []int                  `json:"roleIds"` // 委派维度:可管理(可编辑/删除/再委派)的角色集
+	RoleIds         []int                  `json:"roleIds"` // 可分配/可见的角色集:普通用户仅自建角色,超管全部
 }
 
 func (s *Store) GrantableSet(actorId int) *Grantable {
@@ -260,8 +257,7 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 			}
 		}
 	}
-	// 委派维度:可见 + 可再委派的角色集 = 自建角色 ∪ 自身角色的「角色范围」并集(见 ManageableRoles)。
-	// 前端用它(GRANT.roleIds)既过滤角色列表「可见」,又置灰「角色范围」委派树。
+	// 可见 + 可分配的角色集:普通用户仅自建角色,超管全部。
 	mset, _ := s.ManageableRoles(actorId)
 	for _, r := range s.Roles() { // 按角色 id 有序输出,便于前端/截图稳定
 		if mset[r.Id] {
@@ -271,14 +267,11 @@ func (s *Store) GrantableSet(actorId int) *Grantable {
 	return g
 }
 
-// ManageableRoles 返回操作者「可见 + 可再委派」的角色集合(角色管理列表可见性 + 「角色范围」委派上限)。
+// ManageableRoles 返回操作者可见/可分配的角色集合。
 //
-//	manageable(actor) = { 自己创建的角色 } ∪ { actor 各有效角色的「角色范围」并集 }
+//	manageable(actor) = { 自己创建的角色 }
 //
-// 注意:可见 ≠ 可编辑/删除。可编辑/删除仅限自建角色(见 OwnedRoles + GuardManageRole);
-// 角色范围内的角色对本操作者只读(列表可见、可作为他人角色范围再委派,但不能编辑/删除)。
 // actorId<=0(不受限)或超级管理员 → unlimited=true(可见全部角色)。
-// 这里的角色范围仍按单层集合计算;区域/组织/资源权限是否生效由 auth.go 运行时收窄。
 func (s *Store) ManageableRoles(actorId int) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
 	if actorId <= 0 {
@@ -296,21 +289,12 @@ func (s *Store) ManageableRoles(actorId int) (set map[int]bool, unlimited bool) 
 			set[r.Id] = true
 		}
 	}
-	for _, r := range s.effectiveRoles(actor) { // 2) 显式角色范围(模型 B)
-		for _, sc := range r.RoleScopes {
-			set[sc.NodeId] = true
-		}
-	}
 	return set, false
 }
 
 // OwnedRoles 返回操作者「可编辑/删除」的角色集合 = 仅自己创建的角色(created_by)。
 //
-// 与 ManageableRoles 区分(对齐用户对角色管理列表的要求):
-//   - 自建角色(created_by==actor):列表可见 + 可编辑 + 可删除;
-//   - 角色范围(显式勾选)角色:列表可见 + 可作为「角色范围」再委派,但只读(不可编辑/删除)。
-//
-// 即:可见 = ManageableRoles(自建 ∪ 角色范围),可编辑/删除 = OwnedRoles(仅自建)。
+// 与 ManageableRoles 当前保持一致:普通用户只能看到、分配、编辑、删除自己创建的角色。
 // actorId<=0(不受限)或超级管理员 → unlimited=true(可编辑/删除全部角色)。
 func (s *Store) OwnedRoles(actorId int) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
