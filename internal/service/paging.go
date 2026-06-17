@@ -5,8 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gogf/gf/v2/frame/g"
-
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
 )
 
@@ -255,7 +254,7 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size
 	f := s.treeScopeFilter(u, kind)
 	nav := s.treeNavAncestors(u, kind)
 
-	m := g.Model("area").Ctx(ctx).Where("parent_id", parentId)
+	m := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, parentId)
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
 		return out // 啥也看不到
@@ -284,7 +283,7 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size
 	childParents := map[int]bool{}
 	if len(pageIds) > 0 {
 		var pps []struct{ ParentId int }
-		_ = g.Model("area").Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", pageIds).Scan(&pps)
+		_ = dao.Area.Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", pageIds).Scan(&pps)
 		for _, p := range pps {
 			childParents[p.ParentId] = true
 		}
@@ -327,7 +326,7 @@ func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, pa
 	}
 	f := s.treeScopeFilter(u, kind)
 	nav := s.treeNavAncestors(u, kind)
-	m := g.Model("area").Ctx(ctx).Where("name LIKE ?", "%"+q+"%")
+	m := dao.Area.Ctx(ctx).Where("name LIKE ?", "%"+q+"%")
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
 		return out
@@ -408,7 +407,7 @@ func (s *Store) RoleAreaChildren(ctx context.Context, actorId, parentId int, kin
 		Name     string
 		Path     string
 	}
-	if err := g.Model("area").Ctx(ctx).Where("parent_id", parentId).
+	if err := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, parentId).
 		Fields("id,parent_id,name,path").Order("sort asc,id asc").Scan(&rows); err != nil {
 		return out
 	}
@@ -419,7 +418,7 @@ func (s *Store) RoleAreaChildren(ctx context.Context, actorId, parentId int, kin
 	childParents := map[int]bool{}
 	if len(ids) > 0 {
 		var pps []struct{ ParentId int }
-		_ = g.Model("area").Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", ids).Scan(&pps)
+		_ = dao.Area.Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", ids).Scan(&pps)
 		for _, p := range pps {
 			childParents[p.ParentId] = true
 		}
@@ -477,8 +476,8 @@ func (s *Store) AreaResourcesPaged(ctx context.Context, userId, areaId, page, si
 	out.Accessible = true
 
 	f := s.treeScopeFilter(u, "resarea")
-	m := g.Model("resource").Ctx(ctx).
-		LeftJoin("area", "area.id = resource.area_id").
+	m := dao.Resource.Ctx(ctx).
+		LeftJoin(dao.Area.Table(), "area.id = resource.area_id").
 		Where("area.path LIKE ?", area.Path+"%") // 限定 areaId 子树
 	if accSQL, accArgs := areaScopeWhere("area", f); accSQL != "" {
 		m = m.Where(accSQL, accArgs...) // 叠加用户 RES_AREA 范围

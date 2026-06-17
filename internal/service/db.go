@@ -4,127 +4,44 @@ import (
 	"context"
 
 	"github.com/gogf/gf/v2/database/gdb"
-	"github.com/gogf/gf/v2/frame/g"
 
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
+	"security-permission/internal/model/do"
+	"security-permission/internal/model/entity"
 )
 
-// Reload 从 MySQL 全量加载到内存缓存。启动时及每次写操作后调用。
 func (s *Store) Reload(ctx context.Context) error {
-	// 基础表
-	var areas []*model.Area
-	if err := g.Model("area").Ctx(ctx).Order("id").Scan(&areas); err != nil {
+	areas, err := loadAreas(ctx)
+	if err != nil {
 		return err
 	}
-	var orgs []*model.Org
-	if err := g.Model("org").Ctx(ctx).Order("id").Scan(&orgs); err != nil {
+	orgs, err := loadOrgs(ctx)
+	if err != nil {
 		return err
 	}
-	var menus []*model.Menu
-	if err := g.Model("menu").Ctx(ctx).Order("id").Scan(&menus); err != nil {
+	menus, err := loadMenus(ctx)
+	if err != nil {
 		return err
 	}
-	var resources []*model.Resource
-	if err := g.Model("resource").Ctx(ctx).Order("id").Scan(&resources); err != nil {
+	resources, err := loadResources(ctx)
+	if err != nil {
 		return err
 	}
-	var actions []model.Action
-	if err := g.Model("action").Ctx(ctx).Order("sort").Scan(&actions); err != nil {
-		return err
-	}
-
-	// 角色及其关联
-	type roleRow struct {
-		Id          int
-		Name        string
-		Description string
-		CreatedBy   int
-	}
-	var roleRows []roleRow
-	if err := g.Model("role").Ctx(ctx).Order("id").Scan(&roleRows); err != nil {
-		return err
-	}
-	type rmRow struct{ RoleId, MenuId int }
-	var rms []rmRow
-	if err := g.Model("role_menu").Ctx(ctx).Scan(&rms); err != nil {
-		return err
-	}
-	type dsRow struct {
-		RoleId       int
-		ScopeType    string
-		NodeId       int
-		IncludeChild bool
-	}
-	var dss []dsRow
-	if err := g.Model("role_data_scope").Ctx(ctx).Scan(&dss); err != nil {
-		return err
-	}
-	type raRow struct {
-		RoleId     int
-		ResourceId int
-		ActionCode string
-	}
-	var ras []raRow
-	if err := g.Model("role_resource_action").Ctx(ctx).Scan(&ras); err != nil {
+	actions, err := loadActions(ctx)
+	if err != nil {
 		return err
 	}
 
-	// 用户及绑定
-	var users []*model.User
-	if err := g.Model("user").Ctx(ctx).Order("id").Scan(&users); err != nil {
+	roles, err := loadRoles(ctx)
+	if err != nil {
 		return err
 	}
-	type urRow struct{ UserId, RoleId int }
-	var urs []urRow
-	if err := g.Model("user_role").Ctx(ctx).Scan(&urs); err != nil {
+	users, err := loadUsers(ctx)
+	if err != nil {
 		return err
 	}
 
-	// 组装角色
-	roles := make(map[int]*model.Role, len(roleRows))
-	for _, r := range roleRows {
-		roles[r.Id] = &model.Role{Id: r.Id, Name: r.Name, Description: r.Description, CreatedBy: r.CreatedBy}
-	}
-	for _, x := range rms {
-		if r := roles[x.RoleId]; r != nil {
-			r.MenuIds = append(r.MenuIds, x.MenuId)
-		}
-	}
-	for _, x := range dss {
-		r := roles[x.RoleId]
-		if r == nil {
-			continue
-		}
-		sc := model.DataScope{NodeId: x.NodeId, IncludeChild: x.IncludeChild}
-		switch x.ScopeType {
-		case "AREA":
-			r.AreaScopes = append(r.AreaScopes, sc)
-		case "ORG":
-			r.OrgScopes = append(r.OrgScopes, sc)
-		case "RES_AREA":
-			r.ResourceAreaScopes = append(r.ResourceAreaScopes, sc)
-		case "RESOVR":
-			r.ResourceOverrides = append(r.ResourceOverrides, x.NodeId) // node_id = 精细模式资源 id
-		}
-	}
-	for _, x := range ras {
-		if r := roles[x.RoleId]; r != nil {
-			r.ResourceActions = append(r.ResourceActions, model.ResourceAction{ResourceId: x.ResourceId, ActionCode: x.ActionCode})
-		}
-	}
-
-	// 组装用户绑定
-	userMap := make(map[int]*model.User, len(users))
-	for _, u := range users {
-		userMap[u.Id] = u
-	}
-	for _, x := range urs {
-		if u := userMap[x.UserId]; u != nil {
-			u.RoleIds = append(u.RoleIds, x.RoleId)
-		}
-	}
-
-	// 原子替换缓存
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.areas = toMap(areas, func(a *model.Area) int { return a.Id })
@@ -133,8 +50,180 @@ func (s *Store) Reload(ctx context.Context) error {
 	s.resources = toMap(resources, func(r *model.Resource) int { return r.Id })
 	s.actions = actions
 	s.roles = roles
-	s.users = userMap
+	s.users = users
 	return nil
+}
+
+func loadAreas(ctx context.Context) ([]*model.Area, error) {
+	var rows []*entity.Area
+	if err := dao.Area.Ctx(ctx).Order(dao.Area.Columns().Id).Scan(&rows); err != nil {
+		return nil, err
+	}
+	items := make([]*model.Area, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, &model.Area{
+			Id:       int(row.Id),
+			ParentId: int(row.ParentId),
+			Name:     row.Name,
+			Path:     row.Path,
+			Sort:     row.Sort,
+		})
+	}
+	return items, nil
+}
+
+func loadOrgs(ctx context.Context) ([]*model.Org, error) {
+	var rows []*entity.Org
+	if err := dao.Org.Ctx(ctx).Order(dao.Org.Columns().Id).Scan(&rows); err != nil {
+		return nil, err
+	}
+	items := make([]*model.Org, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, &model.Org{
+			Id:       int(row.Id),
+			ParentId: int(row.ParentId),
+			Name:     row.Name,
+			Path:     row.Path,
+		})
+	}
+	return items, nil
+}
+
+func loadMenus(ctx context.Context) ([]*model.Menu, error) {
+	var rows []*entity.Menu
+	if err := dao.Menu.Ctx(ctx).Order(dao.Menu.Columns().Id).Scan(&rows); err != nil {
+		return nil, err
+	}
+	items := make([]*model.Menu, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, &model.Menu{
+			Id:       int(row.Id),
+			ParentId: int(row.ParentId),
+			Code:     row.Code,
+			Name:     row.Name,
+			Domain:   row.Domain,
+		})
+	}
+	return items, nil
+}
+
+func loadResources(ctx context.Context) ([]*model.Resource, error) {
+	var rows []*entity.Resource
+	if err := dao.Resource.Ctx(ctx).Order(dao.Resource.Columns().Id).Scan(&rows); err != nil {
+		return nil, err
+	}
+	items := make([]*model.Resource, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, &model.Resource{
+			Id:     int(row.Id),
+			AreaId: int(row.AreaId),
+			Type:   row.Type,
+			Name:   row.Name,
+		})
+	}
+	return items, nil
+}
+
+func loadActions(ctx context.Context) ([]model.Action, error) {
+	var rows []entity.Action
+	if err := dao.Action.Ctx(ctx).Order(dao.Action.Columns().Sort).Scan(&rows); err != nil {
+		return nil, err
+	}
+	actions := make([]model.Action, 0, len(rows))
+	for _, row := range rows {
+		actions = append(actions, model.Action{
+			Code: row.Code,
+			Name: row.Name,
+		})
+	}
+	return actions, nil
+}
+
+func loadRoles(ctx context.Context) (map[int]*model.Role, error) {
+	var roleRows []*entity.Role
+	if err := dao.Role.Ctx(ctx).Order(dao.Role.Columns().Id).Scan(&roleRows); err != nil {
+		return nil, err
+	}
+	var menuRows []*entity.RoleMenu
+	if err := dao.RoleMenu.Ctx(ctx).Scan(&menuRows); err != nil {
+		return nil, err
+	}
+	var scopeRows []*entity.RoleDataScope
+	if err := dao.RoleDataScope.Ctx(ctx).Scan(&scopeRows); err != nil {
+		return nil, err
+	}
+	var actionRows []*entity.RoleResourceAction
+	if err := dao.RoleResourceAction.Ctx(ctx).Scan(&actionRows); err != nil {
+		return nil, err
+	}
+
+	roles := make(map[int]*model.Role, len(roleRows))
+	for _, row := range roleRows {
+		roles[int(row.Id)] = &model.Role{
+			Id:          int(row.Id),
+			Name:        row.Name,
+			Description: row.Description,
+			CreatedBy:   int(row.CreatedBy),
+		}
+	}
+	for _, row := range menuRows {
+		if r := roles[int(row.RoleId)]; r != nil {
+			r.MenuIds = append(r.MenuIds, int(row.MenuId))
+		}
+	}
+	for _, row := range scopeRows {
+		r := roles[int(row.RoleId)]
+		if r == nil {
+			continue
+		}
+		sc := model.DataScope{NodeId: int(row.NodeId), IncludeChild: row.IncludeChild != 0}
+		switch row.ScopeType {
+		case "AREA":
+			r.AreaScopes = append(r.AreaScopes, sc)
+		case "ORG":
+			r.OrgScopes = append(r.OrgScopes, sc)
+		case "RES_AREA":
+			r.ResourceAreaScopes = append(r.ResourceAreaScopes, sc)
+		case "RESOVR":
+			r.ResourceOverrides = append(r.ResourceOverrides, int(row.NodeId))
+		}
+	}
+	for _, row := range actionRows {
+		if r := roles[int(row.RoleId)]; r != nil {
+			r.ResourceActions = append(r.ResourceActions, model.ResourceAction{
+				ResourceId: int(row.ResourceId),
+				ActionCode: row.ActionCode,
+			})
+		}
+	}
+	return roles, nil
+}
+
+func loadUsers(ctx context.Context) (map[int]*model.User, error) {
+	var rows []*entity.User
+	if err := dao.User.Ctx(ctx).Order(dao.User.Columns().Id).Scan(&rows); err != nil {
+		return nil, err
+	}
+	var roleRows []*entity.UserRole
+	if err := dao.UserRole.Ctx(ctx).Scan(&roleRows); err != nil {
+		return nil, err
+	}
+
+	users := make(map[int]*model.User, len(rows))
+	for _, row := range rows {
+		users[int(row.Id)] = &model.User{
+			Id:          int(row.Id),
+			Name:        row.Name,
+			OrgId:       int(row.OrgId),
+			IsSuperuser: row.IsSuperuser != 0,
+		}
+	}
+	for _, row := range roleRows {
+		if u := users[int(row.UserId)]; u != nil {
+			u.RoleIds = append(u.RoleIds, int(row.RoleId))
+		}
+	}
+	return users, nil
 }
 
 func toMap[T any](list []T, key func(T) int) map[int]T {
@@ -145,40 +234,41 @@ func toMap[T any](list []T, key func(T) int) map[int]T {
 	return m
 }
 
-// SaveRole 落库(角色主表 + 三类关联表),成功后刷新缓存。id<=0 为新增。
 func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error) {
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		data := g.Map{"name": r.Name, "description": r.Description, "created_by": r.CreatedBy}
+	err := dao.Role.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		data := do.Role{Name: r.Name, Description: r.Description, CreatedBy: r.CreatedBy}
 		if r.Id <= 0 {
-			res, err := tx.Model("role").Ctx(ctx).Data(data).Insert()
+			res, err := tx.Model(dao.Role.Table()).Ctx(ctx).Data(data).Insert()
 			if err != nil {
 				return err
 			}
 			id, _ := res.LastInsertId()
 			r.Id = int(id)
 		} else {
-			if _, err := tx.Model("role").Ctx(ctx).Data(data).Where("id", r.Id).Update(); err != nil {
+			if _, err := tx.Model(dao.Role.Table()).Ctx(ctx).Data(data).Where(dao.Role.Columns().Id, r.Id).Update(); err != nil {
 				return err
 			}
 		}
 
-		// 关联表:先清后插(全量覆盖)
-		if _, err := tx.Model("role_menu").Ctx(ctx).Where("role_id", r.Id).Delete(); err != nil {
+		if _, err := tx.Model(dao.RoleMenu.Table()).Ctx(ctx).Where(dao.RoleMenu.Columns().RoleId, r.Id).Delete(); err != nil {
 			return err
 		}
 		for _, mid := range r.MenuIds {
-			if _, err := tx.Model("role_menu").Ctx(ctx).Data(g.Map{"role_id": r.Id, "menu_id": mid}).Insert(); err != nil {
+			if _, err := tx.Model(dao.RoleMenu.Table()).Ctx(ctx).Data(do.RoleMenu{RoleId: r.Id, MenuId: mid}).Insert(); err != nil {
 				return err
 			}
 		}
 
-		if _, err := tx.Model("role_data_scope").Ctx(ctx).Where("role_id", r.Id).Delete(); err != nil {
+		if _, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).Where(dao.RoleDataScope.Columns().RoleId, r.Id).Delete(); err != nil {
 			return err
 		}
 		insScope := func(t string, scopes []model.DataScope) error {
 			for _, sc := range scopes {
-				if _, err := tx.Model("role_data_scope").Ctx(ctx).Data(g.Map{
-					"role_id": r.Id, "scope_type": t, "node_id": sc.NodeId, "include_child": sc.IncludeChild,
+				if _, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).Data(do.RoleDataScope{
+					RoleId:       r.Id,
+					ScopeType:    t,
+					NodeId:       sc.NodeId,
+					IncludeChild: sc.IncludeChild,
 				}).Insert(); err != nil {
 					return err
 				}
@@ -194,21 +284,25 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 		if err := insScope("RES_AREA", r.ResourceAreaScopes); err != nil {
 			return err
 		}
-		// 资源「精细模式」标记(node_id=资源 id,include_child 不参与判定)
 		for _, resId := range r.ResourceOverrides {
-			if _, err := tx.Model("role_data_scope").Ctx(ctx).Data(g.Map{
-				"role_id": r.Id, "scope_type": "RESOVR", "node_id": resId, "include_child": false,
+			if _, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).Data(do.RoleDataScope{
+				RoleId:       r.Id,
+				ScopeType:    "RESOVR",
+				NodeId:       resId,
+				IncludeChild: false,
 			}).Insert(); err != nil {
 				return err
 			}
 		}
 
-		if _, err := tx.Model("role_resource_action").Ctx(ctx).Where("role_id", r.Id).Delete(); err != nil {
+		if _, err := tx.Model(dao.RoleResourceAction.Table()).Ctx(ctx).Where(dao.RoleResourceAction.Columns().RoleId, r.Id).Delete(); err != nil {
 			return err
 		}
 		for _, ra := range r.ResourceActions {
-			if _, err := tx.Model("role_resource_action").Ctx(ctx).Data(g.Map{
-				"role_id": r.Id, "resource_id": ra.ResourceId, "action_code": ra.ActionCode,
+			if _, err := tx.Model(dao.RoleResourceAction.Table()).Ctx(ctx).Data(do.RoleResourceAction{
+				RoleId:     r.Id,
+				ResourceId: ra.ResourceId,
+				ActionCode: ra.ActionCode,
 			}).Insert(); err != nil {
 				return err
 			}
@@ -224,27 +318,26 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 	return s.Role(r.Id), nil
 }
 
-// SaveUser 落库(用户主表 + user_role 绑定),成功后刷新缓存。id<=0 为新增。
 func (s *Store) SaveUser(ctx context.Context, u *model.User) (*model.User, error) {
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		data := g.Map{"name": u.Name, "org_id": u.OrgId, "is_superuser": u.IsSuperuser}
+	err := dao.User.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		data := do.User{Name: u.Name, OrgId: u.OrgId, IsSuperuser: u.IsSuperuser}
 		if u.Id <= 0 {
-			res, err := tx.Model("user").Ctx(ctx).Data(data).Insert()
+			res, err := tx.Model(dao.User.Table()).Ctx(ctx).Data(data).Insert()
 			if err != nil {
 				return err
 			}
 			id, _ := res.LastInsertId()
 			u.Id = int(id)
 		} else {
-			if _, err := tx.Model("user").Ctx(ctx).Data(data).Where("id", u.Id).Update(); err != nil {
+			if _, err := tx.Model(dao.User.Table()).Ctx(ctx).Data(data).Where(dao.User.Columns().Id, u.Id).Update(); err != nil {
 				return err
 			}
 		}
-		if _, err := tx.Model("user_role").Ctx(ctx).Where("user_id", u.Id).Delete(); err != nil {
+		if _, err := tx.Model(dao.UserRole.Table()).Ctx(ctx).Where(dao.UserRole.Columns().UserId, u.Id).Delete(); err != nil {
 			return err
 		}
 		for _, rid := range u.RoleIds {
-			if _, err := tx.Model("user_role").Ctx(ctx).Data(g.Map{"user_id": u.Id, "role_id": rid}).Insert(); err != nil {
+			if _, err := tx.Model(dao.UserRole.Table()).Ctx(ctx).Data(do.UserRole{UserId: u.Id, RoleId: rid}).Insert(); err != nil {
 				return err
 			}
 		}

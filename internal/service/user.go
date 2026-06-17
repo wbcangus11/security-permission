@@ -15,8 +15,8 @@ import (
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gerror"
-	"github.com/gogf/gf/v2/frame/g"
 
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
 )
 
@@ -95,11 +95,11 @@ func (s *Store) DeleteUser(ctx context.Context, actorId, userId int) error {
 	if target.IsSuperuser && s.superuserCount() <= 1 {
 		return gerror.New("至少保留一个超级管理员")
 	}
-	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model("user_role").Ctx(ctx).Where("user_id", userId).Delete(); err != nil {
+	err = dao.User.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model(dao.UserRole.Table()).Ctx(ctx).Where(dao.UserRole.Columns().UserId, userId).Delete(); err != nil {
 			return err
 		}
-		_, err := tx.Model("user").Ctx(ctx).Where("id", userId).Delete()
+		_, err := tx.Model(dao.User.Table()).Ctx(ctx).Where(dao.User.Columns().Id, userId).Delete()
 		return err
 	})
 	if err != nil {

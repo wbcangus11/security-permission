@@ -4,8 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/gogf/gf/v2/frame/g"
-
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
 )
 
@@ -138,10 +137,15 @@ func (s *Store) ManageAreaDetail(ctx context.Context, userId, areaId int) *Manag
 	}
 	d.Accessible = true
 	// 子区域数量:cheap COUNT 走 idx_parent(不平铺,左树懒加载展开)
-	d.ChildCount, _ = g.Model("area").Ctx(ctx).Where("parent_id", areaId).Count()
+	d.ChildCount, _ = dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaId).Count()
 	// 本区域直接挂的资源:走 idx_area;直接资源通常很少,封顶 500 防御
 	var rs []ResourceBrief
-	_ = g.Model("resource").Ctx(ctx).Fields("id,name,type,area_id").Where("area_id", areaId).Order("id asc").Limit(500).Scan(&rs)
+	_ = dao.Resource.Ctx(ctx).
+		Fields("id,name,type,area_id").
+		Where(dao.Resource.Columns().AreaId, areaId).
+		Order(dao.Resource.Columns().Id + " asc").
+		Limit(500).
+		Scan(&rs)
 	for _, r := range rs {
 		d.Resources = append(d.Resources, r.Name)
 		d.ResourceItems = append(d.ResourceItems, r)

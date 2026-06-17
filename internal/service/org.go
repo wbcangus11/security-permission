@@ -18,9 +18,10 @@ import (
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gerror"
-	"github.com/gogf/gf/v2/frame/g"
 
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
+	"security-permission/internal/model/do"
 )
 
 // menuOrgManage 人员信息菜单 code(组织树写操作的功能关)。
@@ -77,14 +78,14 @@ func (s *Store) DeleteOrg(ctx context.Context, actorId, orgId int) error {
 			return gerror.New("「" + target.Name + "」下还有用户(如" + u.Name + "),请先移走")
 		}
 	}
-	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model("org").Ctx(ctx).Where("id", orgId).Delete(); err != nil {
+	err = dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model(dao.Org.Table()).Ctx(ctx).Where(dao.Org.Columns().Id, orgId).Delete(); err != nil {
 			return err
 		}
 		// 清理引用该节点的组织树范围授权(仅 ORG;AREA/RES_AREA 不涉及组织)
-		_, err := tx.Model("role_data_scope").Ctx(ctx).
-			Where("node_id", orgId).
-			Where("scope_type", "ORG").
+		_, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).
+			Where(dao.RoleDataScope.Columns().NodeId, orgId).
+			Where(dao.RoleDataScope.Columns().ScopeType, "ORG").
 			Delete()
 		return err
 	})
@@ -119,9 +120,9 @@ func (s *Store) createOrg(ctx context.Context, actor *model.User, in *OrgSaveInp
 		return nil, gerror.New("同级已存在同名组织:" + in.Name)
 	}
 	var newId int64
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		res, err := tx.Model("org").Ctx(ctx).
-			Data(g.Map{"parent_id": parent.Id, "name": in.Name, "path": ""}).Insert()
+	err := dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		res, err := tx.Model(dao.Org.Table()).Ctx(ctx).
+			Data(do.Org{ParentId: parent.Id, Name: in.Name, Path: ""}).Insert()
 		if err != nil {
 			return err
 		}
@@ -130,7 +131,7 @@ func (s *Store) createOrg(ctx context.Context, actor *model.User, in *OrgSaveInp
 		}
 		// 物化路径含自身;授权了父子树的角色自此自动覆盖新组织(无需改 role_data_scope)
 		path := parent.Path + strconv.FormatInt(newId, 10) + "/"
-		_, err = tx.Model("org").Ctx(ctx).Data(g.Map{"path": path}).Where("id", newId).Update()
+		_, err = tx.Model(dao.Org.Table()).Ctx(ctx).Data(do.Org{Path: path}).Where(dao.Org.Columns().Id, newId).Update()
 		return err
 	})
 	if err != nil {
@@ -177,16 +178,16 @@ func (s *Store) updateOrg(ctx context.Context, actor *model.User, in *OrgSaveInp
 		return nil, gerror.New("同级已存在同名组织:" + in.Name)
 	}
 
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model("org").Ctx(ctx).
-			Data(g.Map{"name": in.Name}).Where("id", old.Id).Update(); err != nil {
+	err := dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model(dao.Org.Table()).Ctx(ctx).
+			Data(do.Org{Name: in.Name}).Where(dao.Org.Columns().Id, old.Id).Update(); err != nil {
 			return err
 		}
 		if !moving {
 			return nil
 		}
-		if _, err := tx.Model("org").Ctx(ctx).
-			Data(g.Map{"parent_id": newParent.Id}).Where("id", old.Id).Update(); err != nil {
+		if _, err := tx.Model(dao.Org.Table()).Ctx(ctx).
+			Data(do.Org{ParentId: newParent.Id}).Where(dao.Org.Columns().Id, old.Id).Update(); err != nil {
 			return err
 		}
 		// 整棵子树(含自身)批量前缀替换:旧前缀=old.Path,新前缀=新父.path+本ID+"/"

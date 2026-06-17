@@ -18,9 +18,10 @@ import (
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gerror"
-	"github.com/gogf/gf/v2/frame/g"
 
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
+	"security-permission/internal/model/do"
 )
 
 // menuResourceManage 资源管理菜单 code(资源写操作的功能关)。
@@ -64,12 +65,14 @@ func (s *Store) DeleteResource(ctx context.Context, actorId, resId int) error {
 	if d := s.CheckArea(actor, target.AreaId); !d.Allow {
 		return gerror.New("无权删除「" + target.Name + "」:" + d.Reason)
 	}
-	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model("resource").Ctx(ctx).Where("id", resId).Delete(); err != nil {
+	err = dao.Resource.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model(dao.Resource.Table()).Ctx(ctx).Where(dao.Resource.Columns().Id, resId).Delete(); err != nil {
 			return err
 		}
 		// 清理引用该资源的精细授权(资源级操作覆盖)
-		_, err := tx.Model("role_resource_action").Ctx(ctx).Where("resource_id", resId).Delete()
+		_, err := tx.Model(dao.RoleResourceAction.Table()).Ctx(ctx).
+			Where(dao.RoleResourceAction.Columns().ResourceId, resId).
+			Delete()
 		return err
 	})
 	if err != nil {
@@ -106,9 +109,9 @@ func (s *Store) createResource(ctx context.Context, actor *model.User, in *Resou
 		return nil, gerror.New("同区域已存在同名资源:" + in.Name)
 	}
 	var newId int64
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		res, err := tx.Model("resource").Ctx(ctx).
-			Data(g.Map{"area_id": area.Id, "type": in.Type, "name": in.Name}).Insert()
+	err := dao.Resource.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		res, err := tx.Model(dao.Resource.Table()).Ctx(ctx).
+			Data(do.Resource{AreaId: area.Id, Type: in.Type, Name: in.Name}).Insert()
 		if err != nil {
 			return err
 		}
@@ -154,11 +157,11 @@ func (s *Store) updateResource(ctx context.Context, actor *model.User, in *Resou
 		return nil, gerror.New("同区域已存在同名资源:" + in.Name)
 	}
 
-	data := g.Map{"name": in.Name, "type": typeVal}
+	data := do.Resource{Name: in.Name, Type: typeVal}
 	if moving {
-		data["area_id"] = targetArea
+		data.AreaId = targetArea
 	}
-	if _, err := g.Model("resource").Ctx(ctx).Data(data).Where("id", old.Id).Update(); err != nil {
+	if _, err := dao.Resource.Ctx(ctx).Data(data).Where(dao.Resource.Columns().Id, old.Id).Update(); err != nil {
 		return nil, err
 	}
 	if err := s.Reload(ctx); err != nil {

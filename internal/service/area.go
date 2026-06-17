@@ -20,9 +20,10 @@ import (
 
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/errors/gerror"
-	"github.com/gogf/gf/v2/frame/g"
 
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
+	"security-permission/internal/model/do"
 )
 
 // menuAreaManage 安保区域管理菜单 code(写操作的功能关)。
@@ -84,14 +85,14 @@ func (s *Store) DeleteArea(ctx context.Context, actorId, areaId int) error {
 			return gerror.New("「" + target.Name + "」下还有资源,请先移除")
 		}
 	}
-	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model("area").Ctx(ctx).Where("id", areaId).Delete(); err != nil {
+	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Where(dao.Area.Columns().Id, areaId).Delete(); err != nil {
 			return err
 		}
 		// 清理引用该节点的树范围授权(管理域 AREA + 应用域 RES_AREA;ORG 不涉及区域)
-		_, err := tx.Model("role_data_scope").Ctx(ctx).
-			Where("node_id", areaId).
-			WhereIn("scope_type", []string{"AREA", "RES_AREA"}).
+		_, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).
+			Where(dao.RoleDataScope.Columns().NodeId, areaId).
+			WhereIn(dao.RoleDataScope.Columns().ScopeType, []string{"AREA", "RES_AREA"}).
 			Delete()
 		return err
 	})
@@ -154,14 +155,14 @@ func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInp
 		return gerror.New("无权与相邻区域「" + siblings[swapIdx].Name + "」换序:" + d.Reason)
 	}
 
-	err = g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		siblings[idx], siblings[swapIdx] = siblings[swapIdx], siblings[idx]
 		for i, a := range siblings {
 			nextSort := (i + 1) * 10
 			if a.Sort == nextSort {
 				continue
 			}
-			if _, err := tx.Model("area").Ctx(ctx).Data(g.Map{"sort": nextSort}).Where("id", a.Id).Update(); err != nil {
+			if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Data(do.Area{Sort: nextSort}).Where(dao.Area.Columns().Id, a.Id).Update(); err != nil {
 				return err
 			}
 		}
@@ -204,9 +205,9 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	grantRoleId := s.areaAutoGrantRole(actor, parent)
 	nextSort := s.nextAreaSort(parent.Id)
 	var newId int64
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		res, err := tx.Model("area").Ctx(ctx).
-			Data(g.Map{"parent_id": parent.Id, "name": in.Name, "path": "", "sort": nextSort}).Insert()
+	err := dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		res, err := tx.Model(dao.Area.Table()).Ctx(ctx).
+			Data(do.Area{ParentId: parent.Id, Name: in.Name, Path: "", Sort: nextSort}).Insert()
 		if err != nil {
 			return err
 		}
@@ -215,12 +216,15 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		}
 		// 物化路径含自身;授权了父子树的角色自此自动覆盖新区域(无需改 role_data_scope)
 		path := parent.Path + strconv.FormatInt(newId, 10) + "/"
-		if _, err = tx.Model("area").Ctx(ctx).Data(g.Map{"path": path}).Where("id", newId).Update(); err != nil {
+		if _, err = tx.Model(dao.Area.Table()).Ctx(ctx).Data(do.Area{Path: path}).Where(dao.Area.Columns().Id, newId).Update(); err != nil {
 			return err
 		}
 		if grantRoleId > 0 {
-			_, err = tx.Model("role_data_scope").Ctx(ctx).Data(g.Map{
-				"role_id": grantRoleId, "scope_type": "AREA", "node_id": newId, "include_child": true,
+			_, err = tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).Data(do.RoleDataScope{
+				RoleId:       grantRoleId,
+				ScopeType:    "AREA",
+				NodeId:       newId,
+				IncludeChild: true,
 			}).Insert()
 		}
 		return err
@@ -312,16 +316,16 @@ func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		return nil, gerror.New("同级已存在同名区域:" + in.Name)
 	}
 
-	err := g.DB().Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model("area").Ctx(ctx).
-			Data(g.Map{"name": in.Name}).Where("id", old.Id).Update(); err != nil {
+	err := dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).
+			Data(do.Area{Name: in.Name}).Where(dao.Area.Columns().Id, old.Id).Update(); err != nil {
 			return err
 		}
 		if !moving {
 			return nil
 		}
-		if _, err := tx.Model("area").Ctx(ctx).
-			Data(g.Map{"parent_id": newParent.Id}).Where("id", old.Id).Update(); err != nil {
+		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).
+			Data(do.Area{ParentId: newParent.Id}).Where(dao.Area.Columns().Id, old.Id).Update(); err != nil {
 			return err
 		}
 		// 整棵子树(含自身)批量前缀替换:旧前缀=old.Path,新前缀=新父.path+本ID+"/"
