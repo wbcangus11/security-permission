@@ -82,13 +82,13 @@ func (c *ControllerV1) AuthCheck(ctx context.Context, req *v1.AuthCheckReq) (*v1
 	}
 	var d *service.Decision
 	switch req.Type {
-	case "menu":
+	case v1.AuthTypeMenu:
 		d = service.S.CheckMenu(user, req.Code)
-	case "area":
+	case v1.AuthTypeArea:
 		d = service.S.CheckArea(user, req.NodeId)
-	case "org":
+	case v1.AuthTypeOrg:
 		d = service.S.CheckOrg(user, req.NodeId)
-	case "resource":
+	case v1.AuthTypeResource:
 		d = service.S.CheckResource(user, req.ResourceId, req.Action)
 	default:
 		return fail("未知鉴权类型:" + req.Type), nil

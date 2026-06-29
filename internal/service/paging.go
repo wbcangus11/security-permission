@@ -92,7 +92,7 @@ func (s *Store) treeScopeFilter(u *model.User, kind string) treeFilter {
 			continue
 		}
 		ok := false
-		if kind == "area" {
+		if kind == treeKindArea {
 			ok = s.CheckArea(u, a.Id).Allow
 		} else {
 			ok = s.userResAreaCovers(u, a.Id)
@@ -119,7 +119,7 @@ func (s *Store) treeNavAncestors(u *model.User, kind string) map[int]bool {
 	}
 	for _, a := range s.Areas() {
 		ok := false
-		if kind == "area" {
+		if kind == treeKindArea {
 			ok = s.CheckArea(u, a.Id).Allow
 		} else {
 			ok = s.userResAreaCovers(u, a.Id)
@@ -161,7 +161,7 @@ func areaScopeWhere(alias string, f treeFilter) (string, []interface{}) {
 		args = append(args, f.ExactIds)
 	}
 	if len(parts) == 0 {
-		return "1=0", nil // 防御:None 应已被短路
+		return sqlAlwaysFalse, nil // 防御:None 应已被短路
 	}
 	return "(" + strings.Join(parts, " OR ") + ")", args
 }
@@ -235,12 +235,12 @@ type PagedAreas struct {
 
 // AreaChildren 应用端(RES_AREA):某节点下"可见的"直接子区域,分页。
 func (s *Store) AreaChildren(ctx context.Context, userId, parentId, page, size int) *PagedAreas {
-	return s.areaChildrenBy(ctx, userId, parentId, page, size, "resarea")
+	return s.areaChildrenBy(ctx, userId, parentId, page, size, treeKindResArea)
 }
 
 // ManageAreaChildren 后台管理域(AREA):某节点下"可管理/可见的"直接子区域,分页。
 func (s *Store) ManageAreaChildren(ctx context.Context, userId, parentId, page, size int) *PagedAreas {
-	return s.areaChildrenBy(ctx, userId, parentId, page, size, "area")
+	return s.areaChildrenBy(ctx, userId, parentId, page, size, treeKindArea)
 }
 
 // areaChildrenBy 通用核心:可见 = 范围内(accessible)或导航祖先;过滤 + 分页全部下推 SQL。
@@ -307,8 +307,6 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size
 }
 
 // searchLimit 搜索最多返回的匹配条数(对齐真实海康:超过则截断,前端提示"搜索结果过多,仅展示前 500 条")。
-const searchLimit = 500
-
 // SearchAreas 按名称搜索区域(懒加载树的"搜索框"):全树 name LIKE %q%,叠加用户可见性过滤。
 // scope="manage" 用 AREA(管理域),否则 RES_AREA(应用域)。
 // 对齐海康:最多返回前 searchLimit(500)条(Total 仍为真实总数,供前端判断是否被截断);
@@ -320,9 +318,9 @@ func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, pa
 	if u == nil || q == "" {
 		return out
 	}
-	kind := "resarea"
-	if scope == "manage" {
-		kind = "area"
+	kind := treeKindResArea
+	if scope == areaSearchScopeManage {
+		kind = treeKindArea
 	}
 	f := s.treeScopeFilter(u, kind)
 	nav := s.treeNavAncestors(u, kind)
@@ -381,7 +379,7 @@ func (s *Store) roleTreeGrantable(actorId int, kind string) (set map[int]bool, p
 	}
 	for _, a := range s.Areas() {
 		ok := false
-		if kind == "resarea" {
+		if kind == treeKindResArea {
 			ok = s.userResAreaCovers(actor, a.Id)
 		} else {
 			ok = s.CheckArea(actor, a.Id).Allow
@@ -475,7 +473,7 @@ func (s *Store) AreaResourcesPaged(ctx context.Context, userId, areaId, page, si
 	}
 	out.Accessible = true
 
-	f := s.treeScopeFilter(u, "resarea")
+	f := s.treeScopeFilter(u, treeKindResArea)
 	m := dao.Resource.Ctx(ctx).
 		LeftJoin(dao.Area.Table(), "area.id = resource.area_id").
 		Where("area.path LIKE ?", area.Path+"%") // 限定 areaId 子树
@@ -498,7 +496,7 @@ func (s *Store) AreaResourcesPaged(ctx context.Context, userId, areaId, page, si
 	}
 	acts := s.Actions()
 	for _, row := range rows {
-		rv := ResourceView{Id: row.Id, Name: row.Name, Area: s.nodeName("area", row.AreaId)}
+		rv := ResourceView{Id: row.Id, Name: row.Name, Area: s.nodeName(treeKindArea, row.AreaId)}
 		anyAllowed := false
 		for _, act := range acts {
 			allowed := s.CheckResource(u, row.Id, act.Code).Allow
@@ -521,27 +519,13 @@ func (s *Store) hiddenResourceIds(u *model.User) []int {
 	if isSuper(u) {
 		return nil
 	}
-	cand := map[int]bool{}
-	for _, r := range s.effectiveRoles(u) {
-		for _, id := range r.ResourceOverrides {
-			cand[id] = true
-		}
-		for _, ra := range r.ResourceActions {
-			cand[ra.ResourceId] = true
-		}
+	p := s.userPermissions(u)
+	if p == nil || len(p.HiddenResourceIds) == 0 {
+		return nil
 	}
-	hidden := []int{}
-	for id := range cand {
-		any := false
-		for _, act := range s.Actions() {
-			if s.CheckResource(u, id, act.Code).Allow {
-				any = true
-				break
-			}
-		}
-		if !any {
-			hidden = append(hidden, id)
-		}
+	hidden := make([]int, 0, len(p.HiddenResourceIds))
+	for id := range p.HiddenResourceIds {
+		hidden = append(hidden, id)
 	}
 	return hidden
 }
@@ -552,8 +536,8 @@ func normPage(page, size int) (int, int) {
 	if page < 1 {
 		page = 1
 	}
-	if size <= 0 || size > 500 {
-		size = 100
+	if size <= 0 || size > maxPageSize {
+		size = defaultPageSize
 	}
 	return page, size
 }

@@ -98,7 +98,7 @@ func TestDelegatedRoleRuntimeCapForPagedTreeFilter(t *testing.T) {
 	s := newRuntimeCapStore()
 	li := s.User(2)
 
-	f := s.treeScopeFilter(li, "resarea")
+	f := s.treeScopeFilter(li, treeKindResArea)
 	if f.None {
 		t.Fatal("expected at least one effective resource area")
 	}

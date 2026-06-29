@@ -92,14 +92,14 @@ func (s *Store) DeleteArea(ctx context.Context, actorId, areaId int) error {
 		// 清理引用该节点的树范围授权(管理域 AREA + 应用域 RES_AREA;ORG 不涉及区域)
 		_, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).
 			Where(dao.RoleDataScope.Columns().NodeId, areaId).
-			WhereIn(dao.RoleDataScope.Columns().ScopeType, []string{"AREA", "RES_AREA"}).
+			WhereIn(dao.RoleDataScope.Columns().ScopeType, []string{model.ScopeTypeArea, model.ScopeTypeResourceArea}).
 			Delete()
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	return s.Reload(ctx)
+	return s.reloadAreasAndRoles(ctx)
 }
 
 func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInput) error {
@@ -117,7 +117,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInp
 	if d := s.CheckArea(actor, target.Id); !d.Allow {
 		return gerror.New("无权调整「" + target.Name + "」排序:" + d.Reason)
 	}
-	if in.Direction != "up" && in.Direction != "down" {
+	if in.Direction != sortDirectionUp && in.Direction != sortDirectionDown {
 		return gerror.New("排序方向只能是 up/down")
 	}
 
@@ -145,7 +145,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInp
 		return gerror.New("区域不存在")
 	}
 	swapIdx := idx - 1
-	if in.Direction == "down" {
+	if in.Direction == sortDirectionDown {
 		swapIdx = idx + 1
 	}
 	if swapIdx < 0 || swapIdx >= len(siblings) {
@@ -171,7 +171,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInp
 	if err != nil {
 		return err
 	}
-	return s.Reload(ctx)
+	return s.reloadAreas(ctx)
 }
 
 // checkAreaWriter 写操作公共前置:操作人存在 + 功能关(sys.area 菜单)。
@@ -222,7 +222,7 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		if grantRoleId > 0 {
 			_, err = tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).Data(do.RoleDataScope{
 				RoleId:       grantRoleId,
-				ScopeType:    "AREA",
+				ScopeType:    model.ScopeTypeArea,
 				NodeId:       newId,
 				IncludeChild: true,
 			}).Insert()
@@ -232,7 +232,7 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	if err != nil {
 		return nil, err
 	}
-	if err = s.Reload(ctx); err != nil {
+	if err = s.reloadAreasAndRoles(ctx); err != nil {
 		return nil, err
 	}
 	return s.AreaById(int(newId)), nil
@@ -339,7 +339,7 @@ func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	if err != nil {
 		return nil, err
 	}
-	if err = s.Reload(ctx); err != nil {
+	if err = s.reloadAreas(ctx); err != nil {
 		return nil, err
 	}
 	return s.AreaById(old.Id), nil

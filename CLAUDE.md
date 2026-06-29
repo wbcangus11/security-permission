@@ -16,7 +16,7 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 **资源(摄像头)**支持**真实增删改**(§十三,13 项):功能关 `sys.resource` + 数据关 `CheckArea(所在区域)`;新增自动被覆盖该区域 RES_AREA 的角色继承;移动改 `area_id`;删除清理 `role_resource_action`。至此**数据树增删改三件套(区域/组织/资源)全部完成**。
 **委派当前采用模型 A**:写时校验 + 合并保留,不做显式「角色范围」配置。角色列表、账号可分配角色、编辑/删除门禁对普通用户均按**自己创建的角色**(`created_by==当前登录用户`)计算;超级管理员仍可见并管理全部角色。历史版本的 `scope_type='ROLE'` 数据不再读取/保存,仅在删除角色时兼容清理遗留引用。
 **应用端资源级可见**(§十五,6 项):业务资源两级数据权限补齐 L2 可见性——精细模式且零操作=该资源应用端列表隐藏(对齐海康「区域级继承 + 资源级查看」)。「精细模式」显式持久化(`Role.ResourceOverrides`,复用 `role_data_scope` `scope_type='RESOVR'`,零 DDL,向后兼容)。
-**数据权限下推 + 懒加载分页**(§十六,17 项):把数据权限从「点查鉴权」扩展到「列表过滤 + 分页下推 SQL」,支撑大数据量。区域树**按层懒加载**(每次只查一层 `parent_id`)、资源列表**分页**,数据权限作为 SQL WHERE **下推数据库**(含子树授权→`path LIKE '根path%'` 走 `idx_path`;仅本节点→`id=节点`;根含子树/超管→不加过滤;无范围→空结果)。鉴权(`auth.go` 点查,读缓存微秒级)与过滤分页(`paging.go` 列表,scope 拼进 WHERE)互补。应用树(RES_AREA)/管理树(AREA)/移动选择器共用 `paging.go` 同一核心(`scopePicker` 注入差异)。**搜索对齐真实海康**:结果按局部树展示(`SearchAreas` 回传祖先链 `Ancestors`,前端拼命中分支 + 匹配高亮)、**最多前 500 条**(`searchLimit`,超出给横幅)、同样叠加可见性 WHERE 下推。配 `tools/genbulk` 造数(园区A 下 150 栋楼=450 区域+900 摄像头,触发分页;搜索 500 截断验证用 `genbulk 200`)。**零 DDL**(只读 `area.path`/`idx_path`)。
+**数据权限下推 + 懒加载分页**(§十六,17 项):把数据权限从「点查鉴权」扩展到「列表过滤 + 分页下推 SQL」,支撑大数据量。区域树**按层懒加载**(每次只查一层 `parent_id`)、资源列表**分页**,数据权限作为 SQL WHERE **下推数据库**(含子树授权→`path LIKE '根path%'` 走 `idx_path`;仅本节点→`id=节点`;根含子树/超管→不加过滤;无范围→空结果)。鉴权(`auth.go` 点查,读缓存微秒级)与过滤分页(`paging.go` 列表,scope 拼进 WHERE)互补。应用树(RES_AREA)/管理树(AREA)/移动选择器共用 `paging.go` 同一核心(`scopePicker` 注入差异)。**搜索对齐真实海康**:结果按局部树展示(`SearchAreas` 回传祖先链 `Ancestors`,前端拼命中分支 + 匹配高亮)、**最多前 500 条**(`searchLimit`,超出给横幅)、同样叠加可见性 WHERE 下推。**零 DDL**(只读 `area.path`/`idx_path`)。
 
 ---
 
@@ -61,9 +61,6 @@ resource/public/index.html   前端单页(所有 UI + JS,无构建步骤)★
 manifest/sql/schema.sql      建表 DDL(幂等)
 manifest/sql/seed.sql        种子数据
 tools/dbinit/main.go         幂等初始化:建表 + 空库才灌种子(保留已有数据)
-tools/genbulk/main.go        造数(演示/压测):园区A 下批量生成区域+摄像头,触发懒加载分页;`压测` 前缀幂等可清(`go run ./tools/genbulk clean`)
-tools/debug-build.ps1        带重试的 debug 二进制构建(绕 360 拦截,见下)
-tools/shot.mjs               UI 截图验证(零依赖,CDP 驱动 Chrome):node tools/shot.mjs out.png "页面内JS" [等待ms]
 docs/设计导读.md              新人入门:一步步看懂设计的阅读路线(心智模型→引擎→难点,边读边验证)
 docs/权限设计说明.md          通俗设计文档
 docs/测试报告.md              场景测试报告(核心+各专项)
@@ -111,7 +108,7 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 
 ## 已知环境坑(重要)
 
-- **GoLand debug 报 `usage: compile`**:是 **360安全卫士**拦截 debug 全量重编(`all=-N -l`)瞬间拉起的大量 `compile.exe`,与代码/dlv 无关(flaky)。360 退不掉。**绕法**:`powershell -ExecutionPolicy Bypass -File tools\debug-build.ps1` 构建 `app_debug.exe`(带重试会收敛),再 GoLand **Attach to Process**。
+- **GoLand debug 报 `usage: compile`**:是 **360安全卫士**拦截 debug 全量重编(`all=-N -l`)瞬间拉起的大量 `compile.exe`,与代码/dlv 无关(flaky)。360 退不掉。
 - **重启服务前务必按 PID 杀旧进程**(端口 8000 易被占,否则 curl/浏览器打到旧实例的旧缓存):
   `PID=$(netstat -ano | grep ":8000 " | head -1 | awk '{print $NF}'); taskkill //F //PID $PID`
 - Windows 控制台对中文 JSON 显示乱码是编码问题,数据本身是好的 UTF-8。
@@ -128,7 +125,7 @@ go run main.go          # 启动,访问 http://127.0.0.1:8000/
 - `38c7022` 内容回顾(已落库)· **应用端资源级可见(§十五)**:`model/permission.go`(Role 加 `ResourceOverrides`)、`service/db.go`(RESOVR 读写)、`service/auth.go`(`CheckResource` 精细判定=ResourceOverrides∪操作行,兼容旧数据)、`service/delegation.go`(`MergeDelegated` 第6维=精细标记)、`service/runtime.go`(`AreaResources` 过滤零操作资源)、`index.html`(saveRole/loadRole 持久化精细模式 + tip)、`docs/{测试报告 §十五,权限设计说明 3.3.1}`。**零 DDL**(复用 `role_data_scope` `scope_type='RESOVR'`)。
 - `61ad052` 内容回顾(已落库):角色删除(`role.go` `DeleteRole` + `/api/role/delete` + created_by 修正)、资源增删改(`resource.go` + 区域详情卡片 ➕/✏️/📦/🗑)。均不改 schema/seed。
 - `0930fc6` 内容回顾(已落库)· **数据权限下推 + 懒加载分页 + 海康式搜索(§十六)**:
-  - 新增 `internal/service/paging.go`(scope→SQL WHERE 下推 + 按层懒加载树 + 列表分页 + `SearchAreas`)、`tools/genbulk/`(造数工具)、`docs/设计导读.md`(新人入门导读)。
+  - 新增 `internal/service/paging.go`(scope→SQL WHERE 下推 + 按层懒加载树 + 列表分页 + `SearchAreas`)、`docs/设计导读.md`(新人入门导读)。
   - 改 `internal/controller/perm/perm.go`(新接口 area-children/area-search/manage-area-children;area-resources 加分页)、`internal/service/runtime.go`(`ManageAreaDetail` 改 COUNT 子区域不平铺,加 ctx)、`resource/public/index.html`(懒加载树 `lazyTreeLevel`/`lazyTreeNode` + 「加载更多」+ 树搜索框 + 移动选择器弹框;顺带 `extractScopes` 区分 includeChild true/false)、`docs/{测试报告 §十六,设计导读,权限设计说明 §3.4}`。
   - **搜索对齐真实海康 · 前后台双树**:`SearchAreas`(scope=app/manage 共用核心,可见性 WHERE 下推)返回局部树祖先链(`AncestorRef`/`areaAncestors`)+ 硬上限 `searchLimit=500`;前端 `mountTreeSearch` 同时挂应用端(`appAreaTree`/scope=app)与后台管理(`manageAreaTree`/scope=manage)两棵树,共用 `searchTreeInto`/`renderSearchTree`/`hlMatch` 拼命中分支树、子串高亮、超 500 给「搜索结果过多,仅展示前 500 条」横幅。
   - **已端到端验证**:curl 验前后台双树各用户(李四 600→截 500、张三按 RES_AREA/AREA 各自域过滤、admin 超管 All)+ 截图验前端(应用端搜索树/高亮/截断 + **后台管理树搜索** admin「压测」截断横幅+高亮),见测试报告 §十六 **17/17**。**零 DDL**(只读 `area.path`/`idx_path`)。

@@ -51,6 +51,135 @@ func (s *Store) Reload(ctx context.Context) error {
 	s.actions = actions
 	s.roles = roles
 	s.users = users
+	s.invalidatePermissionsLocked()
+	return nil
+}
+
+func (s *Store) reloadAreas(ctx context.Context) error {
+	areas, err := loadAreas(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.areas = toMap(areas, func(a *model.Area) int { return a.Id })
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadOrgs(ctx context.Context) error {
+	orgs, err := loadOrgs(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.orgs = toMap(orgs, func(o *model.Org) int { return o.Id })
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadResources(ctx context.Context) error {
+	resources, err := loadResources(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.resources = toMap(resources, func(r *model.Resource) int { return r.Id })
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadRoles(ctx context.Context) error {
+	roles, err := loadRoles(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.roles = roles
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadUsers(ctx context.Context) error {
+	users, err := loadUsers(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.users = users
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadAreasAndRoles(ctx context.Context) error {
+	areas, err := loadAreas(ctx)
+	if err != nil {
+		return err
+	}
+	roles, err := loadRoles(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.areas = toMap(areas, func(a *model.Area) int { return a.Id })
+	s.roles = roles
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadOrgsAndRoles(ctx context.Context) error {
+	orgs, err := loadOrgs(ctx)
+	if err != nil {
+		return err
+	}
+	roles, err := loadRoles(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.orgs = toMap(orgs, func(o *model.Org) int { return o.Id })
+	s.roles = roles
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadResourcesAndRoles(ctx context.Context) error {
+	resources, err := loadResources(ctx)
+	if err != nil {
+		return err
+	}
+	roles, err := loadRoles(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.resources = toMap(resources, func(r *model.Resource) int { return r.Id })
+	s.roles = roles
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) reloadRolesAndUsers(ctx context.Context) error {
+	roles, err := loadRoles(ctx)
+	if err != nil {
+		return err
+	}
+	users, err := loadUsers(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.roles = roles
+	s.users = users
+	s.invalidatePermissionsLocked()
+	s.mu.Unlock()
 	return nil
 }
 
@@ -178,13 +307,13 @@ func loadRoles(ctx context.Context) (map[int]*model.Role, error) {
 		}
 		sc := model.DataScope{NodeId: int(row.NodeId), IncludeChild: row.IncludeChild != 0}
 		switch row.ScopeType {
-		case "AREA":
+		case model.ScopeTypeArea:
 			r.AreaScopes = append(r.AreaScopes, sc)
-		case "ORG":
+		case model.ScopeTypeOrg:
 			r.OrgScopes = append(r.OrgScopes, sc)
-		case "RES_AREA":
+		case model.ScopeTypeResourceArea:
 			r.ResourceAreaScopes = append(r.ResourceAreaScopes, sc)
-		case "RESOVR":
+		case model.ScopeTypeResourceOverride:
 			r.ResourceOverrides = append(r.ResourceOverrides, int(row.NodeId))
 		}
 	}
@@ -275,19 +404,19 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 			}
 			return nil
 		}
-		if err := insScope("AREA", r.AreaScopes); err != nil {
+		if err := insScope(model.ScopeTypeArea, r.AreaScopes); err != nil {
 			return err
 		}
-		if err := insScope("ORG", r.OrgScopes); err != nil {
+		if err := insScope(model.ScopeTypeOrg, r.OrgScopes); err != nil {
 			return err
 		}
-		if err := insScope("RES_AREA", r.ResourceAreaScopes); err != nil {
+		if err := insScope(model.ScopeTypeResourceArea, r.ResourceAreaScopes); err != nil {
 			return err
 		}
 		for _, resId := range r.ResourceOverrides {
 			if _, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).Data(do.RoleDataScope{
 				RoleId:       r.Id,
-				ScopeType:    "RESOVR",
+				ScopeType:    model.ScopeTypeResourceOverride,
 				NodeId:       resId,
 				IncludeChild: false,
 			}).Insert(); err != nil {
@@ -312,7 +441,7 @@ func (s *Store) SaveRole(ctx context.Context, r *model.Role) (*model.Role, error
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Reload(ctx); err != nil {
+	if err := s.reloadRoles(ctx); err != nil {
 		return nil, err
 	}
 	return s.Role(r.Id), nil
@@ -346,7 +475,7 @@ func (s *Store) SaveUser(ctx context.Context, u *model.User) (*model.User, error
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Reload(ctx); err != nil {
+	if err := s.reloadUsers(ctx); err != nil {
 		return nil, err
 	}
 	return s.User(u.Id), nil

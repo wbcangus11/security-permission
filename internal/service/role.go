@@ -45,7 +45,7 @@ func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
 	if err != nil {
 		return err
 	}
-	return s.Reload(ctx)
+	return s.reloadRolesAndUsers(ctx)
 }
 
 func (s *Store) GuardManageRole(actorId, roleId int) error {

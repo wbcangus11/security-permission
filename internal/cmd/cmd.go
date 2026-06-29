@@ -7,7 +7,6 @@ import (
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gcmd"
 
-	"security-permission/internal/controller/hello"
 	"security-permission/internal/controller/perm"
 	"security-permission/internal/service"
 )
@@ -29,15 +28,9 @@ var (
 			s.SetServerRoot("resource/public")
 			s.SetIndexFiles([]string{"index.html"})
 
-			s.Group("/", func(group *ghttp.RouterGroup) {
-				group.Middleware(ghttp.MiddlewareHandlerResponse)
-				group.Bind(
-					hello.NewV1(),
-				)
-			})
-
 			// 权限演示接口,统一前缀 /api。
 			s.Group("/api", func(group *ghttp.RouterGroup) {
+				group.Middleware(ghttp.MiddlewareHandlerResponse)
 				perm.Register(group)
 			})
 

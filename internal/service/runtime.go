@@ -144,7 +144,7 @@ func (s *Store) ManageAreaDetail(ctx context.Context, userId, areaId int) *Manag
 		Fields("id,name,type,area_id").
 		Where(dao.Resource.Columns().AreaId, areaId).
 		Order(dao.Resource.Columns().Id + " asc").
-		Limit(500).
+		Limit(manageDetailResourceLimit).
 		Scan(&rs)
 	for _, r := range rs {
 		d.Resources = append(d.Resources, r.Name)
@@ -245,7 +245,7 @@ func (s *Store) AreaResources(userId, areaId int) *AreaResourcesView {
 		if rp == "" || !strings.HasPrefix(rp, area.Path) { // 仅本区域子树内的资源
 			continue
 		}
-		rv := ResourceView{Id: r.Id, Name: r.Name, Area: s.nodeName("area", r.AreaId)}
+		rv := ResourceView{Id: r.Id, Name: r.Name, Area: s.nodeName(treeKindArea, r.AreaId)}
 		anyAllowed := false
 		for _, act := range acts {
 			ok := s.CheckResource(u, r.Id, act.Code).Allow

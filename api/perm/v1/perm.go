@@ -19,6 +19,13 @@ type ResourceAction struct {
 	ActionCode string `json:"actionCode"`
 }
 
+const (
+	AuthTypeMenu     = "menu"
+	AuthTypeArea     = "area"
+	AuthTypeOrg      = "org"
+	AuthTypeResource = "resource"
+)
+
 type MetaReq struct {
 	g.Meta `path:"/meta" method:"get" tags:"Permission" summary:"metadata"`
 }

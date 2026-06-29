@@ -78,7 +78,7 @@ func (s *Store) DeleteResource(ctx context.Context, actorId, resId int) error {
 	if err != nil {
 		return err
 	}
-	return s.Reload(ctx)
+	return s.reloadResourcesAndRoles(ctx)
 }
 
 // checkResourceWriter 写操作公共前置:操作人存在 + 功能关(sys.resource 菜单)。
@@ -121,7 +121,7 @@ func (s *Store) createResource(ctx context.Context, actor *model.User, in *Resou
 	if err != nil {
 		return nil, err
 	}
-	if err = s.Reload(ctx); err != nil {
+	if err = s.reloadResources(ctx); err != nil {
 		return nil, err
 	}
 	return s.ResourceById(int(newId)), nil
@@ -164,7 +164,7 @@ func (s *Store) updateResource(ctx context.Context, actor *model.User, in *Resou
 	if _, err := dao.Resource.Ctx(ctx).Data(data).Where(dao.Resource.Columns().Id, old.Id).Update(); err != nil {
 		return nil, err
 	}
-	if err := s.Reload(ctx); err != nil {
+	if err := s.reloadResources(ctx); err != nil {
 		return nil, err
 	}
 	return s.ResourceById(old.Id), nil

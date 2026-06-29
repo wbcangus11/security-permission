@@ -496,6 +496,11 @@ function grantAllows(kind, id){
   return (GRANT[m]||[]).includes(id);
 }
 function grantAllowsResAction(resId, code){ if(GRANT.unlimited) return true; return (GRANT.resourceActions||[]).some(x=>x.resourceId===resId&&x.actionCode===code); }
+function grantIds(kind){
+  if(GRANT.unlimited) return (META.areas||[]).map(a=>a.id);
+  const m={area:'areaIds',resarea:'resAreaIds'}[kind];
+  return (GRANT[m]||[]).map(Number);
+}
 // 角色管理列表的两个维度(对齐用户要求):
 //   可见/可编辑/删除 = 不受限/超管 ∪ 自建(created_by==当前操作者)
 function roleCanSee(id){ return GRANT.unlimited || (GRANT.roleIds||[]).includes(Number(id)) || roleCanManage(id); } // 自建角色恒可见——即便 GRANT 尚未刷新(刚新建)
@@ -535,8 +540,22 @@ function rtState(kind,id){ const st=roleTree[kind];
   return 'none';
 }
 // scopes ⇄ 状态:subTree→chk+sub;singleNode→chk(sub=false)。
+function rtGrantDescendants(kind, scopeId){
+  const sp=rtPath(scopeId); if(!sp) return [];
+  return grantIds(kind).filter(id=>{ const p=rtPath(id); return p && p.length>sp.length && p.startsWith(sp); });
+}
 function rtApplyScopes(kind, scopes){ const st=roleTree[kind]; st.chk={}; st.sub={};
-  (scopes||[]).forEach(sc=>{ st.chk[sc.nodeId]=true; st.sub[sc.nodeId]= sc.includeChild!==false; }); }
+  (scopes||[]).forEach(sc=>{
+    const id=Number(sc.nodeId);
+    if(grantAllows(kind,id)){
+      st.chk[id]=true; st.sub[id]= sc.includeChild!==false;
+      return;
+    }
+    if(sc.includeChild!==false){
+      rtGrantDescendants(kind,id).forEach(gid=>{ st.chk[gid]=true; st.sub[gid]=true; });
+    }
+  });
+}
 // 从状态导出 scopes:每个 chk 节点,若未被某「子树祖先」覆盖则记一条(子树标记→includeChild:true)。用 path,深层未展开也准。
 function rtScopes(kind){ const st=roleTree[kind]; const out=[];
   for(const idS in st.chk){ if(!st.chk[idS]) continue; const id=Number(idS), p=rtPath(id); let covered=false;
@@ -631,7 +650,13 @@ function rtRecomputeUp(kind, id){ const st=roleTree[kind]; let cur=rtParent(kind
 function blankRole(){ return {id:0,name:'',description:'',menuIds:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[],resourceActions:[],resourceOverrides:[]}; }
 
 // ---------- 通用请求 ----------
-async function api(path, opts){ const r = await fetch(path, opts); const j = await r.json(); if(j.code!==0) throw new Error(j.message); return j.data; }
+function unwrapRes(j){
+  // GoFrame response middleware wraps controller returns once; controller returns CommonRes itself.
+  const inner = (j && j.data && typeof j.data === 'object' && 'code' in j.data && 'data' in j.data) ? j.data : j;
+  if(!inner || inner.code!==0) throw new Error((inner&&inner.message) || (j&&j.message) || '请求失败');
+  return inner;
+}
+async function api(path, opts){ const r = await fetch(path, opts); const j = unwrapRes(await r.json()); return j.data; }
 
 // ---------- 树工具 ----------
 function buildTree(nodes){ // nodes: [{id,parentId,...}]
@@ -1555,7 +1580,7 @@ async function saveRole(){
   if(!r.name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
   const vbox=document.getElementById('violations'); vbox.style.display='none'; vbox.innerHTML='';
   const resp=await fetch('/api/role/save?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
-  const j=await resp.json();
+  const j=unwrapRes(await resp.json());
   if(j.code!==0){ await modalAlert('保存失败:'+j.message,'操作失败','i-x'); return; }
   let msg='已保存:'+j.data.name;
   if(j.preserved>0) msg+=`\n(保留了 ${j.preserved} 项你无权查看/修改的范围外权限)`;

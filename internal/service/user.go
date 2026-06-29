@@ -105,7 +105,7 @@ func (s *Store) DeleteUser(ctx context.Context, actorId, userId int) error {
 	if err != nil {
 		return err
 	}
-	return s.Reload(ctx)
+	return s.reloadUsers(ctx)
 }
 
 func (s *Store) checkUserWriter(actorId int) (*model.User, bool, error) {

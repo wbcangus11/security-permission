@@ -14,6 +14,13 @@ const (
 	MenuDomainApp = "APP" // 应用菜单
 )
 
+const (
+	ScopeTypeArea             = "AREA"
+	ScopeTypeOrg              = "ORG"
+	ScopeTypeResourceArea     = "RES_AREA"
+	ScopeTypeResourceOverride = "RESOVR"
+)
+
 // Area 安保区域(树形)。Path 形如 "/1/4/17/",含自身,用于子树前缀判断。
 type Area struct {
 	Id       int    `json:"id"`

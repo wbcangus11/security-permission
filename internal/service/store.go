@@ -16,6 +16,7 @@ import (
 type Store struct {
 	mu sync.RWMutex
 
+	// Domain data loaded from MySQL and read by authorization/UI services.
 	areas     map[int]*model.Area
 	orgs      map[int]*model.Org
 	menus     map[int]*model.Menu
@@ -23,6 +24,11 @@ type Store struct {
 	actions   []model.Action
 	roles     map[int]*model.Role
 	users     map[int]*model.User
+
+	// Per-user effective permission cache. Version prevents a snapshot built
+	// before a concurrent reload from being stored after permissions changed.
+	permVersion uint64
+	permCache   map[int]*effectivePermission
 }
 
 // S 全局单例。数据从 MySQL 加载到内存缓存(读多写少),
@@ -35,6 +41,12 @@ var S = &Store{
 	resources: map[int]*model.Resource{},
 	roles:     map[int]*model.Role{},
 	users:     map[int]*model.User{},
+	permCache: map[int]*effectivePermission{},
+}
+
+func (s *Store) invalidatePermissionsLocked() {
+	s.permVersion++
+	s.permCache = map[int]*effectivePermission{}
 }
 
 // ---------- 读取(返回有序切片,便于前端展示) ----------
@@ -137,7 +149,6 @@ func (s *Store) ResourceById(id int) *model.Resource {
 	return s.resources[id]
 }
 
-func (s *Store) area(id int) *model.Area     { return s.areas[id] }
-func (s *Store) org(id int) *model.Org       { return s.orgs[id] }
+func (s *Store) area(id int) *model.Area         { return s.areas[id] }
+func (s *Store) org(id int) *model.Org           { return s.orgs[id] }
 func (s *Store) resource(id int) *model.Resource { return s.resources[id] }
-

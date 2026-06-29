@@ -51,6 +51,19 @@ func (s *Store) userHasMenuId(u *model.User, menuId int) bool {
 }
 
 func (s *Store) userHasMenuIdWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
+	if skip == nil {
+		if isSuper(u) {
+			return true
+		}
+		if p := s.userPermissions(u); p != nil {
+			return p.MenuIds[menuId]
+		}
+		return false
+	}
+	return s.userHasMenuIdUncachedWithSkip(u, menuId, skip)
+}
+
+func (s *Store) userHasMenuIdUncachedWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
 	if isSuper(u) { // 超级管理员拥有全部菜单 → SysMenus/AppMenus 自动返回全集
 		return true
 	}
@@ -70,6 +83,19 @@ func (s *Store) userResAreaCovers(u *model.User, areaId int) bool {
 }
 
 func (s *Store) userResAreaCoversWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
+	if skip == nil {
+		if isSuper(u) {
+			return true
+		}
+		if p := s.userPermissions(u); p != nil {
+			return p.ResAreaIds[areaId]
+		}
+		return false
+	}
+	return s.userResAreaCoversUncachedWithSkip(u, areaId, skip)
+}
+
+func (s *Store) userResAreaCoversUncachedWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
 	if isSuper(u) { // 超级管理员覆盖全部区域资源 → 应用端可见全部
 		return true
 	}
@@ -77,7 +103,7 @@ func (s *Store) userResAreaCoversWithSkip(u *model.User, areaId int, skip map[in
 		if roleSkipped(skip, r.Id) {
 			continue
 		}
-		if s.roleAllowsTree(r.ResourceAreaScopes, "area", areaId) && s.creatorAllowsResArea(r, areaId, skip) {
+		if s.roleAllowsTree(r.ResourceAreaScopes, treeKindArea, areaId) && s.creatorAllowsResArea(r, areaId, skip) {
 			return true
 		}
 	}

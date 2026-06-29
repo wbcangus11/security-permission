@@ -85,14 +85,14 @@ func (s *Store) DeleteOrg(ctx context.Context, actorId, orgId int) error {
 		// 清理引用该节点的组织树范围授权(仅 ORG;AREA/RES_AREA 不涉及组织)
 		_, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).
 			Where(dao.RoleDataScope.Columns().NodeId, orgId).
-			Where(dao.RoleDataScope.Columns().ScopeType, "ORG").
+			Where(dao.RoleDataScope.Columns().ScopeType, model.ScopeTypeOrg).
 			Delete()
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	return s.Reload(ctx)
+	return s.reloadOrgsAndRoles(ctx)
 }
 
 // checkOrgWriter 写操作公共前置:操作人存在 + 功能关(sys.person.info 菜单)。
@@ -137,7 +137,7 @@ func (s *Store) createOrg(ctx context.Context, actor *model.User, in *OrgSaveInp
 	if err != nil {
 		return nil, err
 	}
-	if err = s.Reload(ctx); err != nil {
+	if err = s.reloadOrgs(ctx); err != nil {
 		return nil, err
 	}
 	return s.OrgById(int(newId)), nil
@@ -201,7 +201,7 @@ func (s *Store) updateOrg(ctx context.Context, actor *model.User, in *OrgSaveInp
 	if err != nil {
 		return nil, err
 	}
-	if err = s.Reload(ctx); err != nil {
+	if err = s.reloadOrgs(ctx); err != nil {
 		return nil, err
 	}
 	return s.OrgById(old.Id), nil
