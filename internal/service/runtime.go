@@ -51,7 +51,7 @@ func (s *Store) visibleAreaTree(accessible func(areaId int) bool) []VisibleArea 
 }
 
 // VisibleAreas 应用端可见区域树(accessible=资源域 RES_AREA 覆盖)。
-func (s *Store) VisibleAreas(userId int) []VisibleArea {
+func (s *Store) VisibleAreas(userId string) []VisibleArea {
 	u := s.User(userId)
 	if u == nil {
 		return []VisibleArea{}
@@ -60,7 +60,7 @@ func (s *Store) VisibleAreas(userId int) []VisibleArea {
 }
 
 // ManageAreas 后台管理域可见区域树(accessible=安保区域管理权限 AREA 覆盖)。
-func (s *Store) ManageAreas(userId int) []VisibleArea {
+func (s *Store) ManageAreas(userId string) []VisibleArea {
 	u := s.User(userId)
 	if u == nil {
 		return []VisibleArea{}
@@ -69,7 +69,7 @@ func (s *Store) ManageAreas(userId int) []VisibleArea {
 }
 
 // ManageOrgs 后台管理域可见组织树(accessible=组织管理权限 ORG 覆盖)。
-func (s *Store) ManageOrgs(userId int) []VisibleArea {
+func (s *Store) ManageOrgs(userId string) []VisibleArea {
 	u := s.User(userId)
 	if u == nil {
 		return []VisibleArea{}
@@ -120,7 +120,7 @@ type ManageDetail struct {
 
 // ManageAreaDetail 点击安保区域:可管理则给出子区域数量 + 本区域直接资源;否则暂无管理权限。
 // 子区域由左侧树懒加载展开,不在详情里平铺;子区域数量与资源都走 DB 索引查询,避免全表扫描(支撑大数据量)。
-func (s *Store) ManageAreaDetail(ctx context.Context, userId, areaId int) *ManageDetail {
+func (s *Store) ManageAreaDetail(ctx context.Context, userId string, areaId int) *ManageDetail {
 	u := s.User(userId)
 	d := &ManageDetail{Children: []string{}, Resources: []string{}, ResourceItems: []ResourceBrief{}}
 	if u == nil {
@@ -154,7 +154,7 @@ func (s *Store) ManageAreaDetail(ctx context.Context, userId, areaId int) *Manag
 }
 
 // ManageOrgDetail 点击组织:可管理则列出直接子组织;否则暂无管理权限。
-func (s *Store) ManageOrgDetail(userId, orgId int) *ManageDetail {
+func (s *Store) ManageOrgDetail(userId string, orgId int) *ManageDetail {
 	u := s.User(userId)
 	d := &ManageDetail{Children: []string{}, Resources: []string{}}
 	if u == nil {
@@ -178,18 +178,12 @@ func (s *Store) ManageOrgDetail(userId, orgId int) *ManageDetail {
 }
 
 // SysMenus 某用户可见的系统管理菜单(功能权限 SYS)。
-func (s *Store) SysMenus(userId int) []*model.Menu {
+func (s *Store) SysMenus(userId string) []*model.Menu {
 	u := s.User(userId)
-	out := []*model.Menu{}
 	if u == nil {
-		return out
+		return []*model.Menu{}
 	}
-	for _, m := range s.Menus() {
-		if m.Domain == model.MenuDomainSys && s.userHasMenuId(u, m.Id) {
-			out = append(out, m)
-		}
-	}
-	return out
+	return s.visibleMenusWithAncestors(u, model.MenuDomainSys)
 }
 
 // ActionAllow 资源上的某操作及当前用户是否有权。
@@ -216,7 +210,7 @@ type AreaResourcesView struct {
 
 // AreaResources 返回某用户点击某区域时该看到的资源(含其子树),及每个操作是否有权。
 // 若该区域对用户不可访问(仅导航祖先),Accessible=false。
-func (s *Store) AreaResources(userId, areaId int) *AreaResourcesView {
+func (s *Store) AreaResources(userId string, areaId int) *AreaResourcesView {
 	u := s.User(userId)
 	if u == nil {
 		return &AreaResourcesView{}
@@ -265,17 +259,40 @@ func (s *Store) AreaResources(userId, areaId int) *AreaResourcesView {
 }
 
 // AppMenus 返回某用户在应用域可见的菜单(功能权限),用于应用端顶部菜单。
-func (s *Store) AppMenus(userId int) []*model.Menu {
+func (s *Store) AppMenus(userId string) []*model.Menu {
 	u := s.User(userId)
-	out := []*model.Menu{}
 	if u == nil {
-		return out
+		return []*model.Menu{}
 	}
-	for _, m := range s.Menus() {
-		if m.Domain != model.MenuDomainApp {
-			continue
+	return s.visibleMenusWithAncestors(u, model.MenuDomainApp)
+}
+
+func (s *Store) visibleMenusWithAncestors(u *model.User, domain string) []*model.Menu {
+	menus := s.Menus()
+	byId := make(map[int]*model.Menu, len(menus))
+	visible := make(map[int]bool, len(menus))
+	for _, m := range menus {
+		byId[m.Id] = m
+	}
+	// 用户只拿到子菜单权限时,父菜单也要返回给前端当分组节点,否则左侧树会缺层级。
+	var mark func(*model.Menu)
+	mark = func(m *model.Menu) {
+		if m == nil || m.Domain != domain || visible[m.Id] {
+			return
 		}
-		if s.userHasMenuId(u, m.Id) {
+		visible[m.Id] = true
+		if m.ParentId > 0 {
+			mark(byId[m.ParentId])
+		}
+	}
+	for _, m := range menus {
+		if m.Domain == domain && s.userHasMenuId(u, m.Id) {
+			mark(m)
+		}
+	}
+	out := make([]*model.Menu, 0, len(visible))
+	for _, m := range menus {
+		if m.Domain == domain && visible[m.Id] {
 			out = append(out, m)
 		}
 	}

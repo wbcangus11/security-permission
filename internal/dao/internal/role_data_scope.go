@@ -21,6 +21,7 @@ type RoleDataScopeDao struct {
 
 // RoleDataScopeColumns defines and stores column names for the table role_data_scope.
 type RoleDataScopeColumns struct {
+	Id           string // 角色数据范围ID
 	RoleId       string // 角色ID
 	ScopeType    string // AREA / ORG / RES_AREA
 	NodeId       string // 授权的树节点ID(area.id 或 org.id)
@@ -29,6 +30,7 @@ type RoleDataScopeColumns struct {
 
 // roleDataScopeColumns holds the columns for the table role_data_scope.
 var roleDataScopeColumns = RoleDataScopeColumns{
+	Id:           "id",
 	RoleId:       "role_id",
 	ScopeType:    "scope_type",
 	NodeId:       "node_id",

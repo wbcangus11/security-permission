@@ -91,7 +91,7 @@
   .result .trace div::before { content:"› "; color:var(--ink4); }
   .muted { color:var(--ink3); font-size:12px; }
   .tree-node label.disabled { color:var(--ink4); }
-  .tree-node label.disabled::after { content:" (超出操作者范围)"; font-size:11px; color:var(--brand); }
+  .tree-node label.disabled::after { content:" (超出当前用户可授权范围)"; font-size:11px; color:var(--brand); }
   .violations { background:var(--brand-soft); border:1px solid var(--brand-line); color:var(--brand); border-radius:var(--r); padding:11px; margin:10px 24px 0; font-size:13px; line-height:1.7; display:none; }
   /* ===== 顶栏(深色渐变 + 海康红品牌) ===== */
   .topbar { background:linear-gradient(90deg,#1b2230 0%,#222c3d 60%,#263244 100%); color:#fff; padding:0 20px; display:flex; align-items:center; height:54px; box-shadow:0 1px 0 rgba(0,0,0,.25); position:sticky; top:0; z-index:50; }
@@ -122,6 +122,11 @@
   .sys-nav .nav-item { color:var(--nav-txt); padding:11px 18px; cursor:pointer; border-left:3px solid transparent; font-size:13px; display:flex; align-items:center; gap:10px; transition:.12s; }
   .sys-nav .nav-item .ico{ width:17px; height:17px; color:#7c879c; flex:none; }
   .sys-nav .nav-item.child{ padding-left:40px; font-size:12.5px; }
+  .sys-nav .nav-item.parent{ padding-right:12px; }
+  .sys-nav .nav-item span:not(.nav-chev){ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sys-nav .nav-chev{ margin-left:auto; color:#7c879c; font-size:12px; line-height:1; transition:.12s; }
+  .sys-nav .nav-group.collapsed .nav-children{ display:none; }
+  .sys-nav .nav-group.collapsed .nav-chev{ transform:rotate(-90deg); }
   .sys-nav .nav-item:hover { color:#fff; background:rgba(255,255,255,.05); }
   .sys-nav .nav-item:hover .ico{ color:#cdd4e0; }
   .sys-nav .nav-item.on { color:#fff; background:rgba(200,18,37,.16); border-left-color:var(--brand); }
@@ -158,17 +163,24 @@
   .app-menus .mtag { display:inline-block; background:var(--brand-soft); color:var(--brand); border-radius:var(--r); padding:3px 10px; margin-right:8px; font-size:12px; }
   /* ===== 前台卡片首页 ===== */
   .card-section { padding:0 24px; }
-  .card-section h3 { font-size:15px; margin:20px 0 4px; }
-  .card-section .desc { color:var(--ink3); font-size:12px; margin-bottom:12px; }
-  .card-grid { display:flex; flex-wrap:wrap; gap:14px; }
-  .app-card { position:relative; width:152px; height:124px; border:1px solid var(--line2); border-radius:var(--r-lg); background:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; transition:.16s; overflow:hidden; box-shadow:var(--sh); }
+  .card-section h3 { font-size:20px; margin:24px 0 6px; font-weight:700; }
+  .card-section .desc { color:var(--ink3); font-size:13px; margin-bottom:18px; }
+  .card-grid { display:flex; flex-wrap:wrap; gap:28px 34px; }
+  .app-card { position:relative; width:126px; min-height:150px; border:none; border-radius:0; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; transition:.16s; overflow:visible; box-shadow:none; }
   .app-card::before{ content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--brand),#e2231a); transform:scaleX(0); transform-origin:left; transition:.2s; }
-  .app-card:hover { box-shadow:var(--sh-h); border-color:var(--brand-line); transform:translateY(-3px); }
-  .app-card:hover::before{ transform:scaleX(1); }
-  .app-card .ic { width:50px; height:50px; border-radius:13px; background:var(--brand-soft); color:var(--brand); display:flex; align-items:center; justify-content:center; margin-bottom:12px; transition:.16s; }
-  .app-card .ic .ico{ width:26px; height:26px; }
-  .app-card:hover .ic{ background:var(--brand); color:#fff; }
-  .app-card .nm { font-size:13px; color:var(--ink); font-weight:500; }
+  .app-card:hover { transform:translateY(-3px); }
+  .app-card:hover::before{ transform:scaleX(0); }
+  .app-card .ic { width:120px; height:120px; border-radius:22px; background:linear-gradient(135deg,#fff4d6,#ffad22); color:#b45b00; display:flex; align-items:center; justify-content:center; margin-bottom:12px; transition:.16s; box-shadow:0 10px 24px rgba(44,62,80,.10); }
+  .app-card .ic .ico{ width:54px; height:54px; }
+  .app-card:hover .ic{ box-shadow:0 14px 30px rgba(44,62,80,.18); }
+  .app-card .nm { font-size:15px; color:var(--ink); font-weight:600; text-align:center; line-height:1.35; }
+  .app-card[data-code*="mapmonitor"] .ic{ background:linear-gradient(135deg,#dbf4ff,#b8c8ff); color:#4d63a5; }
+  .app-card[data-code*="smartsearch"] .ic{ background:linear-gradient(135deg,#ffd76a,#ff9820); color:#b85d00; }
+  .app-card[data-code*="broadcast"] .ic{ background:linear-gradient(135deg,#eef5ff,#cad9ff); color:#5274b8; }
+  .app-card[data-code*="live"] .ic{ background:linear-gradient(135deg,#efe5d8,#d7c7b8); color:#25354f; }
+  .app-card[data-code*="playback"] .ic{ background:linear-gradient(135deg,#ffe7aa,#ffc45c); color:#1f4e9a; }
+  .app-card[data-code*="picture"] .ic{ background:linear-gradient(135deg,#b8eff3,#62c9e8); color:#1d5f83; }
+  .app-card[data-code*="network"] .ic{ background:linear-gradient(135deg,#d8edff,#9fd0ff); color:#1d8ad6; }
   /* ===== 用户管理 ===== */
   .user-mgmt { padding:18px 22px; }
   .user-mgmt h3{ display:flex; align-items:center; gap:6px; }
@@ -270,7 +282,6 @@
 <div id="view-app" class="main-view active">
   <!-- 首页:卡片(按应用菜单分组) -->
   <div id="appHome">
-    <div class="card-section" style="padding-top:14px"><h3 class="sec-accent">快捷入口</h3><div class="desc">以下是你有权使用的应用模块</div></div>
     <div id="appCards"></div>
   </div>
   <!-- 视频监控模块:区域 + 资源浏览 -->
@@ -340,10 +351,10 @@
   <!-- 角色编辑器 -->
   <div class="panel editor">
     <div class="form-row" style="background:#fdecec;padding:10px;border-radius:4px;display:block">
-      <label style="width:auto;margin-right:6px">操作者</label>
-      <b id="actorName"></b>
-      <span class="muted" style="margin-left:8px">当前登录用户即操作者:普通用户只能查看、编辑、删除自己创建的角色。</span>
-      <span class="muted" id="actorHint" style="margin-left:8px"></span>
+      <label style="width:auto;margin-right:6px">当前用户</label>
+      <b id="currentUserName"></b>
+      <span class="muted" style="margin-left:8px">当前登录用户决定可见、可编辑、可删除的角色；实际项目中该用户应从 token 解析。</span>
+      <span class="muted" id="currentUserHint" style="margin-left:8px"></span>
     </div>
     <h2>基本信息</h2>
     <div class="form-row"><label>角色名称</label><input id="roleName" placeholder="请输入角色名称"></div>
@@ -382,28 +393,33 @@
     <div class="perm-body" data-pane="app" style="display:none">
       <div class="sub-tabs">
         <div class="sub-tab active" data-sub="appmenu" onclick="switchSub('app','appmenu')">应用菜单权限</div>
-        <div class="sub-tab" data-sub="res" onclick="switchSub('app','res')">业务资源权限</div>
+        <div class="sub-tab" data-sub="resrange" onclick="switchSub('app','resrange')">资源范围</div>
+        <div class="sub-tab" data-sub="resfine" onclick="switchSub('app','resfine')">资源精细授权</div>
       </div>
       <div class="sub-content">
         <div data-subpane="appmenu">
           <div class="tip">配置该角色在应用端的菜单访问权限。</div>
           <div id="tree-appmenu"></div>
         </div>
-        <div data-subpane="res" style="display:none">
-          <div class="tip">两级数据权限：①「资源范围」按区域勾定（粗粒度，继承新资源）；②下方对范围内资源做精细配置（勾「精细」后仅授予所选操作，否则继承区域=全部操作）。<b>勾「精细」但一个操作都不勾 = 该资源零权限 → 应用端资源级不可见（从列表隐藏）。</b></div>
-          <strong>资源权限范围</strong>
+        <div data-subpane="resrange" style="display:none">
+          <div class="tip">配置业务资源范围：按区域勾定可见摄像头范围，新增资源自动继承。资源级精细操作请进入「资源精细授权」单独配置并单独保存。</div>
           <div id="tree-resarea" style="margin:8px 0 16px"></div>
-          <strong>资源操作精细配置</strong>
+        </div>
+        <div data-subpane="resfine" style="display:none">
+          <div class="tip">资源精细授权是独立配置页，使用下方「保存精细授权」单独提交。勾「精细」后仅授予所选操作；勾「精细」但一个操作都不勾 = 该资源零权限，应用端资源列表隐藏。</div>
           <table class="res" style="margin-top:8px">
             <thead><tr><th style="width:40px">精细</th><th class="name">资源（所在区域）</th><th id="actHead"></th></tr></thead>
             <tbody id="resBody"></tbody>
           </table>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <button class="btn btn-primary" id="btnSaveResourcePermission" onclick="saveResourcePermission()">保存精细授权</button>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="violations" id="violations"></div>
-    <div id="roleReadonly" class="tip" style="display:none;background:#fdecec;color:var(--brand)">只读:该角色非当前操作者创建,无法保存修改。</div>
+    <div id="roleReadonly" class="tip" style="display:none;background:#fdecec;color:var(--brand)">只读:该角色非当前用户创建,无法保存修改。</div>
     <div class="footer-bar">
       <button class="btn btn-primary" id="btnSaveRole" onclick="saveRole()">保存</button>
       <button class="btn btn-default" onclick="loadRole(currentRoleId)">重置</button>
@@ -446,7 +462,7 @@
       <div class="account-list" id="userList"></div>
       <div class="account-editor">
         <h4><svg class="ico" style="color:var(--brand)"><use href="#i-user"></use></svg><span id="userFormTitle">新建账号</span></h4>
-        <input type="hidden" id="editUserId" value="0">
+        <input type="hidden" id="editUserId" value="">
         <div class="form-row"><label>用户名</label><input id="editUserName" placeholder="如:王五"></div>
         <div class="form-row"><label>所属组织</label><select id="editUserOrg"></select></div>
         <div class="form-row"><label>超级管理员</label><span class="inline-check"><input type="checkbox" id="editUserSuper"> <span>绕过鉴权,拥有全部权限</span></span></div>
@@ -480,20 +496,21 @@
 let META = {};            // areas/orgs/menus/resources/actions/users
 let currentRoleId = 0;
 let role = blankRole();   // 当前编辑中的角色
-const checked = {         // 各树的勾选状态: id -> true
+const checked = {         // 菜单树按 code 勾选,区域/组织树按 id 勾选
   sysmenu: {}, appmenu: {}, area: {}, org: {}, resarea: {}
 };
 const resOverride = {};   // resourceId -> {mode:bool, actions:Set}
-let GRANT = {unlimited:true}; // 操作者可授出的上限,用于置灰
+let GRANT = {unlimited:true}; // 当前用户可授出的上限,用于置灰
 let ALL_ROLES = [];       // 最近一次拉取的角色列表
-// 角色管理一律以「当前登录」用户身份运作(已移除独立「操作者」下拉,避免越权):
-// 登录谁就以谁的身份看/建/改角色,可见与可编辑/删除均按该身份判定。
-function actorId(){ return loginUserId(); }
-// 某 id 在该树是否可授(不受限或在允许集合内)
-function grantAllows(kind, id){
+// 角色管理一律以「当前登录」用户身份运作。demo 由前端传 userId,实际项目应由后端从 token 解析。
+function currentUserId(){ return loginUserId(); }
+function isMenuKind(kind){ return kind==='sysmenu' || kind==='appmenu'; }
+function permKey(kind, node){ return isMenuKind(kind) ? node.code : node.id; }
+// 某菜单 code / 节点 id 在该树是否可授(不受限或在允许集合内)
+function grantAllows(kind, key){
   if(GRANT.unlimited) return true;
-  const m={sysmenu:'menuIds',appmenu:'menuIds',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
-  return (GRANT[m]||[]).includes(id);
+  const m={sysmenu:'menuCodes',appmenu:'menuCodes',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
+  return (GRANT[m]||[]).includes(key);
 }
 function grantAllowsResAction(resId, code){ if(GRANT.unlimited) return true; return (GRANT.resourceActions||[]).some(x=>x.resourceId===resId&&x.actionCode===code); }
 function grantIds(kind){
@@ -502,9 +519,9 @@ function grantIds(kind){
   return (GRANT[m]||[]).map(Number);
 }
 // 角色管理列表的两个维度(对齐用户要求):
-//   可见/可编辑/删除 = 不受限/超管 ∪ 自建(created_by==当前操作者)
+//   可见/可编辑/删除 = 不受限/超管 ∪ 自建(created_by==当前用户)
 function roleCanSee(id){ return GRANT.unlimited || (GRANT.roleIds||[]).includes(Number(id)) || roleCanManage(id); } // 自建角色恒可见——即便 GRANT 尚未刷新(刚新建)
-function roleCanManage(id){ if(GRANT.unlimited) return true; const r=(ALL_ROLES||[]).find(x=>x.id===Number(id)); return !!r && r.createdBy===actorId(); }
+function roleCanManage(id){ if(GRANT.unlimited) return true; const r=(ALL_ROLES||[]).find(x=>x.id===Number(id)); return !!r && String(r.createdBy)===currentUserId(); }
 
 // ---------- 角色配置:惰性分层区域树(级联勾选 + 推断 nodeType,对齐真实海康) ----------
 // 实测海康(docs/海康对照.md §二.6):就是普通 el-tree 级联勾选框,无「含子节点」开关。
@@ -571,15 +588,15 @@ function resAreaCovers(areaId){ const sc=rtScopes('resarea'), p=rtPath(areaId);
     if(s.includeChild){ const gp=rtPath(s.nodeId); if(gp && p && p.length>gp.length && p.startsWith(gp)) return true; } }
   return false;
 }
-// 拉取某层(后端按操作者可授范围过滤),写入 index/childrenOf;若父为子树授权则新子继承勾选(级联)。
+// 拉取某层(后端按当前用户可授范围过滤),写入 index/childrenOf;若父为子树授权则新子继承勾选(级联)。
 async function rtFetch(kind, parentId){
-  const list=await api(`/api/role/area-children?actor=${actorId()}&parentId=${parentId}&kind=${kind}`)||[];
+  const list=await api(`/api/role/area-children?userId=${currentUserId()}&parentId=${parentId}&kind=${kind}`)||[];
   const st=roleTree[kind]; const inheritSub = parentId!==0 && st.chk[parentId] && st.sub[parentId];
   list.forEach(n=>{ st.index[n.id]=n; if(inheritSub){ st.chk[n.id]=true; st.sub[n.id]=true; } });
   st.childrenOf[parentId]=list.map(n=>n.id);
   return list;
 }
-// 重新加载并渲染整棵树(操作者/角色切换:canCheck 随操作者变,必须重拉根层)。chk/sub 保留。
+// 重新加载并渲染整棵树(当前用户/角色切换:canCheck 随当前用户变,必须重拉根层)。chk/sub 保留。
 async function rtRender(kind){
   const st=roleTree[kind]; st.index={}; st.childrenOf={}; st.expanded=new Set();
   const el=rtEl(kind); if(!el) return;
@@ -647,7 +664,7 @@ function rtRecomputeUp(kind, id){ const st=roleTree[kind]; let cur=rtParent(kind
   }
 }
 
-function blankRole(){ return {id:0,name:'',description:'',menuIds:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[],resourceActions:[],resourceOverrides:[]}; }
+function blankRole(){ return {id:0,name:'',description:'',menuCodes:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[]}; }
 
 // ---------- 通用请求 ----------
 function unwrapRes(j){
@@ -666,27 +683,28 @@ function buildTree(nodes){ // nodes: [{id,parentId,...}]
 }
 function descendants(node){ let r=[]; (node.children||[]).forEach(c=>{ r.push(c); r=r.concat(descendants(c)); }); return r; }
 
-// 渲染带勾选框的树。kind 用于按操作者范围置灰。
+// 渲染带勾选框的树。kind 用于按当前用户可授权范围置灰。
 function renderTree(elId, roots, store, kind){
   const el=document.getElementById(elId); el.innerHTML='';
   el.appendChild(renderNodes(roots, store, kind));
 }
-// 整棵子树是否有任何可授节点;否则整体隐藏(对齐海康:看不到操作者无权的部分)
+// 整棵子树是否有任何可授节点;否则整体隐藏(对齐海康:看不到当前用户无权的部分)
 function anyGrantInSubtree(kind,n){
-  if(GRANT.unlimited||grantAllows(kind,n.id)) return true;
+  if(GRANT.unlimited||grantAllows(kind,permKey(kind,n))) return true;
   return (n.children||[]).some(c=>anyGrantInSubtree(kind,c));
 }
 function renderNodes(nodes, store, kind){
   const wrap=document.createElement('div');
   nodes.forEach(n=>{
-    if(!anyGrantInSubtree(kind,n)) return; // 超出操作者范围 -> 隐藏
+    if(!anyGrantInSubtree(kind,n)) return; // 超出当前用户可授权范围 -> 隐藏
     const node=document.createElement('div'); node.className='tree-node';
     const hasChild=(n.children&&n.children.length);
     const tog=document.createElement('span'); tog.className='toggler'; tog.textContent=hasChild?'▾':'';
-    const selfAllowed=GRANT.unlimited||grantAllows(kind,n.id);
+    const key=permKey(kind,n);
+    const selfAllowed=GRANT.unlimited||grantAllows(kind,key);
     const lab=document.createElement('label');
     if(selfAllowed){
-      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!store[n.id];
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!store[key];
       cb.onchange=()=>{ toggleNode(n,store,cb.checked); };
       lab.append(cb, document.createTextNode(' '+ (n.name||n.code)));
     } else {
@@ -703,8 +721,10 @@ function renderNodes(nodes, store, kind){
 }
 // 勾选级联:选父则选中所有后代;取消父则取消后代
 function toggleNode(n,store,val){
-  store[n.id]=val;
-  descendants(n).forEach(d=>store[d.id]=val);
+  const kind = n.domain==='SYS' ? 'sysmenu' : (n.domain==='APP' ? 'appmenu' : '');
+  const keyOf=x=>kind?permKey(kind,x):x.id;
+  store[keyOf(n)]=val;
+  descendants(n).forEach(d=>store[keyOf(d)]=val);
   // 重新渲染对应树以刷新 UI
   rerenderAll();
 }
@@ -759,9 +779,9 @@ async function reloadMeta(){
   syncLoginDisplay();
   renderAccountPanel();
 }
-function loginUserId(){ return Number(document.getElementById('loginUser').value||0); }
+function loginUserId(){ return document.getElementById('loginUser').value || '0'; }
 function syncLoginDisplay(){
-  const u=(META.users||[]).find(x=>x.id===loginUserId());
+  const u=(META.users||[]).find(x=>String(x.id)===loginUserId());
   const name=document.getElementById('loginUserName'), tag=document.getElementById('loginUserTag');
   if(!name||!tag) return;
   name.textContent = u ? u.name : '未选择账号';
@@ -806,11 +826,28 @@ function sysIcon(code){
   if(code==='sys.person.info') return 'i-org';
   if(code==='sys.person.role') return 'i-role';
   if(code==='sys.person.account') return 'i-account';
+  if(code.startsWith('sys.business')) return 'i-grid';
+  if(code.startsWith('sys.vehicle')) return 'i-inbox';
+  if(code==='sys.device.broadcast') return 'i-broadcast';
+  if(code.startsWith('sys.device')) return 'i-video';
+  if(code==='sys.resource.point') return 'i-video';
+  if(code.startsWith('sys.resource')) return 'i-grid';
+  if(code.startsWith('sys.videocfg')) return 'i-video';
+  if(code==='sys.servicecfg.map') return 'i-map';
+  if(code.startsWith('sys.servicecfg')) return 'i-compass';
+  if(code.startsWith('sys.network')) return 'i-network';
+  if(code.startsWith('sys.advanced')) return 'i-lock';
   if(code.includes('person')) return 'i-user';
   return 'i-grid';
 }
 // 视频监控相关卡片 → 进入区域/资源浏览;其余 → 占位提示
 function isVideoCard(code){ return code.startsWith('app.video'); }
+function appSectionDesc(code){
+  if(code==='app.integrated') return '利用卡片、人脸识别信息等媒介，实现人员身份核验、出入管控等智能应用';
+  if(code==='app.video') return '利用视频类设备进行实时预览和录像回放查看等操作，辅助用户进行重要区域管理';
+  if(code==='app.network') return '通过智能分析设备，实现智能分析功能';
+  return '';
+}
 function renderAppCards(menus){
   const box=document.getElementById('appCards');
   if(!menus.length){ box.innerHTML='<div class="card-section"><span class="muted">该用户无任何应用菜单权限</span></div>'; return; }
@@ -822,9 +859,10 @@ function renderAppCards(menus){
   sections.forEach(top=>{
     const kids = top.id ? childrenOf(top.id) : menus;
     const cards = (kids.length?kids:[top]); // 没有子项就把父本身作为卡片
-    html+=`<div class="card-section"><h3 class="sec-accent">${top.name}</h3><div class="card-grid">`;
+    const desc=appSectionDesc(top.code);
+    html+=`<div class="card-section"><h3>${h(top.name)}</h3>${desc?`<div class="desc">${h(desc)}</div>`:''}<div class="card-grid">`;
     cards.forEach(c=>{
-      html+=`<div class="app-card" onclick="openCard('${c.code}','${c.name}')"><div class="ic">${svgIco(menuIcon(c.code))}</div><div class="nm">${c.name}</div></div>`;
+      html+=`<div class="app-card" data-code="${h(c.code)}" onclick="openCard('${h(c.code)}','${h(c.name)}')"><div class="ic">${svgIco(menuIcon(c.code))}</div><div class="nm">${h(c.name)}</div></div>`;
     });
     html+=`</div></div>`;
   });
@@ -989,6 +1027,35 @@ function onSysMenu(code, name, el){
   if(el) el.classList.add('on');
   showSysPanel(SYS_ROUTE[code] || 'placeholder', name);
 }
+function toggleSysGroup(el){
+  const group=el.closest('.nav-group');
+  if(group) group.classList.toggle('collapsed');
+}
+function renderSysNav(navEl, menus){
+  if(!menus.length){
+    navEl.innerHTML='<div class="nav-empty">该用户无任何系统管理菜单权限<br>(应用域有权 ≠ 管理域有权)</div>';
+    return;
+  }
+  const byId=new Map(menus.map(m=>[m.id,m]));
+  const children=new Map();
+  menus.forEach(m=>{
+    const pid=byId.has(m.parentId)?m.parentId:0;
+    if(!children.has(pid)) children.set(pid,[]);
+    children.get(pid).push(m);
+  });
+  const renderNode=(m, level)=>{
+    const kids=children.get(m.id)||[];
+    const cls='nav-item '+(level>0?'child':'parent');
+    if(kids.length){
+      return `<div class="nav-group" data-code="${h(m.code)}">
+        <div class="${cls}" data-code="${h(m.code)}" onclick="toggleSysGroup(this)">${svgIco(sysIcon(m.code))}<span>${h(m.name)}</span><span class="nav-chev">▾</span></div>
+        <div class="nav-children">${kids.map(k=>renderNode(k, level+1)).join('')}</div>
+      </div>`;
+    }
+    return `<div class="${cls}" data-code="${h(m.code)}" onclick="onSysMenu('${h(m.code)}','${h(m.name)}',this)">${svgIco(sysIcon(m.code))}<span>${h(m.name)}</span></div>`;
+  };
+  navEl.innerHTML=(children.get(0)||[]).map(m=>renderNode(m,0)).join('');
+}
 function showSysPanel(panel, name){
   ['person','area','role','user','placeholder'].forEach(p=>{ const d=document.getElementById('sc-'+p); if(d) d.style.display=(p===panel)?'block':'none'; });
   if(panel==='placeholder'){ document.getElementById('phName').textContent=name||''; }
@@ -997,12 +1064,11 @@ async function loadSysView(){
   const uid=loginUserId();
   const menus=await api('/api/manage/menu?userId='+uid);
   const navEl=document.getElementById('sysMenus');
-  navEl.innerHTML = menus.length
-    ? menus.map(m=>`<div class="nav-item ${m.parentId?'child':''}" data-code="${m.code}" onclick="onSysMenu('${m.code}','${m.name}',this)">${svgIco(sysIcon(m.code))}<span>${m.name}</span></div>`).join('')
-    : '<div class="nav-empty">该用户无任何系统管理菜单权限<br>(应用域有权 ≠ 管理域有权)</div>';
+  renderSysNav(navEl, menus);
   // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
-  let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus[0];
-  if(def){ const el=navEl.querySelector(`[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
+  const hasChild=id=>menus.some(m=>m.parentId===id);
+  let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus.find(m=>!hasChild(m.id)) || menus[0];
+  if(def){ const el=navEl.querySelector(`.nav-item[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
   else { showSysPanel('none'); }
   await loadManageAreaRoot(); // 安保区域:按层懒加载 + 分页(AREA 数据权限)
   MANAGE_ORGS = await api('/api/manage/org-tree?userId='+uid);
@@ -1183,8 +1249,14 @@ async function areaMoveDo(target){
 }
 async function areaReorder(direction){
   if(!curManage.area) return;
+  const cur=(META.areas||[]).find(a=>a.id===curManage.area);
+  if(!cur || !cur.parentId){ toast('根区域不能调整顺序','i-x'); return; }
+  const siblings=(META.areas||[]).filter(a=>a.parentId===cur.parentId).sort((a,b)=>(a.sort===b.sort?a.id-b.id:a.sort-b.sort));
+  const idx=siblings.findIndex(a=>a.id===cur.id);
+  const target=siblings[direction==='up'?idx-1:idx+1];
+  if(!target){ toast(direction==='up'?'已经是第一个':'已经是最后一个','i-check'); return; }
   try{
-    await api('/api/manage/area-reorder?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,direction})});
+    await api('/api/manage/area-reorder?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({areaId:curManage.area,toAreaId:target.id})});
     toast(direction==='up'?'已上移':'已下移','i-check');
     await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('排序失败', e); }
@@ -1332,7 +1404,7 @@ function modalPrompt(message, value='', title='输入名称'){ return openDialog
 function modalError(prefix, e){ return modalAlert(prefix+':'+(e&&e.message?e.message:e), '操作失败', 'i-x'); }
 
 // ---------- 用户管理 ----------
-let EDIT_USER_ID = 0;
+let EDIT_USER_ID = '';
 
 function orgName(id){ const o=(META.orgs||[]).find(x=>x.id===Number(id)); return o?o.name:('#'+id); }
 function roleName(id){ const r=(META._roles||[]).find(x=>x.id===Number(id)); return r?r.name:('#'+id); }
@@ -1342,7 +1414,7 @@ function accountCanAssignRole(id){
 }
 function renderAccountPanel(){
   renderUserList();
-  renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>u.id===EDIT_USER_ID) : null);
+  renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
 }
 function renderUserList(){
   const box=document.getElementById('userList'); if(!box) return;
@@ -1350,7 +1422,7 @@ function renderUserList(){
   box.innerHTML = users.map(u=>{
     const rs=(u.roleIds||[]).map(roleName).join('、')||'无角色';
     const sup=u.isSuperuser?'<span class="badge" style="background:var(--brand-soft);color:var(--brand);margin-left:6px">'+svgIco('i-shield')+'超管</span>':'';
-    return `<div class="user-row ${u.id===EDIT_USER_ID?'active':''}" onclick="editUser(${u.id})">
+    return `<div class="user-row ${String(u.id)===EDIT_USER_ID?'active':''}" onclick="editUser('${h(u.id)}')">
       <span class="uava">${svgIco(u.isSuperuser?'i-shield':'i-user')}</span>
       <span class="uname"><span style="min-width:0"><b>${h(u.name)}</b>${sup}<small class="muted u-meta">组织:${h(orgName(u.orgId))} / 角色:${h(u.isSuperuser?'超级管理员':rs)}</small></span></span>
     </div>`;
@@ -1359,15 +1431,15 @@ function renderUserList(){
 function renderUserForm(u){
   const title=document.getElementById('userFormTitle'); if(!title) return;
   const isEdit=!!u;
-  EDIT_USER_ID = isEdit ? u.id : 0;
+  EDIT_USER_ID = isEdit ? String(u.id) : '';
   title.textContent = isEdit ? '编辑账号 #' + u.id : '新建账号';
-  document.getElementById('editUserId').value = isEdit ? u.id : 0;
+  document.getElementById('editUserId').value = isEdit ? u.id : '';
   document.getElementById('editUserName').value = isEdit ? u.name : '';
   document.getElementById('editUserOrg').innerHTML = (META.orgs||[]).map(o=>`<option value="${o.id}">${h(o.name)}</option>`).join('');
   document.getElementById('editUserOrg').value = isEdit ? u.orgId : ((META.orgs||[])[0]?.id || 0);
   const sup=document.getElementById('editUserSuper');
   sup.checked = !!(isEdit && u.isSuperuser);
-  sup.disabled = !((META.users||[]).find(x=>x.id===loginUserId())||{}).isSuperuser;
+  sup.disabled = !((META.users||[]).find(x=>String(x.id)===loginUserId())||{}).isSuperuser;
   renderRoleChecks(isEdit ? (u.roleIds||[]) : []);
   document.getElementById('btnDeleteUser').style.visibility = isEdit ? 'visible' : 'hidden';
   renderUserList();
@@ -1385,10 +1457,10 @@ function renderRoleChecks(selectedIds){
   }).join('') || '<span class="muted">暂无角色</span>';
 }
 function newUserForm(){ renderUserForm(null); }
-function editUser(id){ const u=(META.users||[]).find(x=>x.id===Number(id)); if(u) renderUserForm(u); }
+function editUser(id){ const u=(META.users||[]).find(x=>String(x.id)===String(id)); if(u) renderUserForm(u); }
 async function reloadUsers(){ await reloadMeta(); await fetchGrantable(); renderAccountPanel(); toast('账号列表已刷新','i-check'); }
 async function saveUser(){
-  const id=Number(document.getElementById('editUserId').value||0);
+  const id=document.getElementById('editUserId').value || '';
   const name=document.getElementById('editUserName').value.trim();
   if(!name){ await modalAlert('请输入用户名','提示','i-x'); return; }
   const orgId=Number(document.getElementById('editUserOrg').value||0);
@@ -1396,21 +1468,21 @@ async function saveUser(){
   const isSuperuser=document.getElementById('editUserSuper').checked;
   try{
     const saved=await api('/api/user/save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,orgId,roleIds,isSuperuser})});
-    EDIT_USER_ID=saved.id;
+    EDIT_USER_ID=String(saved.id);
     await reloadMeta();
     await loadSysView();
-    renderUserForm((META.users||[]).find(u=>u.id===saved.id));
+    renderUserForm((META.users||[]).find(u=>String(u.id)===String(saved.id)));
     toast((id?'已保存账号:':'已创建账号:')+name,'i-check');
   }catch(e){ await modalError('保存失败', e); }
 }
 async function deleteUser(){
-  const id=Number(document.getElementById('editUserId').value||0);
-  const u=(META.users||[]).find(x=>x.id===id);
+  const id=document.getElementById('editUserId').value || '';
+  const u=(META.users||[]).find(x=>String(x.id)===id);
   if(!u) return;
   if(!(await modalConfirm('确认删除账号「'+u.name+'」?\n用户与角色绑定将一并清理。'))) return;
   try{
     await api('/api/user/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
-    EDIT_USER_ID=0;
+    EDIT_USER_ID='';
     await reloadMeta();
     await loadSysView();
     newUserForm();
@@ -1418,18 +1490,19 @@ async function deleteUser(){
   }catch(e){ await modalError('删除失败', e); }
 }
 async function fetchGrantable(){
-  GRANT = await api('/api/role/grantable?actor='+actorId());
-  const nm=(META.users||[]).find(u=>u.id===actorId()); // 操作者=当前登录用户
-  const an=document.getElementById('actorName'); if(an) an.textContent=nm?nm.name+(nm.isSuperuser?' ★超管':''):('#'+actorId());
-  const ah=document.getElementById('actorHint'); if(ah) ah.textContent = GRANT.unlimited ? '(超管/不受限,可见并可管理全部角色)' : '';
+  GRANT = await api('/api/role/grantable?userId='+currentUserId());
+  const nm=(META.users||[]).find(u=>String(u.id)===currentUserId());
+  const an=document.getElementById('currentUserName'); if(an) an.textContent=nm?nm.name+(nm.isSuperuser?' ★超管':''):('#'+currentUserId());
+  const ah=document.getElementById('currentUserHint'); if(ah) ah.textContent = GRANT.unlimited ? '(超管可见并可管理全部角色)' : '';
 }
-// 角色面板随「当前登录」用户刷新(操作者即登录用户):grantable + 列表 + 树 + 编辑门禁。
+// 角色面板随「当前登录」用户刷新:grantable + 列表 + 树 + 编辑门禁。
 async function refreshRolePanel(){
   await fetchGrantable(); rerenderAll(); await refreshRoles();
   renderAccountPanel();
   // 登录用户变 → 重算当前角色的可编辑性(只读/禁用保存)
   if(currentRoleId){ const editable=roleCanManage(currentRoleId);
     document.getElementById('btnSaveRole').disabled=!editable;
+    document.getElementById('btnSaveResourcePermission').disabled=!editable;
     document.getElementById('roleReadonly').style.display=editable?'none':'block'; }
   renderRoleAreaTrees(); // 登录用户变 → canCheck/可编辑性变,惰性区域树重拉(放最后,读到最新 editable)
 }
@@ -1438,7 +1511,7 @@ async function refreshRoles(){
   const roles = await api('/api/role/list');
   META._roles = roles;            // 供用户管理用
   ALL_ROLES = roles;
-  if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>u.id===EDIT_USER_ID) : null);
+  if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
   const el=document.getElementById('roleList');
   // 列表只显示「可见」角色:普通用户仅自建,超管全部。
   const visible = roles.filter(r=>roleCanSee(r.id));
@@ -1460,7 +1533,7 @@ async function delRole(id){
   const r=(META._roles||[]).find(x=>x.id===id)||{}; const name=r.name||('#'+id);
   if(!(await modalConfirm(`确认删除角色「${name}」?\n\n绑定该角色的用户将失去这部分权限(若不再有其他角色,登录后将无任何权限)。\n此操作不可撤销。`))) return;
   try{
-    await api('/api/role/delete?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/role/delete?userId='+currentUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     if(currentRoleId===id) currentRoleId=0;
     toast('已删除角色:'+name,'i-trash');
     await reloadMeta();   // user_role 绑定可能变化 → 刷新用户列表/角色下拉
@@ -1483,21 +1556,27 @@ async function loadRole(id){
   // 菜单勾选
   const sysMenus=META.menus.filter(m=>m.domain==='SYS'), appMenus=META.menus.filter(m=>m.domain==='APP');
   checked.sysmenu={}; checked.appmenu={};
-  (role.menuIds||[]).forEach(mid=>{ const m=META.menus.find(x=>x.id===mid); if(!m)return; if(m.domain==='SYS')checked.sysmenu[mid]=true; else checked.appmenu[mid]=true; });
+  (role.menuCodes||[]).forEach(code=>{ const m=META.menus.find(x=>x.code===code); if(!m)return; if(m.domain==='SYS')checked.sysmenu[code]=true; else checked.appmenu[code]=true; });
   // 树范围:区域(管理域 AREA + 应用域 RES_AREA)用惰性树的显式授权状态;组织仍 eager
   rtApplyScopes('area', role.areaScopes||[]);
   applyScopes(buildTree(META.orgs), role.orgScopes||[], checked.org);
   rtApplyScopes('resarea', role.resourceAreaScopes||[]);
+  await loadResourcePermission(id);
   // 编辑门禁(对齐海康 canEdit):非自己创建的角色 → 只读,禁用保存
   const editable = roleCanManage(id);
   document.getElementById('btnSaveRole').disabled = !editable;
+  document.getElementById('btnSaveResourcePermission').disabled = !editable;
   document.getElementById('roleReadonly').style.display = editable ? 'none' : 'block';
-  // 资源精细配置
-  for(const k in resOverride) delete resOverride[k];
-  // 精细模式 = 显式 resourceOverrides ∪ 有操作行(兼容旧数据);零操作的精细资源也要还原成 mode=true(空操作)
-  (role.resourceOverrides||[]).forEach(rid=>{ if(!resOverride[rid]) resOverride[rid]={mode:true,actions:new Set()}; });
-  (role.resourceActions||[]).forEach(ra=>{ if(!resOverride[ra.resourceId]) resOverride[ra.resourceId]={mode:true,actions:new Set()}; resOverride[ra.resourceId].actions.add(ra.actionCode); });
   rerenderAll(); renderRoleAreaTrees(); // 切换角色不必重拉/重建列表,高亮已在开头同步更新;区域树惰性重渲
+}
+
+async function loadResourcePermission(id){
+  for(const k in resOverride) delete resOverride[k];
+  if(!id) return;
+  const perm = await api(`/api/role/resource-permission?userId=${currentUserId()}&roleId=${id}`);
+  // 精细模式 = 显式 resourceOverrides ∪ 有操作行(兼容旧数据);零操作的精细资源也要还原成 mode=true(空操作)
+  (perm.resourceOverrides||[]).forEach(rid=>{ if(!resOverride[rid]) resOverride[rid]={mode:true,actions:new Set()}; });
+  (perm.resourceActions||[]).forEach(ra=>{ if(!resOverride[ra.resourceId]) resOverride[ra.resourceId]={mode:true,actions:new Set()}; resOverride[ra.resourceId].actions.add(ra.actionCode); });
 }
 
 function newRole(){ currentRoleId=0; role=blankRole();
@@ -1505,8 +1584,9 @@ function newRole(){ currentRoleId=0; role=blankRole();
   ['sysmenu','appmenu','area','org','resarea'].forEach(k=>checked[k]={});
   rtApplyScopes('area', []); rtApplyScopes('resarea', []); // 惰性区域树:清空显式授权
   for(const k in resOverride) delete resOverride[k];
-  // 新建:操作者即创建人,始终可保存
+  // 新建:当前用户即创建人,始终可保存
   document.getElementById('btnSaveRole').disabled = false;
+  document.getElementById('btnSaveResourcePermission').disabled = true;
   document.getElementById('roleReadonly').style.display = 'none';
   // 注意:不要在此调用 refreshRoles()——它结尾的 `if(!currentRoleId)...loadRole(roles[0])`
   // 会因 currentRoleId 刚被置 0 而立刻把第一个角色回填进表单,导致「新建」表单被覆盖。
@@ -1531,13 +1611,16 @@ function renderResTable(){
   const areaName=id=>{const a=META.areas.find(x=>x.id===id);return a?a.name:'?';};
   const inScope = META.resources.filter(r=>resAreaCovers(r.areaId)); // 资源区域覆盖(惰性树:级联勾选导出的 scopes)
   const body=document.getElementById('resBody');
+  if(!currentRoleId){ body.innerHTML=`<tr><td colspan="${2+META.actions.length}" class="muted">请先保存角色，再进入本页配置资源精细授权</td></tr>`; return; }
   if(!inScope.length){ body.innerHTML=`<tr><td colspan="${2+META.actions.length}" class="muted">请先在上方勾选资源范围</td></tr>`; return; }
+  const editable = roleCanManage(currentRoleId);
   body.innerHTML='';
   inScope.forEach(r=>{
     const ov=resOverride[r.id]||{mode:false,actions:new Set()};
     const tr=document.createElement('tr');
     const tdMode=document.createElement('td');
     const modeCb=document.createElement('input'); modeCb.type='checkbox'; modeCb.checked=ov.mode;
+    modeCb.disabled = !editable;
     modeCb.onchange=()=>{ resOverride[r.id]={mode:modeCb.checked, actions: ov.actions||new Set()}; renderResTable(); };
     tdMode.appendChild(modeCb); tr.appendChild(tdMode);
     const tdName=document.createElement('td'); tdName.className='name';
@@ -1545,7 +1628,7 @@ function renderResTable(){
     META.actions.forEach(a=>{
       const td=document.createElement('td');
       const okAct=grantAllowsResAction(r.id,a.code);
-      if(ov.mode){ const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=ov.actions.has(a.code); cb.disabled=!okAct;
+      if(ov.mode){ const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=ov.actions.has(a.code); cb.disabled=!editable || !okAct;
         cb.onchange=()=>{ if(cb.checked)ov.actions.add(a.code); else ov.actions.delete(a.code); resOverride[r.id]={mode:true,actions:ov.actions}; };
         td.appendChild(cb);
       } else { td.innerHTML = okAct ? '<span class="muted" style="display:inline-flex;align-items:center;gap:3px">'+svgIco('i-check')+'继承</span>' : '<span style="color:var(--ink4)">'+svgIco('i-x')+'</span>'; }
@@ -1568,18 +1651,14 @@ async function saveRole(){
     id: currentRoleId,
     name: document.getElementById('roleName').value.trim(),
     description: document.getElementById('roleDesc').value.trim(),
-    menuIds: [...Object.keys(checked.sysmenu).filter(k=>checked.sysmenu[k]), ...Object.keys(checked.appmenu).filter(k=>checked.appmenu[k])].map(Number),
+    menuCodes: [...Object.keys(checked.sysmenu).filter(k=>checked.sysmenu[k]), ...Object.keys(checked.appmenu).filter(k=>checked.appmenu[k])],
     areaScopes: rtScopes('area'),
     orgScopes: extractScopes(buildTree(META.orgs), checked.org),
-    resourceAreaScopes: rtScopes('resarea'),
-    resourceActions: [],
-    resourceOverrides: []
+    resourceAreaScopes: rtScopes('resarea')
   };
-  // 精细模式持久化:mode=true 的资源记入 resourceOverrides(即便零操作),使「精细+0操作」=资源级不可见
-  Object.keys(resOverride).forEach(rid=>{ const ov=resOverride[rid]; if(ov.mode){ r.resourceOverrides.push(Number(rid)); ov.actions.forEach(ac=>r.resourceActions.push({resourceId:Number(rid),actionCode:ac})); } });
   if(!r.name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
   const vbox=document.getElementById('violations'); vbox.style.display='none'; vbox.innerHTML='';
-  const resp=await fetch('/api/role/save?actor='+actorId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
+  const resp=await fetch('/api/role/save?userId='+currentUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
   const j=unwrapRes(await resp.json());
   if(j.code!==0){ await modalAlert('保存失败:'+j.message,'操作失败','i-x'); return; }
   let msg='已保存:'+j.data.name;
@@ -1589,6 +1668,24 @@ async function saveRole(){
   await fetchGrantable(); // 新建/编辑后刷新可分配角色范围
   await refreshRoles();
   await loadRole(currentRoleId); // 重新载入合并后的结果
+}
+
+async function saveResourcePermission(){
+  if(!currentRoleId){ await modalAlert('请先保存角色，再配置资源精细授权','提示','i-x'); return; }
+  if(!roleCanManage(currentRoleId)){ await modalAlert('只读角色无法保存资源精细授权','提示','i-x'); return; }
+  const body={roleId: currentRoleId, resourceActions: [], resourceOverrides: []};
+  // 精细模式持久化:mode=true 的资源记入 resourceOverrides(即便零操作),使「精细+0操作」=资源级不可见
+  Object.keys(resOverride).forEach(rid=>{ const ov=resOverride[rid]; if(ov.mode){ body.resourceOverrides.push(Number(rid)); ov.actions.forEach(ac=>body.resourceActions.push({resourceId:Number(rid),actionCode:ac})); } });
+  const resp=await fetch('/api/role/resource-permission-save?userId='+currentUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=unwrapRes(await resp.json());
+  if(j.code!==0){ await modalAlert('保存失败:'+j.message,'操作失败','i-x'); return; }
+  let msg='已保存资源精细授权';
+  if(j.preserved>0) msg+=`\n(保留了 ${j.preserved} 项你无权查看/修改的范围外精细授权)`;
+  await modalAlert(msg,'保存成功','i-check');
+  await reloadMeta();
+  await fetchGrantable();
+  await loadResourcePermission(currentRoleId);
+  renderResTable();
 }
 
 // ---------- 鉴权测试 ----------
@@ -1604,7 +1701,7 @@ function renderTesterTarget(){
 }
 async function runCheck(){
   const type=document.getElementById('tType').value;
-  const body={ userId:Number(document.getElementById('tUser').value), type };
+  const body={ userId:document.getElementById('tUser').value, type };
   const t=document.getElementById('tTarget').value;
   if(type==='menu') body.code=t; else if(type==='resource'){ body.resourceId=Number(t); body.action=document.getElementById('tAction').value; } else body.nodeId=Number(t);
   try{ const d=await api('/api/auth/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

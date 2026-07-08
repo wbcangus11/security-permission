@@ -6,6 +6,8 @@ import (
 	"security-permission/api/perm/v1"
 )
 
+// IPermV1 是权限演示系统对外暴露的 HTTP API 集合。
+// GoFrame 会按 v1 请求结构体里的 g.Meta 生成路由,控制器只需要实现这里的方法。
 type IPermV1 interface {
 	Meta(ctx context.Context, req *v1.MetaReq) (res *v1.CommonRes, err error)
 
@@ -17,6 +19,8 @@ type IPermV1 interface {
 	RoleDelete(ctx context.Context, req *v1.RoleDeleteReq) (res *v1.CommonRes, err error)
 	RoleGrantable(ctx context.Context, req *v1.RoleGrantableReq) (res *v1.CommonRes, err error)
 	RoleAreaChildren(ctx context.Context, req *v1.RoleAreaChildrenReq) (res *v1.CommonRes, err error)
+	RoleResourcePermission(ctx context.Context, req *v1.RoleResourcePermissionReq) (res *v1.CommonRes, err error)
+	RoleResourcePermissionSave(ctx context.Context, req *v1.RoleResourcePermissionSaveReq) (res *v1.CommonRes, err error)
 
 	UserList(ctx context.Context, req *v1.UserListReq) (res *v1.CommonRes, err error)
 	UserDetail(ctx context.Context, req *v1.UserDetailReq) (res *v1.CommonRes, err error)

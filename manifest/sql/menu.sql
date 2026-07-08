@@ -1,0 +1,65 @@
+-- =============================================================================
+-- 内置菜单/功能权限点。
+-- 这个文件每次 dbinit 都会执行:按 code 幂等 upsert,保证已有库也能补齐菜单表。
+-- id 保持当前既有值,用于兼容已有 role_menu.menu_id;业务代码不要依赖这些数字。
+-- =============================================================================
+USE `security_permission`;
+SET NAMES utf8mb4;
+
+INSERT INTO `menu` (`id`,`parent_id`,`code`,`name`,`domain`,`type`,`sort`,`visible`,`enabled`) VALUES
+ (1,0,'sys.person','人员管理','SYS','MENU',10,1,1),
+ (2,1,'sys.person.info','人员信息','SYS','MENU',11,1,1),
+ (3,1,'sys.person.role','角色管理','SYS','MENU',12,1,1),
+ (4,1,'sys.person.account','账号管理','SYS','MENU',13,1,1),
+ (5,1,'sys.person.face','人脸管理','SYS','MENU',14,1,1),
+ (14,0,'sys.business','业务数据管理','SYS','MENU',20,1,1),
+ (15,14,'sys.business.passenger','客流统计','SYS','MENU',21,1,1),
+ (6,0,'sys.vehicle','车辆信息管理','SYS','MENU',30,1,1),
+ (7,0,'sys.area','安保区域管理','SYS','MENU',40,1,1),
+ (8,0,'sys.device','设备管理','SYS','MENU',50,1,1),
+ (16,8,'sys.device.encode','编码设备','SYS','MENU',51,1,1),
+ (17,8,'sys.device.broadcast','广播设备','SYS','MENU',52,1,1),
+ (18,8,'sys.device.alarm','报警设备','SYS','MENU',53,1,1),
+ (9,0,'sys.resource','资源管理','SYS','MENU',60,1,1),
+ (19,9,'sys.resource.point','监控点','SYS','MENU',61,1,1),
+ (20,9,'sys.resource.terminal','终端','SYS','MENU',62,1,1),
+ (21,9,'sys.resource.io','报警输入输出','SYS','MENU',63,1,1),
+ (22,9,'sys.resource.zone','防区','SYS','MENU',64,1,1),
+ (10,0,'sys.videocfg','视频监控配置','SYS','MENU',70,1,1),
+ (23,10,'sys.videocfg.record','录像计划','SYS','MENU',71,1,1),
+ (24,10,'sys.videocfg.capture','抓图计划','SYS','MENU',72,1,1),
+ (25,10,'sys.videocfg.defense','事件布撤防','SYS','MENU',73,1,1),
+ (26,10,'sys.videocfg.param','参数配置','SYS','MENU',74,1,1),
+ (11,0,'sys.servicecfg','综合服务配置','SYS','MENU',80,1,1),
+ (27,11,'sys.servicecfg.event','事件联动','SYS','MENU',81,1,1),
+ (28,11,'sys.servicecfg.map','地图配置','SYS','MENU',82,1,1),
+ (29,11,'sys.servicecfg.recognition','识别计划配置','SYS','MENU',83,1,1),
+ (12,0,'sys.network','网络配置管理','SYS','MENU',90,1,1),
+ (30,12,'sys.network.patrol','巡检计划配置','SYS','MENU',91,1,1),
+ (13,0,'sys.advanced','高级系统管理','SYS','MENU',100,1,1),
+ (31,13,'sys.advanced.param','高级参数配置','SYS','MENU',101,1,1),
+ (32,13,'sys.advanced.platform-upgrade','平台升级管理','SYS','MENU',102,1,1),
+ (33,13,'sys.advanced.app-upgrade','APP升级管理','SYS','MENU',103,1,1),
+ (34,13,'sys.advanced.stream-upgrade','流媒体升级管理','SYS','MENU',104,1,1),
+ (35,13,'sys.advanced.sms','短信管理','SYS','MENU',105,1,1),
+ (36,13,'sys.advanced.email','邮箱管理','SYS','MENU',106,1,1),
+ (101,0,'app.integrated','综合管控','APP','MENU',1010,1,1),
+ (102,101,'app.integrated.eventsearch','事件检索','APP','MENU',1011,1,1),
+ (103,101,'app.integrated.mapmonitor','图上监控','APP','MENU',1012,1,1),
+ (104,101,'app.integrated.smartsearch','智能检索','APP','MENU',1013,1,1),
+ (105,101,'app.integrated.broadcast','广播','APP','MENU',1014,1,1),
+ (106,0,'app.video','视频监控','APP','MENU',1020,1,1),
+ (107,106,'app.video.live','实时预览','APP','MENU',1021,1,1),
+ (108,106,'app.video.playback','远程回放','APP','MENU',1022,1,1),
+ (109,106,'app.video.picture','图片查询','APP','MENU',1023,1,1),
+ (110,0,'app.network','网络管控','APP','MENU',1030,1,1),
+ (111,110,'app.network.monitor','视频网管监控','APP','MENU',1031,1,1)
+ON DUPLICATE KEY UPDATE
+ `parent_id`=VALUES(`parent_id`),
+ `name`=VALUES(`name`),
+ `domain`=VALUES(`domain`),
+ `type`=VALUES(`type`),
+ `sort`=VALUES(`sort`),
+ `visible`=VALUES(`visible`),
+ `enabled`=VALUES(`enabled`),
+ `updated_at`=CURRENT_TIMESTAMP;

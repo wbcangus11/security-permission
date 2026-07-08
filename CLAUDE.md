@@ -1,6 +1,6 @@
 # 项目:基于角色的权限系统(仿海康安防平台)
 
-GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防管理平台**红黑风格。
+GoFrame(gf v2)实现的 RBAC + 数据权限系统,前端仿**海康安防管理平台**红黑风格。
 核心是**功能权限 + 数据权限**两个维度,并实现了**受控委派(二次授权)**。
 
 > **接着干之前先读这份 CLAUDE.md + `docs/权限设计说明.md`(完整设计)+ `docs/测试报告.md`(已验证场景)。**
@@ -10,11 +10,11 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 ## 一句话现状
 
-功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 资源级可见 6 + 数据下推分页 17 已通过**。2026-06-17 按用户要求移除了额外「角色范围」配置,当前系统不再使用模型 B。
+功能已相当完整:鉴权引擎、二次授权合并、MySQL 持久化、菜单/权限点数据库化、前端有「应用端(卡片首页+区域资源浏览)」和「系统管理后台(深色菜单驱动配置界面)」两大块,4 类管理界面(区域/组织/角色/账号)。**核心 31/31 + 区域 11 + 超管 10 + 组织 12 + 角色删除 14 + 资源 13 + 资源级可见 6 + 数据下推分页 17 已通过**。2026-06-17 按用户要求移除了额外「角色范围」配置,当前系统不再使用模型 B。
 区域**与组织**均已支持**真实增删改 + 物化路径自动维护**(写时鉴权;移动子树批量重写 path;删除清理授权引用):区域见测试报告 §九(11 项),组织见 §十一(12 项),两者共用同一套 path-维护引擎,仅「非空」判定不同(区域=无资源,组织=无子组织且无下属用户)。
 **角色**支持**真实删除**(§十二,14 项):委派校验(普通操作人只能删自己创建的 `created_by`,超管/不受限删任意)+ 级联清理(含 `user_role`,绑用户也直接删 → 用户失权);配套修正了 `created_by`(仅新建时记,编辑不覆盖)。
 **资源(摄像头)**支持**真实增删改**(§十三,13 项):功能关 `sys.resource` + 数据关 `CheckArea(所在区域)`;新增自动被覆盖该区域 RES_AREA 的角色继承;移动改 `area_id`;删除清理 `role_resource_action`。至此**数据树增删改三件套(区域/组织/资源)全部完成**。
-**委派当前采用模型 A**:写时校验 + 合并保留,不做显式「角色范围」配置。角色列表、账号可分配角色、编辑/删除门禁对普通用户均按**自己创建的角色**(`created_by==当前登录用户`)计算;超级管理员仍可见并管理全部角色。历史版本的 `scope_type='ROLE'` 数据不再读取/保存,仅在删除角色时兼容清理遗留引用。
+**委派当前采用模型 A**:写时校验 + 合并保留 + 运行时按创建人当前有效权限收窄,不做显式「角色范围」配置。角色列表、账号可分配角色、编辑/删除门禁对普通用户均按**自己创建的角色**(`created_by==当前登录用户`)计算;超级管理员仍可见并管理全部角色。历史版本的 `scope_type='ROLE'` 数据不再读取/保存,仅在删除角色时兼容清理遗留引用。
 **应用端资源级可见**(§十五,6 项):业务资源两级数据权限补齐 L2 可见性——精细模式且零操作=该资源应用端列表隐藏(对齐海康「区域级继承 + 资源级查看」)。「精细模式」显式持久化(`Role.ResourceOverrides`,复用 `role_data_scope` `scope_type='RESOVR'`,零 DDL,向后兼容)。
 **数据权限下推 + 懒加载分页**(§十六,17 项):把数据权限从「点查鉴权」扩展到「列表过滤 + 分页下推 SQL」,支撑大数据量。区域树**按层懒加载**(每次只查一层 `parent_id`)、资源列表**分页**,数据权限作为 SQL WHERE **下推数据库**(含子树授权→`path LIKE '根path%'` 走 `idx_path`;仅本节点→`id=节点`;根含子树/超管→不加过滤;无范围→空结果)。鉴权(`auth.go` 点查,读缓存微秒级)与过滤分页(`paging.go` 列表,scope 拼进 WHERE)互补。应用树(RES_AREA)/管理树(AREA)/移动选择器共用 `paging.go` 同一核心(`scopePicker` 注入差异)。**搜索对齐真实海康**:结果按局部树展示(`SearchAreas` 回传祖先链 `Ancestors`,前端拼命中分支 + 匹配高亮)、**最多前 500 条**(`searchLimit`,超出给横幅)、同样叠加可见性 WHERE 下推。**零 DDL**(只读 `area.path`/`idx_path`)。
 
@@ -22,17 +22,19 @@ GoFrame(gf v2)实现的 RBAC + 数据权限演示系统,前端仿**海康安防�
 
 ## 关键设计决策(已和用户确认,勿擅自改变)
 
-1. **两个权限维度**:功能权限(角色→菜单,菜单分 SYS 系统管理域 / APP 应用域)+ 数据权限(角色→区域树/组织树/业务资源)。两者同时满足才放行。**例外:超级管理员**(`user.is_superuser`,仿海康内置 root)鉴权三关直接放行,拥有现有及将来全部权限,与数据权限模型解耦(引擎层特例,不依赖角色/数据范围)。短路点:`auth.go` 三关 + `delegation.go` 的 `userHasMenuId`/`userResAreaCovers`/`GrantableSet`/`MergeDelegated`。种子内置 admin 账号(`tools/dbinit` 幂等补列 + 确保至少一个超管)。
+1. **两个权限维度**:功能权限(角色→菜单,菜单分 SYS 系统管理域 / APP 应用域)+ 数据权限(角色→区域树/组织树/业务资源)。两者同时满足才放行。菜单/权限点在 `menu` 表维护,接口和前端以稳定 `code` 交互,`role_menu.menu_id` 只是数据库内部关联。**例外:超级管理员**(`user.is_superuser`,仿海康内置 root)鉴权三关直接放行,拥有现有及将来全部权限,与数据权限模型解耦(引擎层特例,不依赖角色/数据范围)。短路点:`auth.go` 三关 + `delegation.go` 的 `userHasMenuId`/`userResAreaCovers`/`GrantableSet`/`MergeDelegated`。种子内置 admin 账号(`tools/dbinit` 幂等补列 + 确保至少一个超管)。
 2. **数据权限挂在树上,物化路径 `path` 前缀判断子树**:存 `{节点, include_child}`,不展开子节点;授权子树后**新增子节点自动继承**(`path LIKE '授权节点path%'`)。**系统只有一个根区域**,故授权根=拥有现在及将来全部区域;新增区域时必须算对 `path`=父.path+新ID+"/"。
 3. **业务资源权限两层**:区域范围(粗,继承新资源)+ 资源级操作精细配置(细;有精细=覆盖模式只给所列操作,无精细=继承区域全部操作)。**资源级可见**(对齐海康前台两级):精细模式且零操作=该资源零权限→应用端列表隐藏;为此「精细模式」显式持久化(`Role.ResourceOverrides`,复用 `role_data_scope` `scope_type='RESOVR'`,零 DDL),`auth.go` `hasOverride = ResourceOverrides ∪ 有操作行`(兼容旧数据),`runtime.go` `AreaResources` 过滤零操作资源,`delegation.go` 把精细标记并入合并(第6维)。
-4. **二次授权 = 受控委派,当前采用模型 A(写时校验 + 合并,不级联)**:
-   - **权限维度合并(模型 A)**:已建角色有效权限**不级联**(创建人被收权,旧角色不变);编辑界面按创建人当前权限**实时过滤**(超范围节点前端**隐藏**);保存时**合并**:`最终 = (提交 ∩ 创建人可授范围) ∪ (原有 \ 创建人可授范围)`,范围外原有权限原样保留(看不到也删不掉)。实现:`service/delegation.go` 的 `GrantableSet` 与 `MergeDelegated`(菜单/区域/组织/资源操作/资源精细模式)。
-   - **操作者(actor)= 当前登录用户**(2026-06-11):前端角色管理已**移除独立「操作者(创建人)」下拉**(原默认「系统管理员(不受限)」会让任何登录用户越权——这是用户反馈的 bug:王五能删 admin 创建的角色)。现 `actorId()` 恒等于 `loginUserId()`,可见/编辑/删除全按登录用户身份判定;切「当前登录」即换操作者身份。
-   - **可见/可分配/可编辑/删除角色集** = `owned(actor) = (仅自己创建的 created_by)`;不受限(actor=0)/超管可操作任意角色。实现:`delegation.go` 的 `ManageableRoles`/`OwnedRoles`;`role.go` 的 `GuardManageRole`;前端 `roleCanManage`=`createdBy==actorId`。
-   - **角色删除**(`service/role.go` `DeleteRole`):不受限(actor=0)/超管删任意;普通操作人须有「角色管理」菜单(`sys.person.role`)且角色为**自己创建**。绑用户也直接删(级联清 `user_role`,用户失权);删除时兼容清理历史版本遗留的 `scope_type='ROLE'` 引用。
+4. **二次授权 = 受控委派,当前采用模型 A(写时校验 + 合并保留 + 运行时收窄)**:
+   - **权限维度合并(模型 A)**:已建角色的**存储权限不级联删除**(创建人被收权,旧角色库内配置保留),但运行时会按 `created_by` 创建人的当前有效权限动态收窄;编辑界面按创建人当前权限**实时过滤**(超范围节点前端**隐藏**);保存时**合并**:`最终 = (提交 ∩ 创建人可授范围) ∪ (原有 \ 创建人可授范围)`,范围外原有权限原样保留(看不到也删不掉)。实现:`service/delegation.go` 的 `GrantableSet`、`MergeDelegated`(基础权限:菜单/区域/组织/资源区域范围)与 `MergeResourcePermissionDelegated`(资源级精细操作/精细模式)。
+   - **操作者 = 当前登录用户**(2026-06-11):前端角色管理已**移除独立「操作者(创建人)」下拉**(原默认「系统管理员(不受限)」会让任何登录用户越权——这是用户反馈的 bug:王五能删 admin 创建的角色)。对外接口用 `userId` 表示当前登录用户;服务层 `actorId` 是历史命名,语义等同当前用户。可见/编辑/删除全按登录用户身份判定;切「当前登录」即换操作者身份。
+   - **可见/可分配/可编辑/删除角色集** = 当前用户自己创建的角色(`created_by==userId`);`userId="0"` 不受限/超管可操作任意角色。实现:`delegation.go` 的 `ManageableRoles`/`OwnedRoles`;`role.go` 的 `GuardManageRole`;前端 `roleCanManage`=`createdBy==currentUserId()`。
+   - **角色删除**(`service/role.go` `DeleteRole`):`userId="0"` 不受限/超管删任意;普通操作人须有「角色管理」菜单(`sys.person.role`)且角色为**自己创建**。绑用户也直接删(级联清 `user_role`,用户失权);删除时兼容清理历史版本遗留的 `scope_type='ROLE'` 引用。
    - **`created_by` 语义**:仅**新建**时记为操作人,**编辑**时保持原值不变(`perm.go` 区分 old==nil)。这是自建角色可见/可分配/可编辑/可删除的前提。
-5. **存储**:MySQL(库 `security_permission`,root/123456)为持久层;启动 `service.S.Reload(ctx)` 全量载入内存缓存,鉴权读缓存,写角色/用户落库后刷新缓存。`role_data_scope` 一张表用 `scope_type`(AREA/ORG/RES_AREA/RESOVR)存树范围与资源精细模式;历史 `ROLE` 类型不再参与加载/保存。
-6. **前端两大块对应两个域**:应用端=应用域(看监控,RES_AREA);系统管理后台=系统域(系统菜单 + 安保区域管理 AREA + 组织管理 ORG)。"应用域有权 ≠ 管理域有权"(如李四能看监控但后台为空)。
+5. **存储**:MySQL(库 `security_permission`,root/123456)为持久层;启动 `service.S.Runtime.Reload(ctx)` 全量载入运行时缓存。服务层入口是 `service.S` 这个 `Application` 聚合,按职责分成 `Runtime/Auth/Delegate/Roles/Users/Areas/Orgs/Resources/Views`;`Store` 只保存 MySQL 快照和用户有效权限缓存,不再作为 HTTP 层万能业务入口。鉴权读按用户构建的有效权限快照(`permission_cache.go`),角色/用户/树/资源变化后递增版本并失效快照。`menu` 表存菜单/权限点,`manifest/sql/menu.sql` 由 `tools/dbinit` 每次按 `code` 幂等同步;`role_data_scope` 一张表用 `scope_type`(AREA/ORG/RES_AREA/RESOVR)存树范围与资源精细模式;历史 `ROLE` 类型不再参与加载/保存。
+6. **用户 ID 是字符串**:`user.id`、`user_role.user_id`、接口 `userId`、以及引用用户的 `role.created_by` 均为字符串;种子仍使用数字字符串 `"1"`~`"4"` 以保持既有数据路径稳定,`"0"` 表示不受限/系统创建。
+7. **真实系统表结构约束**:所有表都有单列 `id` 主键;业务唯一性另用唯一索引保证,例如 `user_role(user_id,role_id)`、`role_menu(role_id,menu_id)`、`role_data_scope(role_id,scope_type,node_id)`、`action(code)`。
+8. **前端两大块对应两个域**:应用端=应用域(看监控,RES_AREA);系统管理后台=系统域(系统菜单 + 安保区域管理 AREA + 组织管理 ORG)。"应用域有权 ≠ 管理域有权"(如李四能看监控但后台为空)。
 
 ---
 
@@ -44,8 +46,11 @@ api/
 internal/
   model/permission.go        领域模型(Area/Org/Menu/Resource/Role/User…)
   service/
-    store.go                 内存缓存 + 读方法
-    db.go                    MySQL 加载(Reload)/ 写回(SaveRole, SaveUser)
+    app.go                   服务层聚合入口 Application:Runtime/Auth/Delegate/Roles/Users/Areas/Orgs/Resources/Views
+    store.go                 MySQL 数据的运行时快照 + 读方法;菜单以 code 为稳定标识
+    permission_cache.go       按用户缓存最终生效权限(多角色叠加、created_by 收窄、资源精细覆盖)
+    db.go                    MySQL 加载(Store.Reload)/ 底层写回(Store.SaveRole, Store.SaveUser)
+    menu.go                  后端写操作直接引用的系统菜单稳定 code 常量
     auth.go                  鉴权引擎(菜单/区域/组织/资源 三关)★
     delegation.go            二次授权:GrantableSet(含可分配 RoleIds)+ MergeDelegated + ManageableRoles/OwnedRoles(普通用户仅自建,超管全部)★
     runtime.go               应用端/后台体验:可见树、资源、菜单(VisibleAreas/ManageAreas/ManageOrgs/AreaResources/SysMenus/AppMenus…)
@@ -58,9 +63,10 @@ internal/
   controller/perm/perm_v1_routes.go GoFrame 规范路由方法,复用现有处理函数
   cmd/cmd.go                 路由 + 启动时 Reload + 静态目录
 resource/public/index.html   前端单页(所有 UI + JS,无构建步骤)★
-manifest/sql/schema.sql      建表 DDL(幂等)
-manifest/sql/seed.sql        种子数据
-tools/dbinit/main.go         幂等初始化:建表 + 空库才灌种子(保留已有数据)
+manifest/sql/schema.sql      建表 DDL(幂等,含 menu 表)
+manifest/sql/menu.sql        内置菜单/权限点字典,dbinit 每次按 code 幂等 upsert
+manifest/sql/seed.sql        种子数据(空库才灌;role_menu 通过 menu.code 写入)
+tools/dbinit/main.go         幂等初始化:建表 + 旧库补列 + 同步 menu.sql + 空库才灌种子 + 确保超管
 docs/设计导读.md              新人入门:一步步看懂设计的阅读路线(心智模型→引擎→难点,边读边验证)
 docs/权限设计说明.md          通俗设计文档
 docs/测试报告.md              场景测试报告(核心+各专项)
@@ -77,14 +83,14 @@ docs/海康对照.md              真实海康 iSecure Center 对照验证
   - 安保区域管理 → 区域(左树右详情)
   - 角色管理 → 角色配置(**操作者=当前登录用户**,2026-06-11 移除了原独立「操作者(创建人)」下拉以杜绝越权 + 鉴权测试面板)
   - 账号管理 → 用户/账号管理(建用户绑角色)
-  - 其他菜单 → 演示占位
+  - 其他菜单 → 待接入模块占位
 - 路由表在 JS 的 `SYS_ROUTE`。
 
 ## HTTP 接口一览
 
 接口统一采用 GoFrame 分组 + 动作式路由,不使用 RESTful 路径参数,仅 GET/POST:
 `/api/meta`
-角色:`/api/role/list`(GET) `/api/role/detail?id=`(GET) `/api/role/save?actor=`(POST,委派合并) `/api/role/delete?actor=`(POST,body 含 id,委派校验+级联清理) `/api/role/grantable?actor=` `/api/role/area-children?actor=&parentId=&kind=`
+角色:`/api/role/list`(GET) `/api/role/detail?id=`(GET) `/api/role/save?userId=`(POST,基础权限委派合并;菜单只提交 `menuCodes`) `/api/role/delete?userId=`(POST,body 含 id,委派校验+级联清理) `/api/role/grantable?userId=` `/api/role/area-children?userId=&parentId=&kind=` `/api/role/resource-permission?userId=&roleId=` `/api/role/resource-permission-save?userId=`(POST,独立保存资源精细授权)
 鉴权:`/api/auth/check`(POST)
 用户:`/api/user/list` `/api/user/detail?id=` `/api/user/save?userId=`(POST) `/api/user/delete?userId=`(POST)
 区域管理:`/api/manage/area-save`(POST,?userId= 新增/重命名/移动,写时鉴权+path 维护) `/api/manage/area-reorder`(POST) `/api/manage/area-delete`(POST)
@@ -101,7 +107,7 @@ docs/海康对照.md              真实海康 iSecure Center 对照验证
 go run ./tools/dbinit   # 幂等初始化数据库(可反复运行)
 go run main.go          # 启动,访问 http://127.0.0.1:8000/
 ```
-种子用户:张三(uid=1,安防管理员,全菜单+区域/组织/资源,但区域只到"事件图片测试"子树,看不到园区A)、李四(uid=2,园区A值班员,仅应用域)、王五(uid=3,双角色)、**admin(uid=4,超级管理员 is_superuser=1,绕过鉴权拥有全部)**。
+种子用户:张三(uid="1",安防管理员,全菜单+区域/组织/资源,但区域只到"事件图片测试"子树,看不到园区A)、李四(uid="2",园区A值班员,仅应用域)、王五(uid="3",双角色)、**admin(uid="4",超级管理员 is_superuser=1,绕过鉴权拥有全部)**。
 **测试动线**:角色管理「操作者=当前登录用户」——配角色/建用户先把"当前登录"切到有系统管理权的用户,进后台操作;再切到目标用户去应用端体验。**注意**:角色列表只显示「当前登录用户自己创建的」角色,仅自建可编辑/删除。种子角色 created_by=0(系统建),故**只有 admin(超管)能看到/管理全部角色**;张三/王五 等普通用户登录后角色列表为空(需自己新建)。
 
 ---

@@ -21,12 +21,14 @@ type UserRoleDao struct {
 
 // UserRoleColumns defines and stores column names for the table user_role.
 type UserRoleColumns struct {
+	Id     string // 用户角色关系ID
 	UserId string // 用户ID
 	RoleId string // 角色ID
 }
 
 // userRoleColumns holds the columns for the table user_role.
 var userRoleColumns = UserRoleColumns{
+	Id:     "id",
 	UserId: "user_id",
 	RoleId: "role_id",
 }

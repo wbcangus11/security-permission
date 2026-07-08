@@ -2,6 +2,8 @@ package service
 
 import "security-permission/internal/model"
 
+// effectivePermission 是某个用户“最终生效权限”的快照。
+// 它已经把多角色叠加、created_by 动态收窄、资源精细覆盖都算完了,鉴权时只需查 map。
 type effectivePermission struct {
 	Version uint64
 
@@ -16,6 +18,8 @@ type effectivePermission struct {
 	HiddenResourceIds map[int]bool
 }
 
+// userPermissions 返回用户有效权限快照。
+// 缓存版本号来自 Store.permVersion;只要角色/用户/树/资源被重载,旧快照就会自动失效。
 func (s *Store) userPermissions(u *model.User) *effectivePermission {
 	if u == nil {
 		return nil
@@ -34,7 +38,7 @@ func (s *Store) userPermissions(u *model.User) *effectivePermission {
 		s.mu.Lock()
 		if s.permVersion == version {
 			if s.permCache == nil {
-				s.permCache = map[int]*effectivePermission{}
+				s.permCache = map[string]*effectivePermission{}
 			}
 			s.permCache[u.Id] = p
 			s.mu.Unlock()
@@ -44,6 +48,8 @@ func (s *Store) userPermissions(u *model.User) *effectivePermission {
 	}
 }
 
+// buildUserPermissions 重新计算用户最终权限。
+// 这是相对重的操作,所以只在缓存失效时执行;日常鉴权走 userPermissions 的快照。
 func (s *Store) buildUserPermissions(u *model.User, version uint64) *effectivePermission {
 	p := &effectivePermission{
 		Version:           version,
@@ -90,6 +96,7 @@ func (s *Store) buildUserPermissions(u *model.User, version uint64) *effectivePe
 	}
 
 	candidates := map[int]bool{}
+	// 只有进入过精细模式的资源才可能被“零操作隐藏”;继承模式默认拥有全部资源操作,不需要检查。
 	for _, r := range s.effectiveRoles(u) {
 		for _, id := range r.ResourceOverrides {
 			candidates[id] = true

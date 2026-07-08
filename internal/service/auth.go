@@ -6,7 +6,7 @@ import (
 	"security-permission/internal/model"
 )
 
-// Decision is the authorization result returned to the UI test panel.
+// Decision 是鉴权结果,会返回给前端鉴权测试面板展示。
 type Decision struct {
 	Allow  bool     `json:"allow"`
 	Reason string   `json:"reason"`
@@ -49,16 +49,15 @@ func roleSkipped(skip map[int]bool, roleId int) bool {
 }
 
 func (s *Store) creatorByRole(r *model.Role) *model.User {
-	if r == nil || r.CreatedBy <= 0 {
+	if r == nil || r.CreatedBy == "" || r.CreatedBy == "0" {
 		return nil
 	}
 	return s.User(r.CreatedBy)
 }
 
-// created_by=0 means system-created. Roles created by a superuser are also
-// not narrowed by creator permissions.
+// created_by=0 表示系统创建/不受限角色;超级管理员创建的角色也不受创建人当前权限收窄。
 func (s *Store) delegatedRoleUncapped(r *model.Role) bool {
-	if r == nil || r.CreatedBy <= 0 {
+	if r == nil || r.CreatedBy == "" || r.CreatedBy == "0" {
 		return true
 	}
 	creator := s.User(r.CreatedBy)
@@ -73,6 +72,8 @@ func (s *Store) creatorAllowsMenu(r *model.Role, menuId int, skip map[int]bool) 
 	if creator == nil {
 		return false
 	}
+	// 运行时动态收窄:角色存着的权限还要再受创建人当前权限约束。
+	// skip 当前角色是为了避免“角色通过自己证明创建人仍有权限”的递归闭环。
 	return s.userHasMenuIdUncachedWithSkip(creator, menuId, withSkippedRole(skip, r.Id))
 }
 
@@ -115,6 +116,8 @@ func (s *Store) creatorAllowsResourceAction(r *model.Role, resourceId int, actio
 	return s.checkResourceWithSkip(creator, resourceId, actionCode, withSkippedRole(skip, r.Id)).Allow
 }
 
+// CheckMenu 判断用户是否拥有某个菜单/功能权限。
+// 这是“功能关”:只看角色里有没有该菜单 code;超级管理员直接通过。
 func (s *Store) CheckMenu(u *model.User, menuCode string) *Decision {
 	if isSuper(u) {
 		return superDecision("功能权限")
@@ -135,10 +138,14 @@ func (s *Store) CheckMenu(u *model.User, menuCode string) *Decision {
 	return d
 }
 
+// CheckArea 判断用户是否覆盖某个安保区域。
+// 这是后台管理域的数据关,用于区域管理、资源管理等写操作。
 func (s *Store) CheckArea(u *model.User, areaId int) *Decision {
 	return s.checkCachedTree(u, areaId, treeKindArea)
 }
 
+// CheckOrg 判断用户是否覆盖某个组织节点。
+// 这是后台人员/组织管理的数据关。
 func (s *Store) CheckOrg(u *model.User, orgId int) *Decision {
 	return s.checkCachedTree(u, orgId, treeKindOrg)
 }
@@ -171,8 +178,7 @@ func (s *Store) checkCachedTree(u *model.User, nodeId int, kind string) *Decisio
 	return d
 }
 
-// checkTreeScopeWithSkip is the uncached tree evaluator used to rebuild
-// per-user snapshots and to apply creator-based delegation narrowing.
+// checkTreeScopeWithSkip 是不读缓存的树范围判定,用于重建用户权限快照和应用创建人动态收窄。
 func (s *Store) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope, skip map[int]bool) *Decision {
 	if isSuper(u) {
 		return superDecision("数据权限")
@@ -188,6 +194,7 @@ func (s *Store) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, p
 			continue
 		}
 		for _, sc := range pick(r) {
+			// include_child=false 时只认当前节点;这是角色树“半选/单节点授权”的落库语义。
 			if sc.NodeId == nodeId {
 				if !s.creatorAllowsTree(r, kind, nodeId, skip) {
 					d.Trace = append(d.Trace, "角色「"+r.Name+"」直接授权了该节点, 但已超出创建人当前可授权范围")
@@ -199,6 +206,7 @@ func (s *Store) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, p
 				return d
 			}
 			if sc.IncludeChild {
+				// include_child=true 时用物化路径前缀判断子树覆盖,新增子节点天然继承权限。
 				if scPath := s.nodePath(kind, sc.NodeId); scPath != "" && strings.HasPrefix(targetPath, scPath) {
 					if !s.creatorAllowsTree(r, kind, nodeId, skip) {
 						d.Trace = append(d.Trace, "角色「"+r.Name+"」授权的子树包含该节点, 但已超出创建人当前可授权范围")
@@ -216,6 +224,8 @@ func (s *Store) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, p
 	return d
 }
 
+// CheckResource 判断用户是否能对某个业务资源执行某个操作。
+// 它先看资源所在区域是否在 RES_AREA 范围内,再应用资源级精细授权覆盖规则。
 func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) *Decision {
 	if isSuper(u) {
 		return superDecision("业务资源操作权限")
@@ -243,8 +253,7 @@ func (s *Store) CheckResource(u *model.User, resourceId int, actionCode string) 
 	return d
 }
 
-// checkResourceWithSkip is the uncached resource evaluator used to rebuild
-// snapshots and to apply creator-based delegation narrowing.
+// checkResourceWithSkip 是不读缓存的资源操作判定,用于重建权限快照和应用创建人动态收窄。
 func (s *Store) checkResourceWithSkip(u *model.User, resourceId int, actionCode string, skip map[int]bool) *Decision {
 	if isSuper(u) {
 		return superDecision("业务资源操作权限")
@@ -267,6 +276,7 @@ func (s *Store) checkResourceWithSkip(u *model.User, resourceId int, actionCode 
 		}
 		inScope := false
 		var scopeName string
+		// 第一层:资源所在区域必须落在角色的 RES_AREA 范围内。
 		for _, sc := range r.ResourceAreaScopes {
 			if sc.NodeId == res.AreaId {
 				inScope, scopeName = true, s.nodeName(treeKindArea, sc.NodeId)
@@ -289,6 +299,8 @@ func (s *Store) checkResourceWithSkip(u *model.User, resourceId int, actionCode 
 		d.Trace = append(d.Trace, "角色「"+r.Name+"」业务范围「"+scopeName+"」覆盖资源所在区域")
 
 		hasOverride, granted := false, false
+		// 第二层:资源级精细配置。只要进入 override 模式,就不再继承区域全部操作。
+		// ResourceOverrides 可以表达“精细模式 + 零操作”,这会让应用端列表隐藏该资源。
 		for _, id := range r.ResourceOverrides {
 			if id == resourceId {
 				hasOverride = true
@@ -317,6 +329,7 @@ func (s *Store) checkResourceWithSkip(u *model.User, resourceId int, actionCode 
 			d.Trace = append(d.Trace, "角色「"+r.Name+"」对该资源有精细配置但未包含「"+s.actionName(actionCode)+"」")
 			continue
 		}
+		// 没有资源级覆盖时,只要区域范围覆盖,默认继承全部操作。
 		if !s.creatorAllowsResourceAction(r, resourceId, actionCode, skip) {
 			d.Trace = append(d.Trace, "角色「"+r.Name+"」按区域范围继承该操作, 但已超出创建人当前可授权操作")
 			continue
@@ -335,9 +348,10 @@ func (s *Store) checkResourceWithSkip(u *model.User, resourceId int, actionCode 
 func (s *Store) menuByCode(code string) *model.Menu {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, m := range s.menus {
-		if m.Code == code {
-			return m
+	for _, menu := range s.menus {
+		if menu.Code == code {
+			item := *menu
+			return &item
 		}
 	}
 	return nil

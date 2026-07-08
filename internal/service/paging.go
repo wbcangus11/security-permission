@@ -87,6 +87,8 @@ func (s *Store) treeScopeFilter(u *model.User, kind string) treeFilter {
 	}
 	f := treeFilter{}
 	seenExact := map[int]bool{}
+	// 这里遍历区域并复用鉴权结果,目的是得到“运行时最终有效范围”。
+	// 这样分页树和 CheckArea/CheckResource 的结果保持一致,不会把已被 created_by 收窄的旧授权查出来。
 	for _, a := range s.Areas() {
 		if a.Path == "" {
 			continue
@@ -234,17 +236,17 @@ type PagedAreas struct {
 }
 
 // AreaChildren 应用端(RES_AREA):某节点下"可见的"直接子区域,分页。
-func (s *Store) AreaChildren(ctx context.Context, userId, parentId, page, size int) *PagedAreas {
+func (s *Store) AreaChildren(ctx context.Context, userId string, parentId, page, size int) *PagedAreas {
 	return s.areaChildrenBy(ctx, userId, parentId, page, size, treeKindResArea)
 }
 
 // ManageAreaChildren 后台管理域(AREA):某节点下"可管理/可见的"直接子区域,分页。
-func (s *Store) ManageAreaChildren(ctx context.Context, userId, parentId, page, size int) *PagedAreas {
+func (s *Store) ManageAreaChildren(ctx context.Context, userId string, parentId, page, size int) *PagedAreas {
 	return s.areaChildrenBy(ctx, userId, parentId, page, size, treeKindArea)
 }
 
 // areaChildrenBy 通用核心:可见 = 范围内(accessible)或导航祖先;过滤 + 分页全部下推 SQL。
-func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size int, kind string) *PagedAreas {
+func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, page, size int, kind string) *PagedAreas {
 	page, size = normPage(page, size)
 	out := &PagedAreas{Items: []AreaNode{}, Page: page, Size: size}
 	u := s.User(userId)
@@ -255,6 +257,8 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size
 	nav := s.treeNavAncestors(u, kind)
 
 	m := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, parentId)
+	// 可见节点 = 自己可访问(accessible) + 为了通往深层授权节点必须展示的导航祖先。
+	// 这一步拼到 SQL 里,避免先取出整层/整树再在内存过滤。
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
 		return out // 啥也看不到
@@ -290,6 +294,7 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size
 	}
 
 	for _, r := range rows {
+		// accessible=false 不是“隐藏”,而是“仅用于导航”:前端显示为灰色,可展开但点击详情无权限。
 		acc := f.covers(r.Path, r.Id)
 		// HasChildren = "是否有可见的子节点"(决定展开箭头),分三种情形:
 		//   - All / 落在含子树授权内:子孙都继承可见 → 有子行即可展开;
@@ -311,7 +316,7 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId, parentId, page, size
 // scope="manage" 用 AREA(管理域),否则 RES_AREA(应用域)。
 // 对齐海康:最多返回前 searchLimit(500)条(Total 仍为真实总数,供前端判断是否被截断);
 // 每条匹配回传其祖先链(Ancestors,root..parent),前端据此拼出"局部树"展示(匹配项高亮),而非平铺列表。
-func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, page, size int) *PagedAreas {
+func (s *Store) SearchAreas(ctx context.Context, userId string, q, scope string, page, size int) *PagedAreas {
 	out := &PagedAreas{Items: []AreaNode{}, Page: 1, Size: searchLimit}
 	u := s.User(userId)
 	q = strings.TrimSpace(q)
@@ -325,6 +330,7 @@ func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, pa
 	f := s.treeScopeFilter(u, kind)
 	nav := s.treeNavAncestors(u, kind)
 	m := dao.Area.Ctx(ctx).Where("name LIKE ?", "%"+q+"%")
+	// 搜索也必须叠加同一套可见性过滤。否则用户能通过搜索发现无权区域名称。
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
 		return out
@@ -344,6 +350,7 @@ func (s *Store) SearchAreas(ctx context.Context, userId int, q, scope string, pa
 		return out
 	}
 	for _, r := range rows {
+		// 回传祖先链,让前端按“局部树”展示搜索结果,对齐海康;不是简单平铺列表。
 		out.Items = append(out.Items, AreaNode{Id: r.Id, ParentId: r.ParentId, Name: r.Name, Accessible: f.covers(r.Path, r.Id), Ancestors: s.areaAncestors(r.Path)})
 	}
 	return out
@@ -365,9 +372,9 @@ type RoleTreeNode struct {
 
 // roleTreeGrantable 操作者在区域树某域(kind=area 管理域 / resarea 应用域)的可授节点集 + 其 path。
 // actorId<=0 或超管 ⇒ unlimited(可授全部);否则只遍历区域(不碰菜单/资源),比 GrantableSet 轻。
-func (s *Store) roleTreeGrantable(actorId int, kind string) (set map[int]bool, paths []string, unlimited bool) {
+func (s *Store) roleTreeGrantable(actorId string, kind string) (set map[int]bool, paths []string, unlimited bool) {
 	set = map[int]bool{}
-	if actorId <= 0 {
+	if isUnrestrictedActor(actorId) {
 		return set, nil, true
 	}
 	actor := s.User(actorId)
@@ -396,7 +403,7 @@ func (s *Store) roleTreeGrantable(actorId int, kind string) (set map[int]bool, p
 
 // RoleAreaChildren 角色配置树:父节点下「整一层」可见子区域(不分页),带 canCheck/hasChildren。
 // 可见 = 操作者可授(canCheck)或其子孙中有可授节点(仅作结构展示)。kind=area|resarea 决定可授范围来源。
-func (s *Store) RoleAreaChildren(ctx context.Context, actorId, parentId int, kind string) []RoleTreeNode {
+func (s *Store) RoleAreaChildren(ctx context.Context, actorId string, parentId int, kind string) []RoleTreeNode {
 	out := []RoleTreeNode{}
 	set, paths, unlimited := s.roleTreeGrantable(actorId, kind)
 	var rows []struct {
@@ -455,7 +462,7 @@ type AreaResourcesPage struct {
 
 // AreaResourcesPaged 点击某区域:列出其子树内、用户范围内、非零权限的资源,分页。
 // 范围过滤(scope→WHERE)+ 子树前缀 + 隐藏零权限资源,全部下推 SQL;再对本页 ~size 条逐个点查操作。
-func (s *Store) AreaResourcesPaged(ctx context.Context, userId, areaId, page, size int) *AreaResourcesPage {
+func (s *Store) AreaResourcesPaged(ctx context.Context, userId string, areaId, page, size int) *AreaResourcesPage {
 	page, size = normPage(page, size)
 	out := &AreaResourcesPage{Resources: []ResourceView{}, Page: page, Size: size}
 	u := s.User(userId)

@@ -8,7 +8,7 @@ import (
 
 func TestUserPermissionCacheInvalidatesByVersion(t *testing.T) {
 	s := newRuntimeCapStore()
-	li := s.User(2)
+	li := s.User("2")
 
 	if d := s.CheckArea(li, 2); !d.Allow {
 		t.Fatalf("expected initial cached area 2 allow, got deny: %s", d.Reason)

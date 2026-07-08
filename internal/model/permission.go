@@ -39,12 +39,14 @@ type Org struct {
 }
 
 // Menu 菜单/功能项(树形),Domain 区分系统管理域与应用域。
+// Id 是数据库关系主键;Code 才是前后端和后端鉴权使用的稳定业务标识。
 type Menu struct {
 	Id       int    `json:"id"`
 	ParentId int    `json:"parentId"`
 	Code     string `json:"code"`
 	Name     string `json:"name"`
 	Domain   string `json:"domain"`
+	Sort     int    `json:"sort"`
 }
 
 // Resource 业务资源(如摄像头),挂在某个区域下。
@@ -78,10 +80,12 @@ type Role struct {
 	Id          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	CreatedBy   int    `json:"createdBy"` // 创建该角色的用户(委派来源),0 表示系统创建/不受限
+	CreatedBy   string `json:"createdBy"` // 创建该角色的用户(委派来源),"0" 表示系统创建/不受限
 
 	// 功能权限:菜单 id 列表(含系统域与应用域)
-	MenuIds []int `json:"menuIds"`
+	MenuIds []int `json:"-"`
+	// 功能权限:菜单 code 列表。接口层优先使用 code,避免前后端依赖数据库自增 ID。
+	MenuCodes []string `json:"menuCodes"`
 
 	// 数据权限·管理域
 	AreaScopes []DataScope `json:"areaScopes"` // 安保区域管理权限
@@ -97,7 +101,7 @@ type Role struct {
 
 // User 账号,可绑定多个角色,归属某组织。
 type User struct {
-	Id      int    `json:"id"`
+	Id      string `json:"id"`
 	Name    string `json:"name"`
 	OrgId   int    `json:"orgId"`
 	RoleIds []int  `json:"roleIds"`

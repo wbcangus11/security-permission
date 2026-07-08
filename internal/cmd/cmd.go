@@ -17,18 +17,18 @@ var (
 		Usage: "main",
 		Brief: "start http server",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
-			// 从 MySQL 加载权限数据到内存缓存
-			if err = service.S.Reload(ctx); err != nil {
+			// 从 MySQL 加载权限数据到运行时缓存。
+			if err = service.S.Runtime.Reload(ctx); err != nil {
 				return err
 			}
 
 			s := g.Server()
 
-			// 静态资源:把前端测试页放在 resource/public 下,根路径访问。
+			// 静态资源:前端单页放在 resource/public 下,根路径访问。
 			s.SetServerRoot("resource/public")
 			s.SetIndexFiles([]string{"index.html"})
 
-			// 权限演示接口,统一前缀 /api。
+			// 权限接口,统一前缀 /api。
 			s.Group("/api", func(group *ghttp.RouterGroup) {
 				group.Middleware(ghttp.MiddlewareHandlerResponse)
 				perm.Register(group)

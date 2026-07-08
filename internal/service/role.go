@@ -9,9 +9,10 @@ import (
 	"security-permission/internal/dao"
 )
 
-const menuRoleManage = "sys.person.role"
-
-func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
+// DeleteRole 删除角色并清理所有引用。
+// 角色即使已经绑定用户也允许删除;删除后 user_role 会被清掉,用户自然失去该角色带来的权限。
+// actorId 是当前用户 ID 的历史命名,实际项目应从 token/context 取得。
+func (s *Store) DeleteRole(ctx context.Context, actorId string, roleId int) error {
 	if s.Role(roleId) == nil {
 		return gerror.New("角色不存在")
 	}
@@ -20,6 +21,8 @@ func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
 	}
 
 	err := dao.Role.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		// 没启用数据库外键级联,所以服务层显式清理所有以 role_id 指向该角色的关联表。
+		// 角色删除后绑定用户会自然失去该角色权限,不做“仍绑定就禁止删除”的拦截。
 		for _, item := range []struct {
 			table  string
 			column string
@@ -33,6 +36,7 @@ func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
 				return err
 			}
 		}
+		// 兼容历史版本的显式角色范围(scope_type=ROLE):删除被引用角色时同步清掉悬挂引用。
 		if _, err := tx.Model(dao.RoleDataScope.Table()).Ctx(ctx).
 			Where(dao.RoleDataScope.Columns().ScopeType, "ROLE").
 			Where(dao.RoleDataScope.Columns().NodeId, roleId).
@@ -48,8 +52,10 @@ func (s *Store) DeleteRole(ctx context.Context, actorId, roleId int) error {
 	return s.reloadRolesAndUsers(ctx)
 }
 
-func (s *Store) GuardManageRole(actorId, roleId int) error {
-	if actorId <= 0 {
+// GuardManageRole 是编辑/删除角色的统一门禁。
+// 普通用户必须有“角色管理”菜单,且目标角色必须是自己创建的;超级管理员不受限制。
+func (s *Store) GuardManageRole(actorId string, roleId int) error {
+	if isUnrestrictedActor(actorId) {
 		return nil
 	}
 	actor := s.User(actorId)

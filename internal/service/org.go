@@ -24,9 +24,6 @@ import (
 	"security-permission/internal/model/do"
 )
 
-// menuOrgManage 人员信息菜单 code(组织树写操作的功能关)。
-const menuOrgManage = "sys.person.info"
-
 // OrgSaveInput 新增/重命名/移动组织的入参。
 // Id<=0 为新增(ParentId=父组织);更新时 ParentId 非 0 且与原值不同即移动。
 type OrgSaveInput struct {
@@ -36,7 +33,7 @@ type OrgSaveInput struct {
 }
 
 // SaveOrg 新增或更新(重命名/移动)组织,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *Store) SaveOrg(ctx context.Context, actorId int, in *OrgSaveInput) (*model.Org, error) {
+func (s *Store) SaveOrg(ctx context.Context, actorId string, in *OrgSaveInput) (*model.Org, error) {
 	actor, err := s.checkOrgWriter(actorId)
 	if err != nil {
 		return nil, err
@@ -52,7 +49,7 @@ func (s *Store) SaveOrg(ctx context.Context, actorId int, in *OrgSaveInput) (*mo
 }
 
 // DeleteOrg 删除组织(仅叶子且无下属用户),同步清理对该节点的数据范围授权。
-func (s *Store) DeleteOrg(ctx context.Context, actorId, orgId int) error {
+func (s *Store) DeleteOrg(ctx context.Context, actorId string, orgId int) error {
 	actor, err := s.checkOrgWriter(actorId)
 	if err != nil {
 		return err
@@ -96,7 +93,7 @@ func (s *Store) DeleteOrg(ctx context.Context, actorId, orgId int) error {
 }
 
 // checkOrgWriter 写操作公共前置:操作人存在 + 功能关(sys.person.info 菜单)。
-func (s *Store) checkOrgWriter(actorId int) (*model.User, error) {
+func (s *Store) checkOrgWriter(actorId string) (*model.User, error) {
 	actor := s.User(actorId)
 	if actor == nil {
 		return nil, gerror.New("操作人不存在")

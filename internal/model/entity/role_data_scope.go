@@ -6,6 +6,7 @@ package entity
 
 // RoleDataScope is the golang structure for table role_data_scope.
 type RoleDataScope struct {
+	Id           int64  `json:"id"           orm:"id"            ` // 角色数据范围ID
 	RoleId       int64  `json:"roleId"       orm:"role_id"       ` // 角色ID
 	ScopeType    string `json:"scopeType"    orm:"scope_type"    ` // AREA / ORG / RES_AREA
 	NodeId       int64  `json:"nodeId"       orm:"node_id"       ` // 授权的树节点ID(area.id 或 org.id)

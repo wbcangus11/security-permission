@@ -21,6 +21,7 @@ type RoleResourceActionDao struct {
 
 // RoleResourceActionColumns defines and stores column names for the table role_resource_action.
 type RoleResourceActionColumns struct {
+	Id         string // 角色资源操作ID
 	RoleId     string // 角色ID
 	ResourceId string // 资源ID
 	ActionCode string // 操作编码
@@ -28,6 +29,7 @@ type RoleResourceActionColumns struct {
 
 // roleResourceActionColumns holds the columns for the table role_resource_action.
 var roleResourceActionColumns = RoleResourceActionColumns{
+	Id:         "id",
 	RoleId:     "role_id",
 	ResourceId: "resource_id",
 	ActionCode: "action_code",

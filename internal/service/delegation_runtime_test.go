@@ -18,14 +18,13 @@ func newRuntimeCapStore() *Store {
 			2: {Id: 2, ParentId: 1, Name: "研发部", Path: "/1/2/"},
 			3: {Id: 3, ParentId: 1, Name: "财务部", Path: "/1/3/"},
 		},
-		menus:     map[int]*model.Menu{},
 		resources: map[int]*model.Resource{},
 		actions:   []model.Action{},
 		roles: map[int]*model.Role{
 			10: {
 				Id:        10,
 				Name:      "上级授权",
-				CreatedBy: 0,
+				CreatedBy: "0",
 				AreaScopes: []model.DataScope{
 					{NodeId: 2, IncludeChild: true},
 				},
@@ -39,7 +38,7 @@ func newRuntimeCapStore() *Store {
 			20: {
 				Id:        20,
 				Name:      "张三创建",
-				CreatedBy: 1,
+				CreatedBy: "1",
 				AreaScopes: []model.DataScope{
 					{NodeId: 1, IncludeChild: true},
 				},
@@ -51,16 +50,16 @@ func newRuntimeCapStore() *Store {
 				},
 			},
 		},
-		users: map[int]*model.User{
-			1: {Id: 1, Name: "张三", RoleIds: []int{10}},
-			2: {Id: 2, Name: "李四", RoleIds: []int{20}},
+		users: map[string]*model.User{
+			"1": {Id: "1", Name: "张三", RoleIds: []int{10}},
+			"2": {Id: "2", Name: "李四", RoleIds: []int{20}},
 		},
 	}
 }
 
 func TestDelegatedRoleRuntimeCapForArea(t *testing.T) {
 	s := newRuntimeCapStore()
-	li := s.User(2)
+	li := s.User("2")
 
 	if d := s.CheckArea(li, 2); !d.Allow {
 		t.Fatalf("expected delegated role to keep creator-current area, got deny: %s", d.Reason)
@@ -72,7 +71,7 @@ func TestDelegatedRoleRuntimeCapForArea(t *testing.T) {
 
 func TestDelegatedRoleRuntimeCapForResourceArea(t *testing.T) {
 	s := newRuntimeCapStore()
-	li := s.User(2)
+	li := s.User("2")
 
 	if !s.userResAreaCovers(li, 2) {
 		t.Fatal("expected delegated resource area to keep creator-current area")
@@ -84,7 +83,7 @@ func TestDelegatedRoleRuntimeCapForResourceArea(t *testing.T) {
 
 func TestDelegatedRoleRuntimeCapForOrg(t *testing.T) {
 	s := newRuntimeCapStore()
-	li := s.User(2)
+	li := s.User("2")
 
 	if d := s.CheckOrg(li, 2); !d.Allow {
 		t.Fatalf("expected delegated role to keep creator-current org, got deny: %s", d.Reason)
@@ -96,7 +95,7 @@ func TestDelegatedRoleRuntimeCapForOrg(t *testing.T) {
 
 func TestDelegatedRoleRuntimeCapForPagedTreeFilter(t *testing.T) {
 	s := newRuntimeCapStore()
-	li := s.User(2)
+	li := s.User("2")
 
 	f := s.treeScopeFilter(li, treeKindResArea)
 	if f.None {

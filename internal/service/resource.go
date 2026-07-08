@@ -24,9 +24,6 @@ import (
 	"security-permission/internal/model/do"
 )
 
-// menuResourceManage 资源管理菜单 code(资源写操作的功能关)。
-const menuResourceManage = "sys.resource"
-
 // ResourceSaveInput 新增/重命名/改类型/移动资源的入参。
 // Id<=0 为新增(AreaId=所在区域);更新时 AreaId 非 0 且与原值不同即移动到新区域。
 type ResourceSaveInput struct {
@@ -37,7 +34,7 @@ type ResourceSaveInput struct {
 }
 
 // SaveResource 新增或更新(重命名/改类型/移动)资源,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *Store) SaveResource(ctx context.Context, actorId int, in *ResourceSaveInput) (*model.Resource, error) {
+func (s *Store) SaveResource(ctx context.Context, actorId string, in *ResourceSaveInput) (*model.Resource, error) {
 	actor, err := s.checkResourceWriter(actorId)
 	if err != nil {
 		return nil, err
@@ -53,7 +50,7 @@ func (s *Store) SaveResource(ctx context.Context, actorId int, in *ResourceSaveI
 }
 
 // DeleteResource 删除资源,同步清理对该资源的精细授权(role_resource_action)。
-func (s *Store) DeleteResource(ctx context.Context, actorId, resId int) error {
+func (s *Store) DeleteResource(ctx context.Context, actorId string, resId int) error {
 	actor, err := s.checkResourceWriter(actorId)
 	if err != nil {
 		return err
@@ -82,7 +79,7 @@ func (s *Store) DeleteResource(ctx context.Context, actorId, resId int) error {
 }
 
 // checkResourceWriter 写操作公共前置:操作人存在 + 功能关(sys.resource 菜单)。
-func (s *Store) checkResourceWriter(actorId int) (*model.User, error) {
+func (s *Store) checkResourceWriter(actorId string) (*model.User, error) {
 	actor := s.User(actorId)
 	if actor == nil {
 		return nil, gerror.New("操作人不存在")

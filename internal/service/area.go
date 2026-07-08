@@ -26,9 +26,6 @@ import (
 	"security-permission/internal/model/do"
 )
 
-// menuAreaManage 安保区域管理菜单 code(写操作的功能关)。
-const menuAreaManage = "sys.area"
-
 // AreaSaveInput 新增/重命名/移动区域的入参。
 // Id<=0 为新增(ParentId=父区域);更新时 ParentId 非 0 且与原值不同即移动。
 type AreaSaveInput struct {
@@ -37,13 +34,15 @@ type AreaSaveInput struct {
 	Name     string `json:"name"`
 }
 
+// AreaReorderInput 调整同级区域顺序的入参。
+// 前端根据“上移/下移”先算出目标兄弟区域 ToAreaId,后端只负责交换两个同父区域的位置。
 type AreaReorderInput struct {
-	Id        int    `json:"id"`
-	Direction string `json:"direction"` // up/down
+	AreaId   int `json:"areaId"`
+	ToAreaId int `json:"toAreaId"`
 }
 
 // SaveArea 新增或更新(重命名/移动)区域,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *Store) SaveArea(ctx context.Context, actorId int, in *AreaSaveInput) (*model.Area, error) {
+func (s *Store) SaveArea(ctx context.Context, actorId string, in *AreaSaveInput) (*model.Area, error) {
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
 		return nil, err
@@ -59,7 +58,7 @@ func (s *Store) SaveArea(ctx context.Context, actorId int, in *AreaSaveInput) (*
 }
 
 // DeleteArea 删除区域(仅叶子且无资源),同步清理对该节点的数据范围授权。
-func (s *Store) DeleteArea(ctx context.Context, actorId, areaId int) error {
+func (s *Store) DeleteArea(ctx context.Context, actorId string, areaId int) error {
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
 		return err
@@ -102,23 +101,38 @@ func (s *Store) DeleteArea(ctx context.Context, actorId, areaId int) error {
 	return s.reloadAreasAndRoles(ctx)
 }
 
-func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInput) error {
+// ReorderArea 交换两个同级区域的排序。
+// 排序本身也是写操作,因此两个区域都要过“安保区域管理”菜单和区域数据权限。
+func (s *Store) ReorderArea(ctx context.Context, actorId string, in *AreaReorderInput) error {
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
 		return err
 	}
-	target := s.AreaById(in.Id)
+	target := s.AreaById(in.AreaId)
 	if target == nil {
 		return gerror.New("区域不存在")
+	}
+	to := s.AreaById(in.ToAreaId)
+	if to == nil {
+		return gerror.New("目标区域不存在")
+	}
+	if target.Id == to.Id {
+		return nil
 	}
 	if target.ParentId == 0 {
 		return gerror.New("根区域不允许排序")
 	}
+	if to.ParentId == 0 {
+		return gerror.New("根区域不允许参与排序")
+	}
+	if target.ParentId != to.ParentId {
+		return gerror.New("只能调整同一父区域下的区域顺序")
+	}
 	if d := s.CheckArea(actor, target.Id); !d.Allow {
 		return gerror.New("无权调整「" + target.Name + "」排序:" + d.Reason)
 	}
-	if in.Direction != sortDirectionUp && in.Direction != sortDirectionDown {
-		return gerror.New("排序方向只能是 up/down")
+	if d := s.CheckArea(actor, to.Id); !d.Allow {
+		return gerror.New("无权与目标区域「" + to.Name + "」换序:" + d.Reason)
 	}
 
 	siblings := make([]*model.Area, 0)
@@ -135,28 +149,21 @@ func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInp
 	})
 
 	idx := -1
+	toIdx := -1
 	for i, a := range siblings {
 		if a.Id == target.Id {
 			idx = i
-			break
+		}
+		if a.Id == to.Id {
+			toIdx = i
 		}
 	}
-	if idx < 0 {
-		return gerror.New("区域不存在")
-	}
-	swapIdx := idx - 1
-	if in.Direction == sortDirectionDown {
-		swapIdx = idx + 1
-	}
-	if swapIdx < 0 || swapIdx >= len(siblings) {
-		return nil
-	}
-	if d := s.CheckArea(actor, siblings[swapIdx].Id); !d.Allow {
-		return gerror.New("无权与相邻区域「" + siblings[swapIdx].Name + "」换序:" + d.Reason)
+	if idx < 0 || toIdx < 0 {
+		return gerror.New("同级区域排序数据异常")
 	}
 
 	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		siblings[idx], siblings[swapIdx] = siblings[swapIdx], siblings[idx]
+		siblings[idx], siblings[toIdx] = siblings[toIdx], siblings[idx]
 		for i, a := range siblings {
 			nextSort := (i + 1) * 10
 			if a.Sort == nextSort {
@@ -175,7 +182,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId int, in *AreaReorderInp
 }
 
 // checkAreaWriter 写操作公共前置:操作人存在 + 功能关(sys.area 菜单)。
-func (s *Store) checkAreaWriter(actorId int) (*model.User, error) {
+func (s *Store) checkAreaWriter(actorId string) (*model.User, error) {
 	actor := s.User(actorId)
 	if actor == nil {
 		return nil, gerror.New("操作人不存在")
@@ -238,6 +245,8 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	return s.AreaById(int(newId)), nil
 }
 
+// nextAreaSort 计算新建子区域的默认排序号。
+// 这里用当前同级最大 sort + 10,方便以后在中间插入排序值。
 func (s *Store) nextAreaSort(parentId int) int {
 	maxSort := 0
 	for _, a := range s.Areas() {

@@ -8,29 +8,33 @@ import (
 	"security-permission/internal/service"
 )
 
+// ok 包装成功响应。
+// GoFrame 外层可能还有统一响应中间件,这里保持业务层 code/message/data 一致。
 func ok(data interface{}) *v1.CommonRes {
 	return &v1.CommonRes{Code: 0, Message: "ok", Data: data}
 }
 
+// fail 包装业务失败响应。
+// 这里返回 nil error,让前端总能拿到统一 CommonRes 结构。
 func fail(msg string) *v1.CommonRes {
 	return &v1.CommonRes{Code: 1, Message: msg}
 }
 
+// roleFromReq 只做请求结构到领域模型的字段搬运。
+// 创建人、委派合并、可编辑校验都在 RoleService 里统一处理,避免前端伪造 createdBy。
 func roleFromReq(req *v1.RoleSaveReq) *model.Role {
 	return &model.Role{
 		Id:                 req.Id,
 		Name:               req.Name,
 		Description:        req.Description,
-		CreatedBy:          req.CreatedBy,
-		MenuIds:            req.MenuIds,
+		MenuCodes:          req.MenuCodes,
 		AreaScopes:         scopesFromReq(req.AreaScopes),
 		OrgScopes:          scopesFromReq(req.OrgScopes),
 		ResourceAreaScopes: scopesFromReq(req.ResourceAreaScopes),
-		ResourceActions:    actionsFromReq(req.ResourceActions),
-		ResourceOverrides:  req.ResourceOverrides,
 	}
 }
 
+// scopesFromReq 把接口层的数据范围转换成领域模型。
 func scopesFromReq(items []v1.DataScope) []model.DataScope {
 	scopes := make([]model.DataScope, 0, len(items))
 	for _, item := range items {
@@ -42,6 +46,7 @@ func scopesFromReq(items []v1.DataScope) []model.DataScope {
 	return scopes
 }
 
+// actionsFromReq 把接口层资源操作转换成领域模型。
 func actionsFromReq(items []v1.ResourceAction) []model.ResourceAction {
 	actions := make([]model.ResourceAction, 0, len(items))
 	for _, item := range items {
@@ -53,6 +58,8 @@ func actionsFromReq(items []v1.ResourceAction) []model.ResourceAction {
 	return actions
 }
 
+// userFromReq 只搬运用户基础字段和角色绑定。
+// 用户保存时的功能权限、组织数据权限、角色可分配范围由服务层校验。
 func userFromReq(req *v1.UserSaveReq) *model.User {
 	return &model.User{
 		Id:          req.Id,
@@ -64,7 +71,7 @@ func userFromReq(req *v1.UserSaveReq) *model.User {
 }
 
 func (c *ControllerV1) Meta(ctx context.Context, req *v1.MetaReq) (*v1.CommonRes, error) {
-	s := service.S
+	s := service.S.Runtime
 	return ok(map[string]interface{}{
 		"areas":     s.Areas(),
 		"orgs":      s.Orgs(),
@@ -76,20 +83,20 @@ func (c *ControllerV1) Meta(ctx context.Context, req *v1.MetaReq) (*v1.CommonRes
 }
 
 func (c *ControllerV1) AuthCheck(ctx context.Context, req *v1.AuthCheckReq) (*v1.CommonRes, error) {
-	user := service.S.User(req.UserId)
+	user := service.S.Runtime.User(req.UserId)
 	if user == nil {
 		return fail("用户不存在"), nil
 	}
 	var d *service.Decision
 	switch req.Type {
 	case v1.AuthTypeMenu:
-		d = service.S.CheckMenu(user, req.Code)
+		d = service.S.Auth.CheckMenu(user, req.Code)
 	case v1.AuthTypeArea:
-		d = service.S.CheckArea(user, req.NodeId)
+		d = service.S.Auth.CheckArea(user, req.NodeId)
 	case v1.AuthTypeOrg:
-		d = service.S.CheckOrg(user, req.NodeId)
+		d = service.S.Auth.CheckOrg(user, req.NodeId)
 	case v1.AuthTypeResource:
-		d = service.S.CheckResource(user, req.ResourceId, req.Action)
+		d = service.S.Auth.CheckResource(user, req.ResourceId, req.Action)
 	default:
 		return fail("未知鉴权类型:" + req.Type), nil
 	}
@@ -97,11 +104,11 @@ func (c *ControllerV1) AuthCheck(ctx context.Context, req *v1.AuthCheckReq) (*v1
 }
 
 func (c *ControllerV1) RoleList(ctx context.Context, req *v1.RoleListReq) (*v1.CommonRes, error) {
-	return ok(service.S.Roles()), nil
+	return ok(service.S.Roles.List()), nil
 }
 
 func (c *ControllerV1) RoleDetail(ctx context.Context, req *v1.RoleDetailReq) (*v1.CommonRes, error) {
-	role := service.S.Role(req.Id)
+	role := service.S.Roles.Get(req.Id)
 	if role == nil {
 		return fail("角色不存在"), nil
 	}
@@ -109,48 +116,60 @@ func (c *ControllerV1) RoleDetail(ctx context.Context, req *v1.RoleDetailReq) (*
 }
 
 func (c *ControllerV1) RoleSave(ctx context.Context, req *v1.RoleSaveReq) (*v1.CommonRes, error) {
+	// 接口层只负责把请求整理成角色聚合;真正的菜单 code 转换、权限上限、保留合并和落库都放在 RoleService。
 	role := roleFromReq(req)
 	if role.Name == "" {
 		return fail("角色名称不能为空"), nil
 	}
-	old := service.S.Role(role.Id)
-	if old != nil {
-		if err := service.S.GuardManageRole(req.Actor, role.Id); err != nil {
-			return fail(err.Error()), nil
-		}
-		role.CreatedBy = old.CreatedBy
-	} else {
-		role.CreatedBy = req.Actor
-	}
-	merged, preserved := service.S.MergeDelegated(req.Actor, old, role)
-	saved, err := service.S.SaveRole(ctx, merged)
+
+	result, err := service.S.Roles.SaveBasic(ctx, req.UserId, role)
 	if err != nil {
 		return fail("保存失败:" + err.Error()), nil
 	}
-	return &v1.CommonRes{Code: 0, Message: "ok", Data: saved, Preserved: preserved}, nil
+	return &v1.CommonRes{Code: 0, Message: "ok", Data: result.Role, Preserved: result.Preserved}, nil
 }
 
 func (c *ControllerV1) RoleDelete(ctx context.Context, req *v1.RoleDeleteReq) (*v1.CommonRes, error) {
-	if err := service.S.DeleteRole(ctx, req.Actor, req.Id); err != nil {
+	if err := service.S.Roles.Delete(ctx, req.UserId, req.Id); err != nil {
 		return fail(err.Error()), nil
 	}
 	return ok(true), nil
 }
 
 func (c *ControllerV1) RoleGrantable(ctx context.Context, req *v1.RoleGrantableReq) (*v1.CommonRes, error) {
-	return ok(service.S.GrantableSet(req.Actor)), nil
+	return ok(service.S.Delegate.GrantableSet(req.UserId)), nil
 }
 
 func (c *ControllerV1) RoleAreaChildren(ctx context.Context, req *v1.RoleAreaChildrenReq) (*v1.CommonRes, error) {
-	return ok(service.S.RoleAreaChildren(ctx, req.Actor, req.ParentId, req.Kind)), nil
+	return ok(service.S.Delegate.RoleAreaChildren(ctx, req.UserId, req.ParentId, req.Kind)), nil
+}
+
+func (c *ControllerV1) RoleResourcePermission(ctx context.Context, req *v1.RoleResourcePermissionReq) (*v1.CommonRes, error) {
+	permission, err := service.S.Roles.ResourcePermission(req.UserId, req.RoleId)
+	if err != nil {
+		return fail(err.Error()), nil
+	}
+	return ok(permission), nil
+}
+
+func (c *ControllerV1) RoleResourcePermissionSave(ctx context.Context, req *v1.RoleResourcePermissionSaveReq) (*v1.CommonRes, error) {
+	result, err := service.S.Roles.SaveResourcePermission(ctx, req.UserId, req.RoleId, actionsFromReq(req.ResourceActions), req.ResourceOverrides)
+	if err != nil {
+		return fail("保存失败:" + err.Error()), nil
+	}
+	return &v1.CommonRes{Code: 0, Message: "ok", Data: map[string]interface{}{
+		"roleId":            result.Role.Id,
+		"resourceActions":   result.Role.ResourceActions,
+		"resourceOverrides": result.Role.ResourceOverrides,
+	}, Preserved: result.Preserved}, nil
 }
 
 func (c *ControllerV1) UserList(ctx context.Context, req *v1.UserListReq) (*v1.CommonRes, error) {
-	return ok(service.S.Users()), nil
+	return ok(service.S.Users.List()), nil
 }
 
 func (c *ControllerV1) UserDetail(ctx context.Context, req *v1.UserDetailReq) (*v1.CommonRes, error) {
-	user := service.S.User(req.Id)
+	user := service.S.Users.Get(req.Id)
 	if user == nil {
 		return fail("用户不存在"), nil
 	}
@@ -158,11 +177,12 @@ func (c *ControllerV1) UserDetail(ctx context.Context, req *v1.UserDetailReq) (*
 }
 
 func (c *ControllerV1) UserSave(ctx context.Context, req *v1.UserSaveReq) (*v1.CommonRes, error) {
+	// 账号保存包含两件事:用户基础信息 + 角色绑定;服务层会同时校验账号管理功能、ORG 数据范围和角色可分配范围。
 	user := userFromReq(req)
 	if user.Name == "" {
 		return fail("用户名不能为空"), nil
 	}
-	saved, err := service.S.SaveUserManaged(ctx, req.UserId, user)
+	saved, err := service.S.Users.SaveManaged(ctx, req.UserId, user)
 	if err != nil {
 		return fail("保存失败:" + err.Error()), nil
 	}
@@ -170,50 +190,50 @@ func (c *ControllerV1) UserSave(ctx context.Context, req *v1.UserSaveReq) (*v1.C
 }
 
 func (c *ControllerV1) UserDelete(ctx context.Context, req *v1.UserDeleteReq) (*v1.CommonRes, error) {
-	if err := service.S.DeleteUser(ctx, req.UserId, req.Id); err != nil {
+	if err := service.S.Users.Delete(ctx, req.UserId, req.Id); err != nil {
 		return fail(err.Error()), nil
 	}
 	return ok(true), nil
 }
 
 func (c *ControllerV1) AppMenu(ctx context.Context, req *v1.AppMenuReq) (*v1.CommonRes, error) {
-	return ok(service.S.AppMenus(req.UserId)), nil
+	return ok(service.S.Views.AppMenus(req.UserId)), nil
 }
 
 func (c *ControllerV1) AppAreaTree(ctx context.Context, req *v1.AppAreaTreeReq) (*v1.CommonRes, error) {
-	return ok(service.S.VisibleAreas(req.UserId)), nil
+	return ok(service.S.Views.VisibleAreas(req.UserId)), nil
 }
 
 func (c *ControllerV1) AppAreaChildren(ctx context.Context, req *v1.AppAreaChildrenReq) (*v1.CommonRes, error) {
-	return ok(service.S.AreaChildren(ctx, req.UserId, req.ParentId, req.Page, req.Size)), nil
+	return ok(service.S.Views.AreaChildren(ctx, req.UserId, req.ParentId, req.Page, req.Size)), nil
 }
 
 func (c *ControllerV1) AppAreaSearch(ctx context.Context, req *v1.AppAreaSearchReq) (*v1.CommonRes, error) {
-	return ok(service.S.SearchAreas(ctx, req.UserId, req.Q, req.Scope, req.Page, req.Size)), nil
+	return ok(service.S.Views.SearchAreas(ctx, req.UserId, req.Q, req.Scope, req.Page, req.Size)), nil
 }
 
 func (c *ControllerV1) AppResourceList(ctx context.Context, req *v1.AppResourceListReq) (*v1.CommonRes, error) {
-	return ok(service.S.AreaResourcesPaged(ctx, req.UserId, req.AreaId, req.Page, req.Size)), nil
+	return ok(service.S.Views.AreaResourcesPaged(ctx, req.UserId, req.AreaId, req.Page, req.Size)), nil
 }
 
 func (c *ControllerV1) ManageMenu(ctx context.Context, req *v1.ManageMenuReq) (*v1.CommonRes, error) {
-	return ok(service.S.SysMenus(req.UserId)), nil
+	return ok(service.S.Views.SysMenus(req.UserId)), nil
 }
 
 func (c *ControllerV1) ManageAreaTree(ctx context.Context, req *v1.ManageAreaTreeReq) (*v1.CommonRes, error) {
-	return ok(service.S.ManageAreas(req.UserId)), nil
+	return ok(service.S.Views.ManageAreas(req.UserId)), nil
 }
 
 func (c *ControllerV1) ManageAreaChildren(ctx context.Context, req *v1.ManageAreaChildrenReq) (*v1.CommonRes, error) {
-	return ok(service.S.ManageAreaChildren(ctx, req.UserId, req.ParentId, req.Page, req.Size)), nil
+	return ok(service.S.Views.ManageAreaChildren(ctx, req.UserId, req.ParentId, req.Page, req.Size)), nil
 }
 
 func (c *ControllerV1) ManageAreaDetail(ctx context.Context, req *v1.ManageAreaDetailReq) (*v1.CommonRes, error) {
-	return ok(service.S.ManageAreaDetail(ctx, req.UserId, req.AreaId)), nil
+	return ok(service.S.Views.ManageAreaDetail(ctx, req.UserId, req.AreaId)), nil
 }
 
 func (c *ControllerV1) ManageAreaSave(ctx context.Context, req *v1.ManageAreaSaveReq) (*v1.CommonRes, error) {
-	saved, err := service.S.SaveArea(ctx, req.UserId, &service.AreaSaveInput{
+	saved, err := service.S.Areas.Save(ctx, req.UserId, &service.AreaSaveInput{
 		Id:       req.Id,
 		ParentId: req.ParentId,
 		Name:     req.Name,
@@ -225,9 +245,9 @@ func (c *ControllerV1) ManageAreaSave(ctx context.Context, req *v1.ManageAreaSav
 }
 
 func (c *ControllerV1) ManageAreaReorder(ctx context.Context, req *v1.ManageAreaReorderReq) (*v1.CommonRes, error) {
-	if err := service.S.ReorderArea(ctx, req.UserId, &service.AreaReorderInput{
-		Id:        req.Id,
-		Direction: req.Direction,
+	if err := service.S.Areas.Reorder(ctx, req.UserId, &service.AreaReorderInput{
+		AreaId:   req.AreaId,
+		ToAreaId: req.ToAreaId,
 	}); err != nil {
 		return fail(err.Error()), nil
 	}
@@ -235,22 +255,22 @@ func (c *ControllerV1) ManageAreaReorder(ctx context.Context, req *v1.ManageArea
 }
 
 func (c *ControllerV1) ManageAreaDelete(ctx context.Context, req *v1.ManageAreaDeleteReq) (*v1.CommonRes, error) {
-	if err := service.S.DeleteArea(ctx, req.UserId, req.Id); err != nil {
+	if err := service.S.Areas.Delete(ctx, req.UserId, req.Id); err != nil {
 		return fail(err.Error()), nil
 	}
 	return ok(true), nil
 }
 
 func (c *ControllerV1) ManageOrgTree(ctx context.Context, req *v1.ManageOrgTreeReq) (*v1.CommonRes, error) {
-	return ok(service.S.ManageOrgs(req.UserId)), nil
+	return ok(service.S.Views.ManageOrgs(req.UserId)), nil
 }
 
 func (c *ControllerV1) ManageOrgDetail(ctx context.Context, req *v1.ManageOrgDetailReq) (*v1.CommonRes, error) {
-	return ok(service.S.ManageOrgDetail(req.UserId, req.OrgId)), nil
+	return ok(service.S.Views.ManageOrgDetail(req.UserId, req.OrgId)), nil
 }
 
 func (c *ControllerV1) ManageOrgSave(ctx context.Context, req *v1.ManageOrgSaveReq) (*v1.CommonRes, error) {
-	saved, err := service.S.SaveOrg(ctx, req.UserId, &service.OrgSaveInput{
+	saved, err := service.S.Orgs.Save(ctx, req.UserId, &service.OrgSaveInput{
 		Id:       req.Id,
 		ParentId: req.ParentId,
 		Name:     req.Name,
@@ -262,14 +282,14 @@ func (c *ControllerV1) ManageOrgSave(ctx context.Context, req *v1.ManageOrgSaveR
 }
 
 func (c *ControllerV1) ManageOrgDelete(ctx context.Context, req *v1.ManageOrgDeleteReq) (*v1.CommonRes, error) {
-	if err := service.S.DeleteOrg(ctx, req.UserId, req.Id); err != nil {
+	if err := service.S.Orgs.Delete(ctx, req.UserId, req.Id); err != nil {
 		return fail(err.Error()), nil
 	}
 	return ok(true), nil
 }
 
 func (c *ControllerV1) ManageResourceSave(ctx context.Context, req *v1.ManageResourceSaveReq) (*v1.CommonRes, error) {
-	saved, err := service.S.SaveResource(ctx, req.UserId, &service.ResourceSaveInput{
+	saved, err := service.S.Resources.Save(ctx, req.UserId, &service.ResourceSaveInput{
 		Id:     req.Id,
 		AreaId: req.AreaId,
 		Name:   req.Name,
@@ -282,7 +302,7 @@ func (c *ControllerV1) ManageResourceSave(ctx context.Context, req *v1.ManageRes
 }
 
 func (c *ControllerV1) ManageResourceDelete(ctx context.Context, req *v1.ManageResourceDeleteReq) (*v1.CommonRes, error) {
-	if err := service.S.DeleteResource(ctx, req.UserId, req.Id); err != nil {
+	if err := service.S.Resources.Delete(ctx, req.UserId, req.Id); err != nil {
 		return fail(err.Error()), nil
 	}
 	return ok(true), nil

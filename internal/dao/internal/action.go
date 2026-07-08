@@ -21,6 +21,7 @@ type ActionDao struct {
 
 // ActionColumns defines and stores column names for the table action.
 type ActionColumns struct {
+	Id   string // 操作项ID
 	Code string // 操作编码,如 live/playback/picture
 	Name string // 操作名称
 	Sort string // 排序
@@ -28,6 +29,7 @@ type ActionColumns struct {
 
 // actionColumns holds the columns for the table action.
 var actionColumns = ActionColumns{
+	Id:   "id",
 	Code: "code",
 	Name: "name",
 	Sort: "sort",
