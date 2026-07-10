@@ -95,14 +95,16 @@ docs/海康对照.md              真实海康 iSecure Center 对照验证
 
 接口统一采用 GoFrame 分组 + 动作式路由,不使用 RESTful 路径参数,仅 GET/POST:
 `/api/meta`
-角色:`/api/role/list`(GET) `/api/role/detail?id=`(GET) `/api/role/save?userId=`(POST,基础权限委派合并;菜单只提交 `menuCodes`) `/api/role/delete?userId=`(POST,body 含 id,委派校验+级联清理) `/api/role/grantable?userId=` `/api/role/area-children?userId=&parentId=&kind=`
+角色:`/api/role/list`(GET) `/api/role/detail?id=`(GET) `/api/role/save`(POST,基础权限委派合并;菜单只提交 `menuCodes`) `/api/role/delete`(POST,body 含 id,委派校验+级联清理) `/api/role/grantable` `/api/role/area-children?parentId=&kind=`
 鉴权:`/api/auth/check`(POST)
-用户:`/api/user/list` `/api/user/detail?id=` `/api/user/save?userId=`(POST) `/api/user/delete?userId=`(POST)
-区域管理:`/api/manage/area-save`(POST,?userId= 新增/重命名/移动,写时鉴权+path 维护) `/api/manage/area-reorder`(POST) `/api/manage/area-delete`(POST)
-组织管理:`/api/manage/org-save`(POST,?userId= 新增/重命名/移动) `/api/manage/org-delete`(POST)
-资源管理:`/api/manage/resource-save`(POST,?userId= 新增/重命名/改类型/移动) `/api/manage/resource-delete`(POST)
-应用端:`/api/app/menu` `/api/app/area-tree`(全量) `/api/app/area-children`(按层懒加载+分页 ?parentId=&page=&size=) `/api/app/area-search`(?q=&scope=app|manage) `/api/app/resource-list`(资源分页 ?areaId=&page=&size=)(均 ?userId=)
+用户:`/api/user/list` `/api/user/detail?id=` `/api/user/save`(POST) `/api/user/delete`(POST)
+区域管理:`/api/manage/area-save`(POST,新增/重命名/移动,写时鉴权+path 维护) `/api/manage/area-reorder`(POST) `/api/manage/area-delete`(POST)
+组织管理:`/api/manage/org-save`(POST,新增/重命名/移动) `/api/manage/org-delete`(POST)
+资源管理:`/api/manage/resource-save`(POST,新增/重命名/改类型/移动) `/api/manage/resource-delete`(POST)
+应用端:`/api/app/menu` `/api/app/area-tree`(全量) `/api/app/area-children`(按层懒加载+分页 ?parentId=&page=&size=) `/api/app/area-search`(?q=&scope=app|manage) `/api/app/resource-list`(资源分页 ?areaId=&page=&size=)
 后台:`/api/manage/menu` `/api/manage/area-tree`(全量) `/api/manage/area-children`(按层懒加载+分页 AREA 域) `/api/manage/org-tree` `/api/manage/area-detail` `/api/manage/org-detail`
+
+以上接口的当前登录用户均不属于请求参数。生产环境由认证网关解析 token 后写入 `security.trustedUserHeader` 配置的可信请求头,`identity.go` 校验后存入请求上下文;本地演示仅通过 `X-Demo-User-Id` 请求头切换账号。
 
 ---
 

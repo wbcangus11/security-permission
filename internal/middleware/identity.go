@@ -21,9 +21,6 @@ func Identity(r *ghttp.Request) {
 	actorID := ""
 	if DemoMode(r.Context()) {
 		actorID = strings.TrimSpace(r.Header.Get(demoUserHeader))
-		if actorID == "" {
-			actorID = strings.TrimSpace(r.GetQuery("userId").String())
-		}
 	} else if header := trustedUserHeader(r.Context()); header != "" {
 		actorID = strings.TrimSpace(r.Header.Get(header))
 	}

@@ -586,7 +586,7 @@ function resAreaCovers(areaId){ const sc=rtScopes('resarea'), p=rtPath(areaId);
 }
 // 拉取某层(后端按当前用户可授范围过滤),写入 index/childrenOf;若父为子树授权则新子继承勾选(级联)。
 async function rtFetch(kind, parentId){
-  const list=await api(`/api/role/area-children?userId=${currentUserId()}&parentId=${parentId}&kind=${kind}`)||[];
+  const list=await api(`/api/role/area-children?parentId=${parentId}&kind=${kind}`)||[];
   const st=roleTree[kind]; const inheritSub = parentId!==0 && st.chk[parentId] && st.sub[parentId];
   list.forEach(n=>{ st.index[n.id]=n; if(inheritSub){ st.chk[n.id]=true; st.sub[n.id]=true; } });
   st.childrenOf[parentId]=list.map(n=>n.id);
@@ -797,7 +797,7 @@ async function reloadMeta(){
   document.getElementById('tUser').innerHTML = userOpts;
   document.getElementById('loginUser').innerHTML = userOpts;
   syncLoginDisplay();
-  META._roles = await api('/api/role/list?userId='+loginUserId());
+  META._roles = await api('/api/role/list');
   renderAccountPanel();
 }
 function loginUserId(){ return document.getElementById('loginUser').value || '0'; }
@@ -816,9 +816,8 @@ function switchView(v){
 }
 async function onLoginChange(){ syncLoginDisplay(); await loadAppView(); await loadSysView(); await refreshRolePanel(); }
 async function loadAppView(){
-  const uid=loginUserId();
   // 应用菜单(功能权限)→ 卡片
-  const menus=await api('/api/app/menu?userId='+uid);
+  const menus=await api('/api/app/menu');
   renderAppCards(menus);
   // 视频监控模块用的可见区域树(按层懒加载 + 分页)
   await loadAppAreaRoot();
@@ -951,7 +950,7 @@ function lazyTreeNode(n, opts){
   return node;
 }
 // 应用端浏览树(RES_AREA 数据权限)
-function appTreeOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/app/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'该用户无任何可见区域', icon:'i-area', activeSel:'#appAreaTree .area-node', onClick:(n)=>openArea(n.id), defaultExpandRoot:true }; }
+function appTreeOpts(){ return { url:(p,pg,s)=>`/api/app/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'该用户无任何可见区域', icon:'i-area', activeSel:'#appAreaTree .area-node', onClick:(n)=>openArea(n.id), defaultExpandRoot:true }; }
 async function loadAppAreaRoot(){ mountTreeSearch('appAreaTree','app', appTreeOpts, renderAppTreeRoot); await renderAppTreeRoot(); }
 async function renderAppTreeRoot(){ const el=document.getElementById('appAreaTree'); el.innerHTML=''; await lazyTreeLevel(el, 0, 1, true, appTreeOpts()); }
 // 树搜索框:挂到树容器上方;输入即搜(全树扫描 + 权限过滤,后端下推),清空恢复懒加载树
@@ -966,8 +965,8 @@ function mountTreeSearch(treeElId, scope, optsFn, restoreFn){
 }
 // 搜索:对齐真实海康——结果按「局部树」展示(命中分支的祖先作上下文,匹配项高亮),最多前 500 条,超出给提示。
 async function searchTreeInto(treeElId, q, scope, opts){
-  const uid=loginUserId(); const el=document.getElementById(treeElId);
-  const d=await api(`/api/app/area-search?userId=${uid}&scope=${scope}&q=${encodeURIComponent(q)}`);
+  const el=document.getElementById(treeElId);
+  const d=await api(`/api/app/area-search?scope=${scope}&q=${encodeURIComponent(q)}`);
   el.innerHTML='';
   const items=d.items||[];
   // 截断提示(对齐海康原文:搜索结果过多,仅展示前 500 条,建议缩小搜索范围。)
@@ -1011,8 +1010,7 @@ function hlMatch(name,q){
 }
 // 点击区域:分页拉取其子树内、用户有权的资源(权限下推 SQL)。
 async function openArea(areaId){
-  const uid=loginUserId();
-  const d=await api(`/api/app/resource-list?userId=${uid}&areaId=${areaId}&page=1&size=${RES_PAGE}`);
+  const d=await api(`/api/app/resource-list?areaId=${areaId}&page=1&size=${RES_PAGE}`);
   const main=document.getElementById('appMain');
   if(!d.accessible){
     main.innerHTML=`<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-lock"></use></svg></div>暂无操作权限<div class="muted" style="margin-top:8px">「${d.areaName}」仅用于导航,你没有该区域资源的权限</div></div>`;
@@ -1020,21 +1018,21 @@ async function openArea(areaId){
   }
   if(!d.total){ main.innerHTML=`<h3>${d.areaName}</h3><div class="muted">该区域下暂无监控资源</div>`; return; }
   main.innerHTML=`<h3>${d.areaName} — 监控资源 <span class="muted" style="font-size:13px;font-weight:400">(共 ${d.total} 个)</span></h3><div id="resList"></div><div id="resMore"></div>`;
-  appendResCards(d.resources); renderResMore(d, uid, areaId);
+  appendResCards(d.resources); renderResMore(d, areaId);
 }
 function appResCardHtml(r){ return `<div class="res-card">
       <div class="rc-title">${svgIco('i-video')} ${r.name} <span class="badge">${r.area}</span></div>
       <div>${r.actions.map(a=>`<button class="op-btn" ${a.allowed?'':'disabled'} onclick="doOp('${r.name}','${a.name}',${a.allowed})">${a.name}</button>`).join('')}</div>
     </div>`; }
 function appendResCards(list){ document.getElementById('resList').insertAdjacentHTML('beforeend',(list||[]).map(appResCardHtml).join('')); }
-function renderResMore(d, uid, areaId){
+function renderResMore(d, areaId){
   const box=document.getElementById('resMore'); box.innerHTML='';
   const shown=d.page*d.size;
   if(d.total>shown){
     const btn=document.createElement('div'); btn.className='area-more';
     btn.style.cssText='cursor:pointer;color:var(--brand);padding:8px 0;font-size:13px';
     btn.textContent=`加载更多(${shown}/${d.total})`;
-    btn.onclick=async()=>{ const nd=await api(`/api/app/resource-list?userId=${uid}&areaId=${areaId}&page=${d.page+1}&size=${d.size}`); appendResCards(nd.resources); renderResMore(nd, uid, areaId); };
+    btn.onclick=async()=>{ const nd=await api(`/api/app/resource-list?areaId=${areaId}&page=${d.page+1}&size=${d.size}`); appendResCards(nd.resources); renderResMore(nd, areaId); };
     box.appendChild(btn);
   }
 }
@@ -1087,8 +1085,7 @@ function showSysPanel(panel, name){
   if(panel==='placeholder'){ document.getElementById('phName').textContent=name||''; }
 }
 async function loadSysView(){
-  const uid=loginUserId();
-  const menus=await api('/api/manage/menu?userId='+uid);
+  const menus=await api('/api/manage/menu');
   const navEl=document.getElementById('sysMenus');
   renderSysNav(navEl, menus);
   // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
@@ -1097,7 +1094,7 @@ async function loadSysView(){
   if(def){ const el=navEl.querySelector(`.nav-item[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
   else { showSysPanel('none'); }
   await loadManageAreaRoot(); // 安保区域:按层懒加载 + 分页(AREA 数据权限)
-  MANAGE_ORGS = await api('/api/manage/org-tree?userId='+uid);
+  MANAGE_ORGS = await api('/api/manage/org-tree');
   renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
   document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
   document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
@@ -1137,9 +1134,8 @@ let MANAGE_ORGS=[];             // 当前登录用户可见的管理组织(flat,
 let CUR_RES_ITEMS=[];          // 当前打开区域的资源条目(带 id/type,供资源增删改)
 let resEditId=0, resMoveTarget=0; // 资源编辑/移动的目标 id
 async function openManageNode(kind, id){
-  const uid=loginUserId();
   curManage[kind]=id;
-  const url = kind==='area' ? `/api/manage/area-detail?userId=${uid}&areaId=${id}` : `/api/manage/org-detail?userId=${uid}&orgId=${id}`;
+  const url = kind==='area' ? `/api/manage/area-detail?areaId=${id}` : `/api/manage/org-detail?orgId=${id}`;
   const d=await api(url);
   const main=document.getElementById(kind==='area'?'sysMainArea':'sysMainOrg');
   const label = kind==='area' ? '区域' : '组织';
@@ -1226,7 +1222,7 @@ async function resFormDo(){
     ? {id:resEditId, name, type, areaId:(CUR_RES_ITEMS.find(x=>x.id===resEditId)||{}).areaId}  // 同区域=改名/类型
     : {areaId:curManage.area, name, type};
   try{
-    await api('/api/manage/resource-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await api('/api/manage/resource-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     toast((resEditId>0?'已保存:':'已新增:')+name,'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('保存失败', e); }
 }
@@ -1235,7 +1231,7 @@ function resMoveUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return;
 async function resMoveDo(target){
   const r=CUR_RES_ITEMS.find(x=>x.id===resMoveTarget)||{};
   try{
-    await api('/api/manage/resource-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resMoveTarget,areaId:target.id,name:r.name,type:r.type})});
+    await api('/api/manage/resource-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resMoveTarget,areaId:target.id,name:r.name,type:r.type})});
     closeMovePicker(); toast('已移动:'+(r.name||''),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('移动失败', e); }
 }
@@ -1243,7 +1239,7 @@ async function resDelete(id){
   const r=CUR_RES_ITEMS.find(x=>x.id===id)||{}; const name=r.name||('#'+id);
   if(!(await modalConfirm('确认删除资源「'+name+'」?\n删除后应用端资源列表将不再显示该资源。'))) return;
   try{
-    await api('/api/manage/resource-delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/manage/resource-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('删除失败', e); }
 }
@@ -1251,7 +1247,7 @@ async function resDelete(id){
 // ---------- 区域增删改(真实落库) ----------
 function manageAreaName(id){ return (curAreaNode&&curAreaNode.id===id)?curAreaNode.name:('#'+id); }
 // 后台管理树(AREA 数据权限):按层懒加载 + 分页,复用 lazyTree
-function manageAreaTreeOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/manage/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可见区域', icon:'i-area', activeSel:'#manageAreaTree .area-node', onClick:(n)=>openManageNode('area', n.id), defaultExpandRoot:true }; }
+function manageAreaTreeOpts(){ return { url:(p,pg,s)=>`/api/manage/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可见区域', icon:'i-area', activeSel:'#manageAreaTree .area-node', onClick:(n)=>openManageNode('area', n.id), defaultExpandRoot:true }; }
 async function loadManageAreaRoot(){ mountTreeSearch('manageAreaTree','manage', manageAreaTreeOpts, renderManageTreeRoot); await renderManageTreeRoot(); }
 async function renderManageTreeRoot(){ const el=document.getElementById('manageAreaTree'); el.innerHTML=''; await lazyTreeLevel(el, 0, 1, true, manageAreaTreeOpts()); }
 // 操作成功后:重渲染懒加载树 + 刷新元数据(角色编辑器/应用端的区域树),并重新打开 focusId 详情
@@ -1265,7 +1261,7 @@ async function refreshAreaMgmt(focusId){
 async function areaAdd(){
   const name=await modalPrompt('新子区域名称:'); if(!name||!name.trim()) return;
   try{
-    await api('/api/manage/area-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.area,name:name.trim()})});
+    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.area,name:name.trim()})});
     toast('已新增子区域:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('新增失败', e); }
 }
@@ -1273,16 +1269,16 @@ async function areaRename(){
   const cur=manageAreaName(curManage.area);
   const name=await modalPrompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
   try{
-    await api('/api/manage/area-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,name:name.trim()})});
+    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,name:name.trim()})});
     toast('已重命名为:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('重命名失败', e); }
 }
 // 移动:弹出懒加载树选择器,导航到目标点选(只能选 accessible 节点);写时后端再校验防环/权限/重名
-function areaPickerOpts(){ const uid=loginUserId(); return { url:(p,pg,s)=>`/api/manage/area-children?userId=${uid}&parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
+function areaPickerOpts(){ return { url:(p,pg,s)=>`/api/manage/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
 function areaMoveUI(){ if(!curManage.area) return; openMovePicker('移动「'+manageAreaName(curManage.area)+'」到…', areaPickerOpts(), areaMoveDo); }
 async function areaMoveDo(target){
   try{
-    await api('/api/manage/area-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target.id,name:manageAreaName(curManage.area)})});
+    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target.id,name:manageAreaName(curManage.area)})});
     closeMovePicker(); toast('已移动到:'+target.name,'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('移动失败', e); }
 }
@@ -1295,7 +1291,7 @@ async function areaReorder(direction){
   const target=siblings[direction==='up'?idx-1:idx+1];
   if(!target){ toast(direction==='up'?'已经是第一个':'已经是最后一个','i-check'); return; }
   try{
-    await api('/api/manage/area-reorder?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({areaId:curManage.area,toAreaId:target.id})});
+    await api('/api/manage/area-reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({areaId:curManage.area,toAreaId:target.id})});
     toast(direction==='up'?'已上移':'已下移','i-check');
     await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('排序失败', e); }
@@ -1331,7 +1327,7 @@ async function areaDelete(){
   if(!(await modalConfirm('确认删除区域「'+name+'」?\n(仅允许删除无子区域、无资源的区域;对该区域的授权记录将一并清理)'))) return;
   const pid=(curAreaNode&&curAreaNode.parentId)||0;
   try{
-    await api('/api/manage/area-delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
+    await api('/api/manage/area-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
     toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(pid);
   }catch(e){ await modalError('删除失败', e); }
 }
@@ -1339,8 +1335,7 @@ async function areaDelete(){
 function manageOrgName(id){ const o=MANAGE_ORGS.find(x=>x.id===id); return o?o.name:('#'+id); }
 // 操作成功后:刷新左树 + 元数据(角色编辑器的组织树 / 用户管理的所属组织下拉),并重新打开 focusId
 async function refreshOrgMgmt(focusId){
-  const uid=loginUserId();
-  MANAGE_ORGS = await api('/api/manage/org-tree?userId='+uid);
+  MANAGE_ORGS = await api('/api/manage/org-tree');
   renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
   await reloadMeta();
   if(focusId && MANAGE_ORGS.some(x=>x.id===focusId)) await openManageNode('org', focusId);
@@ -1349,7 +1344,7 @@ async function refreshOrgMgmt(focusId){
 async function orgAdd(){
   const name=await modalPrompt('新子组织名称:'); if(!name||!name.trim()) return;
   try{
-    await api('/api/manage/org-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.org,name:name.trim()})});
+    await api('/api/manage/org-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.org,name:name.trim()})});
     toast('已新增子组织:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
   }catch(e){ await modalError('新增失败', e); }
 }
@@ -1357,7 +1352,7 @@ async function orgRename(){
   const cur=manageOrgName(curManage.org);
   const name=await modalPrompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
   try{
-    await api('/api/manage/org-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,name:name.trim()})});
+    await api('/api/manage/org-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,name:name.trim()})});
     toast('已重命名为:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
   }catch(e){ await modalError('重命名失败', e); }
 }
@@ -1377,7 +1372,7 @@ function orgMoveUI(){
 async function orgMoveDo(){
   const target=Number(document.getElementById('orgMoveSel').value||0); if(!target) return;
   try{
-    await api('/api/manage/org-save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,parentId:target,name:manageOrgName(curManage.org)})});
+    await api('/api/manage/org-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,parentId:target,name:manageOrgName(curManage.org)})});
     toast('已移动到:'+manageOrgName(target),'i-check'); await refreshOrgMgmt(curManage.org);
   }catch(e){ await modalError('移动失败', e); }
 }
@@ -1386,7 +1381,7 @@ async function orgDelete(){
   if(!(await modalConfirm('确认删除组织「'+name+'」?\n(仅允许删除无子组织、无下属用户的组织;对该组织的授权记录将一并清理)'))) return;
   const pid=(MANAGE_ORGS.find(x=>x.id===curManage.org)||{}).parentId||0;
   try{
-    await api('/api/manage/org-delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org})});
+    await api('/api/manage/org-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org})});
     toast('已删除:'+name,'i-trash'); await refreshOrgMgmt(pid);
   }catch(e){ await modalError('删除失败', e); }
 }
@@ -1506,7 +1501,7 @@ async function saveUser(){
   const roleIds=[...document.querySelectorAll('#editUserRoles input:checked')].map(c=>Number(c.value));
   const isSuperuser=document.getElementById('editUserSuper').checked;
   try{
-    const saved=await api('/api/user/save?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,orgId,roleIds,isSuperuser})});
+    const saved=await api('/api/user/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,orgId,roleIds,isSuperuser})});
     EDIT_USER_ID=String(saved.id);
     await reloadMeta();
     await loadSysView();
@@ -1520,7 +1515,7 @@ async function deleteUser(){
   if(!u) return;
   if(!(await modalConfirm('确认删除账号「'+u.name+'」?\n用户与角色绑定将一并清理。'))) return;
   try{
-    await api('/api/user/delete?userId='+loginUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/user/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     EDIT_USER_ID='';
     await reloadMeta();
     await loadSysView();
@@ -1529,7 +1524,7 @@ async function deleteUser(){
   }catch(e){ await modalError('删除失败', e); }
 }
 async function fetchGrantable(){
-  GRANT = await api('/api/role/grantable?userId='+currentUserId());
+  GRANT = await api('/api/role/grantable');
   const nm=(META.users||[]).find(u=>String(u.id)===currentUserId());
   const an=document.getElementById('currentUserName'); if(an) an.textContent=nm?nm.name+(nm.isSuperuser?' ★超管':''):('#'+currentUserId());
   const ah=document.getElementById('currentUserHint'); if(ah) ah.textContent = GRANT.unlimited ? '(超管可见并可管理全部角色)' : '';
@@ -1546,7 +1541,7 @@ async function refreshRolePanel(){
 }
 
 async function refreshRoles(){
-  const roles = await api('/api/role/list?userId='+currentUserId());
+  const roles = await api('/api/role/list');
   META._roles = roles;            // 供用户管理用
   ALL_ROLES = roles;
   if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
@@ -1571,7 +1566,7 @@ async function delRole(id){
   const r=(META._roles||[]).find(x=>x.id===id)||{}; const name=r.name||('#'+id);
   if(!(await modalConfirm(`确认删除角色「${name}」?\n\n绑定该角色的用户将失去这部分权限(若不再有其他角色,登录后将无任何权限)。\n此操作不可撤销。`))) return;
   try{
-    await api('/api/role/delete?userId='+currentUserId(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await api('/api/role/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     if(currentRoleId===id) currentRoleId=0;
     toast('已删除角色:'+name,'i-trash');
     await reloadMeta();   // user_role 绑定可能变化 → 刷新用户列表/角色下拉
@@ -1589,7 +1584,7 @@ async function loadRole(id){
   if(!id){ return; }
   currentRoleId=id; highlightRole(id); // 立即高亮,不等异步重渲染
   resetTreeFold('org');
-  role = await api('/api/role/detail?userId='+currentUserId()+'&id='+id);
+  role = await api('/api/role/detail?id='+id);
   document.getElementById('roleName').value=role.name||'';
   document.getElementById('roleDesc').value=role.description||'';
   // 菜单勾选
@@ -1648,7 +1643,7 @@ async function saveRole(){
   };
   if(!r.name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
   const vbox=document.getElementById('violations'); vbox.style.display='none'; vbox.innerHTML='';
-  const resp=await fetch('/api/role/save?userId='+currentUserId(),{method:'POST',headers:{'Content-Type':'application/json','X-Demo-User-Id':currentUserId()},body:JSON.stringify(r)});
+  const resp=await fetch('/api/role/save',{method:'POST',headers:{'Content-Type':'application/json','X-Demo-User-Id':currentUserId()},body:JSON.stringify(r)});
   const j=unwrapRes(await resp.json());
   if(j.code!==0){ await modalAlert('保存失败:'+j.message,'操作失败','i-x'); return; }
   let msg='已保存:'+j.data.name;
