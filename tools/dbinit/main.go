@@ -2,9 +2,10 @@
 //  1. 总是应用 schema.sql(CREATE ... IF NOT EXISTS),库/表已存在则不动;
 //  2. 迁移:为已存在的旧表补加新列、调整列类型、统一单列 id 主键;
 //  3. 总是应用 menu.sql,按 code 幂等同步内置菜单/权限点;
-//  4. 仅当 role 表为空时,才导入 seed.sql 种子数据;
-//  5. 确保存在一个超级管理员(is_superuser=1),新库旧库都补;
-//  6. 已有数据一律保留,可反复安全执行。
+//  4. 清理已移除功能的废弃结构(资源单项操作覆盖表与旧标记);
+//  5. 仅当 role 表为空时,才导入 seed.sql 种子数据;
+//  6. 确保存在一个超级管理员(is_superuser=1),新库旧库都补;
+//  7. 除已明确移除的功能数据外,已有业务数据一律保留,可反复安全执行。
 //
 // 用法(项目根目录):go run ./tools/dbinit
 package main
@@ -19,12 +20,16 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 )
 
-const dsn = "root:123456@tcp(127.0.0.1:3306)/?multiStatements=true&charset=utf8mb4&parseTime=true&loc=Local"
+const defaultDSN = "root:123456@tcp(127.0.0.1:3306)/?multiStatements=true&charset=utf8mb4&parseTime=true&loc=Local"
 
 func main() {
 	recreate := flag.Bool("recreate", false, "drop and recreate security_permission database before initialization")
 	flag.Parse()
 
+	dsn := strings.TrimSpace(os.Getenv("DB_INIT_DSN"))
+	if dsn == "" {
+		dsn = defaultDSN
+	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		exit("连接失败", err)
@@ -43,6 +48,12 @@ func main() {
 		exit("应用 schema.sql 失败", err)
 	}
 	fmt.Println("✅ 表结构已就绪(已存在则跳过)")
+
+	// 资源单项操作覆盖功能已移除。旧库可能还残留覆盖表和 RESOVR 行,
+	// 初始化时直接清理,避免废弃数据继续误导排查。
+	if err = dropRemovedResourcePermission(db); err != nil {
+		exit("清理废弃资源覆盖权限失败", err)
+	}
 
 	// 2. 迁移:旧表补列(user.is_superuser / menu 新字段)
 	if err = ensureColumn(db, "user", "is_superuser",
@@ -73,10 +84,6 @@ func main() {
 		"ALTER TABLE `security_permission`.`role_data_scope` DROP PRIMARY KEY, ADD COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '角色数据范围ID' FIRST, ADD PRIMARY KEY (`id`), ADD UNIQUE KEY `uk_role_scope` (`role_id`,`scope_type`,`node_id`)"); err != nil {
 		exit("迁移 role_data_scope.id 主键失败", err)
 	}
-	if err = ensureSurrogatePrimary(db, "role_resource_action",
-		"ALTER TABLE `security_permission`.`role_resource_action` DROP PRIMARY KEY, ADD COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '角色资源操作ID' FIRST, ADD PRIMARY KEY (`id`), ADD UNIQUE KEY `uk_role_resource_action` (`role_id`,`resource_id`,`action_code`)"); err != nil {
-		exit("迁移 role_resource_action.id 主键失败", err)
-	}
 	if err = ensureSurrogatePrimary(db, "user_role",
 		"ALTER TABLE `security_permission`.`user_role` DROP PRIMARY KEY, ADD COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '用户角色关系ID' FIRST, ADD PRIMARY KEY (`id`), ADD UNIQUE KEY `uk_user_role` (`user_id`,`role_id`)"); err != nil {
 		exit("迁移 user_role.id 主键失败", err)
@@ -89,8 +96,12 @@ func main() {
 		{"action", "uk_action_code", "ALTER TABLE `security_permission`.`action` ADD UNIQUE KEY `uk_action_code` (`code`)"},
 		{"role_menu", "uk_role_menu", "ALTER TABLE `security_permission`.`role_menu` ADD UNIQUE KEY `uk_role_menu` (`role_id`,`menu_id`)"},
 		{"role_data_scope", "uk_role_scope", "ALTER TABLE `security_permission`.`role_data_scope` ADD UNIQUE KEY `uk_role_scope` (`role_id`,`scope_type`,`node_id`)"},
-		{"role_resource_action", "uk_role_resource_action", "ALTER TABLE `security_permission`.`role_resource_action` ADD UNIQUE KEY `uk_role_resource_action` (`role_id`,`resource_id`,`action_code`)"},
 		{"user_role", "uk_user_role", "ALTER TABLE `security_permission`.`user_role` ADD UNIQUE KEY `uk_user_role` (`user_id`,`role_id`)"},
+		{"area", "uk_area_parent_name", "ALTER TABLE `security_permission`.`area` ADD UNIQUE KEY `uk_area_parent_name` (`parent_id`,`name`)"},
+		{"org", "uk_org_parent_name", "ALTER TABLE `security_permission`.`org` ADD UNIQUE KEY `uk_org_parent_name` (`parent_id`,`name`)"},
+		{"resource", "uk_resource_area_name", "ALTER TABLE `security_permission`.`resource` ADD UNIQUE KEY `uk_resource_area_name` (`area_id`,`name`)"},
+		{"role", "uk_role_name", "ALTER TABLE `security_permission`.`role` ADD UNIQUE KEY `uk_role_name` (`name`)"},
+		{"user", "uk_user_name", "ALTER TABLE `security_permission`.`user` ADD UNIQUE KEY `uk_user_name` (`name`)"},
 	} {
 		if err = ensureIndex(db, idx.table, idx.name, idx.sql); err != nil {
 			exit("迁移唯一索引 "+idx.table+"."+idx.name+" 失败", err)
@@ -245,6 +256,19 @@ func execFile(db *sql.DB, path string) error {
 	}
 	_, err = db.Exec(string(b))
 	return err
+}
+
+func dropRemovedResourcePermission(db *sql.DB) error {
+	stmts := []string{
+		"DELETE FROM `security_permission`.`role_data_scope` WHERE `scope_type`='RESOVR'",
+		"DROP TABLE IF EXISTS `security_permission`.`role_resource_action`",
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func exit(msg string, err error) {

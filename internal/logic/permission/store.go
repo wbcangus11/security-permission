@@ -2,7 +2,7 @@
 //
 // Application 是对外服务入口;Store 只保存从 MySQL 加载出来的运行时快照,
 // 供鉴权、委派、视图查询和写业务服务共同读取。
-package service
+package permission
 
 import (
 	"sort"
@@ -140,7 +140,11 @@ func (s *Store) Resources() []*model.Resource {
 }
 
 // Actions 返回资源操作字典,例如实时预览、远程回放、图片查询。
-func (s *Store) Actions() []model.Action { return s.actions }
+func (s *Store) Actions() []model.Action {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]model.Action(nil), s.actions...)
+}
 
 // Roles 返回全部角色,按 ID 排序。
 // 普通用户能不能看到某个角色,由 ManageableRoles/前端可见性再过滤。

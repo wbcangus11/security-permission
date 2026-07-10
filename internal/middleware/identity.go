@@ -1,0 +1,62 @@
+package middleware
+
+import (
+	"context"
+	"strings"
+
+	"github.com/gogf/gf/v2/errors/gerror"
+	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/net/ghttp"
+
+	"security-permission/internal/consts"
+	"security-permission/internal/service"
+)
+
+const demoUserHeader = "X-Demo-User-Id"
+
+// Identity resolves the request actor once and stores it in the GoFrame request
+// context. Demo impersonation is isolated behind security.demoMode; production
+// deployments must let a trusted gateway populate security.trustedUserHeader.
+func Identity(r *ghttp.Request) {
+	actorID := ""
+	if DemoMode(r.Context()) {
+		actorID = strings.TrimSpace(r.Header.Get(demoUserHeader))
+		if actorID == "" {
+			actorID = strings.TrimSpace(r.GetQuery("userId").String())
+		}
+	} else if header := trustedUserHeader(r.Context()); header != "" {
+		actorID = strings.TrimSpace(r.Header.Get(header))
+	}
+	if actorID != "" {
+		r.SetCtxVar(consts.ContextKeyActorID, actorID)
+	}
+	r.Middleware.Next()
+}
+
+// ActorID returns the authenticated actor. The unrestricted maintenance actor
+// "0" is deliberately unavailable over HTTP.
+func ActorID(ctx context.Context) (string, error) {
+	r := g.RequestFromCtx(ctx)
+	if r == nil {
+		return "", gerror.New("请求上下文不存在")
+	}
+	actorID := strings.TrimSpace(r.GetCtxVar(consts.ContextKeyActorID).String())
+	if actorID == "" {
+		return "", gerror.New("未登录或身份凭证缺失")
+	}
+	if actorID == "0" {
+		return "", gerror.New("系统维护身份不能通过 HTTP 使用")
+	}
+	if service.RuntimeService().User(actorID) == nil {
+		return "", gerror.New("当前登录用户不存在")
+	}
+	return actorID, nil
+}
+
+func DemoMode(ctx context.Context) bool {
+	return g.Cfg().MustGetWithEnv(ctx, "security.demoMode", true).Bool()
+}
+
+func trustedUserHeader(ctx context.Context) string {
+	return strings.TrimSpace(g.Cfg().MustGetWithEnv(ctx, "security.trustedUserHeader", "").String())
+}

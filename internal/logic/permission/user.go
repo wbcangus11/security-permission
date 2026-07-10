@@ -1,4 +1,4 @@
-package service
+package permission
 
 // 用户(账号)管理:基础增删改查的写时鉴权。
 //
@@ -20,9 +20,9 @@ import (
 	"security-permission/internal/model"
 )
 
-// SaveUserManaged 新增或更新用户,带账号管理写时鉴权。
+// SaveManaged 新增或更新用户,带账号管理写时鉴权。
 // actorId 是历史命名,语义上就是“当前用户 ID”;真实项目应来自 token/context。
-func (s *Store) SaveUserManaged(ctx context.Context, actorId string, in *model.User) (*model.User, error) {
+func (s *UserService) SaveManaged(ctx context.Context, actorId string, in *model.User) (*model.User, error) {
 	// 账号写操作先统一过功能关;返回 unrestricted 表示后续数据关/角色范围限制都可跳过。
 	actor, unrestricted, err := s.checkUserWriter(actorId)
 	if err != nil {
@@ -73,9 +73,9 @@ func (s *Store) SaveUserManaged(ctx context.Context, actorId string, in *model.U
 	return s.SaveUser(ctx, in)
 }
 
-// DeleteUser 删除用户并清理 user_role 绑定。
+// Delete 删除用户并清理 user_role 绑定。
 // actorId 是当前用户 ID;禁止删除自己,并且至少保留一个超级管理员。
-func (s *Store) DeleteUser(ctx context.Context, actorId, userId string) error {
+func (s *UserService) Delete(ctx context.Context, actorId, userId string) error {
 	// 删除账号也先过账号管理功能关;超管/不受限可跳过后续组织数据关。
 	actor, unrestricted, err := s.checkUserWriter(actorId)
 	if err != nil {
@@ -97,10 +97,22 @@ func (s *Store) DeleteUser(ctx context.Context, actorId, userId string) error {
 			return gerror.New("无权删除「" + target.Name + "」:" + d.Reason)
 		}
 	}
-	if target.IsSuperuser && s.superuserCount() <= 1 {
-		return gerror.New("至少保留一个超级管理员")
-	}
 	err = dao.User.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		if target.IsSuperuser {
+			// Lock all current superuser rows so concurrent deletes cannot both
+			// observe a safe count and remove the final administrators.
+			var superusers []struct{ Id string }
+			if err := tx.Model(dao.User.Table()).Ctx(ctx).
+				Fields(dao.User.Columns().Id).
+				Where(dao.User.Columns().IsSuperuser, true).
+				LockUpdate().
+				Scan(&superusers); err != nil {
+				return err
+			}
+			if len(superusers) <= 1 {
+				return gerror.New("至少保留一个超级管理员")
+			}
+		}
 		// 先清 user_role 再删 user,避免留下悬挂绑定;真实外键未启用,所以服务层显式清理。
 		if _, err := tx.Model(dao.UserRole.Table()).Ctx(ctx).Where(dao.UserRole.Columns().UserId, userId).Delete(); err != nil {
 			return err
@@ -114,7 +126,7 @@ func (s *Store) DeleteUser(ctx context.Context, actorId, userId string) error {
 	return s.reloadUsers(ctx)
 }
 
-func (s *Store) checkUserWriter(actorId string) (*model.User, bool, error) {
+func (s *UserService) checkUserWriter(actorId string) (*model.User, bool, error) {
 	if isUnrestrictedActor(actorId) {
 		return nil, true, nil
 	}
@@ -133,7 +145,7 @@ func (s *Store) checkUserWriter(actorId string) (*model.User, bool, error) {
 
 // mergeAssignableUserRoles 合并用户角色绑定。
 // 当前用户能分配的角色以提交为准;当前用户无权看到的旧绑定保留,避免编辑用户时误删。
-func (s *Store) mergeAssignableUserRoles(actorId string, unrestricted bool, old *model.User, submitted []int) ([]int, error) {
+func (s *UserService) mergeAssignableUserRoles(actorId string, unrestricted bool, old *model.User, submitted []int) ([]int, error) {
 	// 先清洗提交值:去重、忽略无效 ID、拒绝不存在的角色。
 	seen := map[int]bool{}
 	clean := []int{}
@@ -172,7 +184,7 @@ func (s *Store) mergeAssignableUserRoles(actorId string, unrestricted bool, old 
 }
 
 // userNameTaken 判断用户名是否已被其他用户占用。
-func (s *Store) userNameTaken(name string, excludeId string) bool {
+func (s *UserService) userNameTaken(name string, excludeId string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, u := range s.users {
@@ -181,24 +193,4 @@ func (s *Store) userNameTaken(name string, excludeId string) bool {
 		}
 	}
 	return false
-}
-
-func (s *Store) nextUserId() string {
-	maxId := 0
-	for _, u := range s.Users() {
-		if n, err := strconv.Atoi(u.Id); err == nil && n > maxId {
-			maxId = n
-		}
-	}
-	return strconv.Itoa(maxId + 1)
-}
-
-func (s *Store) superuserCount() int {
-	n := 0
-	for _, u := range s.Users() {
-		if u.IsSuperuser {
-			n++
-		}
-	}
-	return n
 }

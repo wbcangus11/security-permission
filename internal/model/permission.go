@@ -3,7 +3,7 @@
 // 设计要点(仿海康安防平台):
 //  1. 功能权限:角色 -> 菜单(分系统管理域 SYS / 应用域 APP 两类)。
 //  2. 数据权限(管理域):角色 -> 安保区域树 / 组织树,按节点授权,支持级联子树。
-//  3. 数据权限(应用域):角色 -> 业务资源范围(区域树)+ 资源级操作项精细覆盖。
+//  3. 数据权限(应用域):角色 -> 业务资源范围(区域树),范围内资源默认拥有全部操作项。
 //
 // 树范围统一存「节点 + 是否含子节点」,运行时用 path 前缀判断目标是否落在授权子树内,
 // 这样新增子节点可自动继承父节点权限,无需重新授权。
@@ -15,10 +15,9 @@ const (
 )
 
 const (
-	ScopeTypeArea             = "AREA"
-	ScopeTypeOrg              = "ORG"
-	ScopeTypeResourceArea     = "RES_AREA"
-	ScopeTypeResourceOverride = "RESOVR"
+	ScopeTypeArea         = "AREA"
+	ScopeTypeOrg          = "ORG"
+	ScopeTypeResourceArea = "RES_AREA"
 )
 
 // Area 安保区域(树形)。Path 形如 "/1/4/17/",含自身,用于子树前缀判断。
@@ -69,12 +68,6 @@ type DataScope struct {
 	IncludeChild bool `json:"includeChild"`
 }
 
-// ResourceAction 资源级操作的精细授权(高级配置,仅对已存在资源生效)。
-type ResourceAction struct {
-	ResourceId int    `json:"resourceId"`
-	ActionCode string `json:"actionCode"`
-}
-
 // Role 角色:聚合四类权限。
 type Role struct {
 	Id          int    `json:"id"`
@@ -91,12 +84,8 @@ type Role struct {
 	AreaScopes []DataScope `json:"areaScopes"` // 安保区域管理权限
 	OrgScopes  []DataScope `json:"orgScopes"`  // 组织管理权限
 
-	// 数据权限·应用域(两级:区域范围 粗 + 资源级 细)
-	ResourceAreaScopes []DataScope      `json:"resourceAreaScopes"` // L1 业务资源范围(粗粒度,继承新资源)
-	ResourceActions    []ResourceAction `json:"resourceActions"`    // L2 资源级操作精细覆盖
-	// L2「精细模式」资源集:进入精细=该资源只授予 ResourceActions 列出的操作(覆盖)。
-	// 显式持久化(独立于操作行数),使「精细+0操作」可表达=该资源零操作→应用端资源级不可见。
-	ResourceOverrides []int `json:"resourceOverrides"`
+	// 数据权限·应用域:业务资源范围。资源落在该区域范围内时,默认拥有全部资源操作项。
+	ResourceAreaScopes []DataScope `json:"resourceAreaScopes"`
 }
 
 // User 账号,可绑定多个角色,归属某组织。

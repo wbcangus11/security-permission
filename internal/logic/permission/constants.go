@@ -1,4 +1,4 @@
-package service
+package permission
 
 const (
 	// 树范围类型在运行时的内部标识。

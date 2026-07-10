@@ -1,7 +1,6 @@
-package service
+package permission
 
 import (
-	"strconv"
 	"strings"
 
 	"security-permission/internal/model"
@@ -26,7 +25,7 @@ func roleHasMenuId(r *model.Role, menuId int) bool {
 }
 
 // roleAllowsTree 判断某角色的树范围是否覆盖目标节点(精确命中或含子树)。
-func (s *Store) roleAllowsTree(scopes []model.DataScope, kind string, nodeId int) bool {
+func (s *PermissionService) roleAllowsTree(scopes []model.DataScope, kind string, nodeId int) bool {
 	targetPath := s.nodePath(kind, nodeId)
 	if targetPath == "" {
 		return false
@@ -46,11 +45,11 @@ func (s *Store) roleAllowsTree(scopes []model.DataScope, kind string, nodeId int
 
 // ---------- 操作者(用户)级判断 ----------
 
-func (s *Store) userHasMenuId(u *model.User, menuId int) bool {
+func (s *PermissionService) userHasMenuId(u *model.User, menuId int) bool {
 	return s.userHasMenuIdWithSkip(u, menuId, nil)
 }
 
-func (s *Store) userHasMenuIdWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
+func (s *PermissionService) userHasMenuIdWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
 	if skip == nil {
 		if isSuper(u) {
 			return true
@@ -63,7 +62,7 @@ func (s *Store) userHasMenuIdWithSkip(u *model.User, menuId int, skip map[int]bo
 	return s.userHasMenuIdUncachedWithSkip(u, menuId, skip)
 }
 
-func (s *Store) userHasMenuIdUncachedWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
+func (s *PermissionService) userHasMenuIdUncachedWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
 	if isSuper(u) { // 超级管理员拥有全部菜单 → SysMenus/AppMenus 自动返回全集
 		return true
 	}
@@ -78,24 +77,15 @@ func (s *Store) userHasMenuIdUncachedWithSkip(u *model.User, menuId int, skip ma
 	return false
 }
 
-func (s *Store) userResAreaCovers(u *model.User, areaId int) bool {
+func (s *PermissionService) userResAreaCovers(u *model.User, areaId int) bool {
 	return s.userResAreaCoversWithSkip(u, areaId, nil)
 }
 
-func (s *Store) userResAreaCoversWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
-	if skip == nil {
-		if isSuper(u) {
-			return true
-		}
-		if p := s.userPermissions(u); p != nil {
-			return p.ResAreaIds[areaId]
-		}
-		return false
-	}
+func (s *PermissionService) userResAreaCoversWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
 	return s.userResAreaCoversUncachedWithSkip(u, areaId, skip)
 }
 
-func (s *Store) userResAreaCoversUncachedWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
+func (s *PermissionService) userResAreaCoversUncachedWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
 	if isSuper(u) { // 超级管理员覆盖全部区域资源 → 应用端可见全部
 		return true
 	}
@@ -128,12 +118,11 @@ func intSet(ids []int) map[int]bool {
 	return m
 }
 
-func raKey(resId int, code string) string { return strconv.Itoa(resId) + ":" + code }
-
 // mergeScopes 合并树范围:范围内取提交,范围外保留原有。
 func mergeScopes(old, sub []model.DataScope, grant map[int]bool) ([]model.DataScope, int) {
 	out := []model.DataScope{}
 	seen := map[int]bool{}
+	// 范围内以本次提交为准：前端取消勾选就真正删除，新增勾选也可以写入。
 	for _, sc := range sub {
 		if grant[sc.NodeId] {
 			out = append(out, sc)
@@ -141,6 +130,7 @@ func mergeScopes(old, sub []model.DataScope, grant map[int]bool) ([]model.DataSc
 		}
 	}
 	preserved := 0
+	// 范围外保留旧值：编辑者看不到/无权触碰的授权不能被一次保存误删。
 	for _, sc := range old {
 		if !grant[sc.NodeId] && !seen[sc.NodeId] {
 			out = append(out, sc)
@@ -157,10 +147,11 @@ func isUnrestrictedActor(actorId string) bool {
 	return actorId == "0"
 }
 
-func (s *Store) MergeDelegated(actorId string, old, sub *model.Role) (*model.Role, int) {
+func (s *PermissionService) MergeDelegated(actorId string, old, sub *model.Role) (*model.Role, int) {
 	if old == nil {
 		old = &model.Role{}
 	}
+	// 不受限入口用于初始化/维护，直接采用提交内容，不做受控委派裁剪。
 	if isUnrestrictedActor(actorId) {
 		return sub, 0 // 不受限,直接采用提交
 	}
@@ -203,82 +194,6 @@ func (s *Store) MergeDelegated(actorId string, old, sub *model.Role) (*model.Rol
 	res.ResourceAreaScopes, p = mergeScopes(old.ResourceAreaScopes, sub.ResourceAreaScopes, resAreaG)
 	preserved += p
 
-	// 资源精细授权由独立页面和独立接口维护,保存角色基础权限时原样保留。
-	res.ResourceActions = append([]model.ResourceAction{}, old.ResourceActions...)
-	res.ResourceOverrides = append([]int{}, old.ResourceOverrides...)
-	return res, preserved
-}
-
-// MergeResourcePermissionDelegated 合并资源级精细授权。
-// 这个方法只处理 resourceActions/resourceOverrides,基础角色权限原样保留;用于独立的“资源精细授权”接口。
-func (s *Store) MergeResourcePermissionDelegated(actorId string, old *model.Role, actions []model.ResourceAction, overrides []int) (*model.Role, int) {
-	if old == nil {
-		return nil, 0
-	}
-	res := &model.Role{
-		Id:                 old.Id,
-		Name:               old.Name,
-		Description:        old.Description,
-		CreatedBy:          old.CreatedBy,
-		MenuIds:            append([]int{}, old.MenuIds...),
-		AreaScopes:         append([]model.DataScope{}, old.AreaScopes...),
-		OrgScopes:          append([]model.DataScope{}, old.OrgScopes...),
-		ResourceAreaScopes: append([]model.DataScope{}, old.ResourceAreaScopes...),
-	}
-	if isUnrestrictedActor(actorId) {
-		res.ResourceActions = append([]model.ResourceAction{}, actions...)
-		res.ResourceOverrides = append([]int{}, overrides...)
-		return res, 0
-	}
-	// 资源精细授权的可授范围更细:不是只有“资源可见”,还要具体到该资源的每个 action。
-	g := s.GrantableSet(actorId)
-	if g.Unlimited {
-		res.ResourceActions = append([]model.ResourceAction{}, actions...)
-		res.ResourceOverrides = append([]int{}, overrides...)
-		return res, 0
-	}
-	raG := map[string]bool{}
-	resOvrG := map[int]bool{} // 可精细配置的资源 = 操作者对其至少有一个可授操作
-	for _, ra := range g.ResourceActions {
-		raG[raKey(ra.ResourceId, ra.ActionCode)] = true
-		resOvrG[ra.ResourceId] = true
-	}
-
-	preserved := 0
-	seenRA := map[string]bool{}
-	// 资源操作授权:操作者有权授出的 action 以提交为准。
-	for _, ra := range actions {
-		if raG[raKey(ra.ResourceId, ra.ActionCode)] {
-			res.ResourceActions = append(res.ResourceActions, ra)
-			seenRA[raKey(ra.ResourceId, ra.ActionCode)] = true
-		}
-	}
-	// 操作者无权触达的旧 action 保留,防止保存资源精细页时误删别人的授权。
-	for _, ra := range old.ResourceActions {
-		k := raKey(ra.ResourceId, ra.ActionCode)
-		if !raG[k] && !seenRA[k] {
-			res.ResourceActions = append(res.ResourceActions, ra)
-			seenRA[k] = true
-			preserved++
-		}
-	}
-
-	// 资源精细模式标记:用于表达“精细模式但零操作”=应用端资源不可见。
-	// 同菜单逻辑:操作者可配置的资源以提交为准,范围外保留原有。
-	seenOvr := map[int]bool{}
-	for _, id := range overrides {
-		if resOvrG[id] {
-			res.ResourceOverrides = append(res.ResourceOverrides, id)
-			seenOvr[id] = true
-		}
-	}
-	for _, id := range old.ResourceOverrides {
-		if !resOvrG[id] && !seenOvr[id] {
-			res.ResourceOverrides = append(res.ResourceOverrides, id)
-			seenOvr[id] = true
-			preserved++
-		}
-	}
 	return res, preserved
 }
 
@@ -286,21 +201,13 @@ func (s *Store) MergeResourcePermissionDelegated(actorId string, old *model.Role
 
 // Grantable 是当前用户的可授权上限。
 // Unlimited=true 表示超级管理员/不受限,前端可展示全部权限;否则各列表只包含当前用户可授出的 ID。
-type Grantable struct {
-	Unlimited       bool                   `json:"unlimited"`
-	MenuIds         []int                  `json:"-"`
-	MenuCodes       []string               `json:"menuCodes"`
-	AreaIds         []int                  `json:"areaIds"`
-	OrgIds          []int                  `json:"orgIds"`
-	ResAreaIds      []int                  `json:"resAreaIds"`
-	ResourceActions []model.ResourceAction `json:"resourceActions"`
-	RoleIds         []int                  `json:"roleIds"` // 可分配/可见的角色集:普通用户仅自建角色,超管全部
-}
+type Grantable = model.Grantable
 
 // GrantableSet 计算当前用户“能授出去什么”。
 // 角色编辑页用它隐藏或置灰超范围权限;保存时也用同一套结果做后端合并兜底。
-func (s *Store) GrantableSet(actorId string) *Grantable {
-	g := &Grantable{MenuIds: []int{}, MenuCodes: []string{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}, ResourceActions: []model.ResourceAction{}, RoleIds: []int{}}
+func (s *PermissionService) GrantableSet(actorId string) *Grantable {
+	g := &Grantable{MenuIds: []int{}, MenuCodes: []string{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}, RoleIds: []int{}}
+	// actorId=0 是系统维护入口，前端可以展示全部权限，保存时也不做裁剪。
 	if isUnrestrictedActor(actorId) {
 		g.Unlimited = true
 		return g
@@ -313,6 +220,7 @@ func (s *Store) GrantableSet(actorId string) *Grantable {
 		g.Unlimited = true
 		return g
 	}
+	// 菜单、区域、组织、业务资源区域都按“当前最终生效权限”推导，可授权范围不会超过自己实际拥有的范围。
 	for _, m := range s.Menus() {
 		if s.userHasMenuId(actor, m.Id) {
 			g.MenuIds = append(g.MenuIds, m.Id)
@@ -332,13 +240,6 @@ func (s *Store) GrantableSet(actorId string) *Grantable {
 			g.OrgIds = append(g.OrgIds, o.Id)
 		}
 	}
-	for _, res := range s.Resources() {
-		for _, act := range s.actions {
-			if s.CheckResource(actor, res.Id, act.Code).Allow {
-				g.ResourceActions = append(g.ResourceActions, model.ResourceAction{ResourceId: res.Id, ActionCode: act.Code})
-			}
-		}
-	}
 	// 可见 + 可分配的角色集:普通用户仅自建角色,超管全部。
 	mset, _ := s.ManageableRoles(actorId)
 	for _, r := range s.Roles() { // 按角色 id 有序输出,便于前端/截图稳定
@@ -354,7 +255,7 @@ func (s *Store) GrantableSet(actorId string) *Grantable {
 //	manageable(actor) = { 自己创建的角色 }
 //
 // actorId<=0(不受限)或超级管理员 → unlimited=true(可见全部角色)。
-func (s *Store) ManageableRoles(actorId string) (set map[int]bool, unlimited bool) {
+func (s *PermissionService) ManageableRoles(actorId string) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
 	if isUnrestrictedActor(actorId) {
 		return set, true
@@ -378,7 +279,7 @@ func (s *Store) ManageableRoles(actorId string) (set map[int]bool, unlimited boo
 //
 // 与 ManageableRoles 当前保持一致:普通用户只能看到、分配、编辑、删除自己创建的角色。
 // actorId<=0(不受限)或超级管理员 → unlimited=true(可编辑/删除全部角色)。
-func (s *Store) OwnedRoles(actorId string) (set map[int]bool, unlimited bool) {
+func (s *PermissionService) OwnedRoles(actorId string) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
 	if isUnrestrictedActor(actorId) {
 		return set, true

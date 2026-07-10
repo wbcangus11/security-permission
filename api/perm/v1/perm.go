@@ -18,13 +18,6 @@ type DataScope struct {
 	IncludeChild bool `json:"includeChild" dc:"是否包含该节点整棵子树,包含后未来新增子节点自动继承权限"`
 }
 
-// ResourceAction 表示单个资源上的一个精细操作授权。
-// 例如 resourceId=102、actionCode=live 表示 102 号摄像头允许实时预览。
-type ResourceAction struct {
-	ResourceId int    `json:"resourceId" dc:"资源 ID,如摄像头 ID"`
-	ActionCode string `json:"actionCode" dc:"资源操作编码,如 live/playback/picture"`
-}
-
 const (
 	AuthTypeMenu     = "menu"
 	AuthTypeArea     = "area"
@@ -53,16 +46,18 @@ type AuthCheckReq struct {
 // 前端再结合当前用户可见角色范围过滤展示。
 type RoleListReq struct {
 	g.Meta `path:"/role/list" method:"get" tags:"权限/角色" summary:"查询角色列表"`
+	UserId string `json:"userId" dc:"当前登录用户 ID;仅演示模式兼容,服务端以身份上下文为准"`
 }
 
 // RoleDetailReq 查询单个角色的完整配置。
 type RoleDetailReq struct {
 	g.Meta `path:"/role/detail" method:"get" tags:"权限/角色" summary:"查询角色详情"`
-	Id     int `json:"id" dc:"角色 ID"`
+	UserId string `json:"userId" dc:"当前登录用户 ID;仅演示模式兼容,服务端以身份上下文为准"`
+	Id     int    `json:"id" dc:"角色 ID"`
 }
 
-// RoleSaveReq 保存角色基础配置。
-// 这里只保存基本信息、菜单权限和三类树范围;资源级精细操作走独立接口保存。
+// RoleSaveReq 保存角色配置。
+// 当前只保存基本信息、菜单权限和三类树范围;业务资源操作默认继承资源区域范围。
 type RoleSaveReq struct {
 	g.Meta             `path:"/role/save" method:"post" tags:"权限/角色" summary:"保存角色"`
 	UserId             string      `json:"userId" dc:"当前登录用户 ID;演示环境由前端传入,实际项目应从 token 解析"`
@@ -76,7 +71,7 @@ type RoleSaveReq struct {
 }
 
 // RoleDeleteReq 删除角色。
-// 删除会清理 role_menu、role_data_scope、role_resource_action 和 user_role 绑定。
+// 删除会清理 role_menu、role_data_scope 和 user_role 绑定。
 type RoleDeleteReq struct {
 	g.Meta `path:"/role/delete" method:"post" tags:"权限/角色" summary:"删除角色"`
 	UserId string `json:"userId" dc:"当前登录用户 ID;演示环境由前端传入,实际项目应从 token 解析"`
@@ -84,7 +79,7 @@ type RoleDeleteReq struct {
 }
 
 // RoleGrantableReq 查询当前用户还能授出去的权限上限。
-// 前端用这个结果隐藏或置灰超出当前用户权限的菜单、区域和资源操作。
+// 前端用这个结果隐藏或置灰超出当前用户权限的菜单、区域和业务资源范围。
 type RoleGrantableReq struct {
 	g.Meta `path:"/role/grantable" method:"get" tags:"权限/角色" summary:"查询当前用户可授权限范围"`
 	UserId string `json:"userId" dc:"当前登录用户 ID;演示环境由前端传入,实际项目应从 token 解析"`
@@ -99,32 +94,16 @@ type RoleAreaChildrenReq struct {
 	Kind     string `json:"kind" dc:"区域树类型:area=安保区域管理范围,resarea=业务资源区域范围"`
 }
 
-// RoleResourcePermissionReq 查询角色的资源级精细授权。
-// 该接口服务于独立的“资源精细授权”页。
-type RoleResourcePermissionReq struct {
-	g.Meta `path:"/role/resource-permission" method:"get" tags:"权限/角色" summary:"查询角色资源精细授权"`
-	UserId string `json:"userId" dc:"当前登录用户 ID;用于角色可管理校验,实际项目应从 token 解析"`
-	RoleId int    `json:"roleId" dc:"角色 ID"`
-}
-
-// RoleResourcePermissionSaveReq 独立保存资源级精细授权。
-// 勾了精细但不勾任何操作时,资源在应用端列表中不可见。
-type RoleResourcePermissionSaveReq struct {
-	g.Meta            `path:"/role/resource-permission-save" method:"post" tags:"权限/角色" summary:"保存角色资源精细授权"`
-	UserId            string           `json:"userId" dc:"当前登录用户 ID;演示环境由前端传入,实际项目应从 token 解析"`
-	RoleId            int              `json:"roleId" dc:"角色 ID"`
-	ResourceActions   []ResourceAction `json:"resourceActions" dc:"资源级精细操作授权,进入精细模式后仅授予这里列出的操作"`
-	ResourceOverrides []int            `json:"resourceOverrides" dc:"进入精细模式的资源 ID 集合;可表达精细模式但零操作,应用端资源列表会隐藏该资源"`
-}
-
 // UserListReq 查询全部用户列表。
 type UserListReq struct {
 	g.Meta `path:"/user/list" method:"get" tags:"权限/用户" summary:"查询用户列表"`
+	UserId string `json:"userId" dc:"当前登录用户 ID;仅演示模式兼容,服务端以身份上下文为准"`
 }
 
 // UserDetailReq 查询单个用户详情。
 type UserDetailReq struct {
 	g.Meta `path:"/user/detail" method:"get" tags:"权限/用户" summary:"查询用户详情"`
+	UserId string `json:"userId" dc:"当前登录用户 ID;仅演示模式兼容,服务端以身份上下文为准"`
 	Id     string `json:"id" dc:"用户 ID"`
 }
 
@@ -292,7 +271,7 @@ type ManageResourceSaveReq struct {
 }
 
 // ManageResourceDeleteReq 删除业务资源。
-// 删除时会清理该资源上的精细操作授权。
+// 当前资源权限只来自资源区域范围,删除资源不需要清理额外授权表。
 type ManageResourceDeleteReq struct {
 	g.Meta `path:"/manage/resource-delete" method:"post" tags:"权限/后台管理" summary:"删除资源"`
 	UserId string `json:"userId" dc:"操作人用户 ID,用于资源管理写权限校验"`

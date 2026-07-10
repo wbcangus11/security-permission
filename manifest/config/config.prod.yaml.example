@@ -1,0 +1,18 @@
+server:
+  address: ":8000"
+  openapiPath: ""
+  swaggerPath: ""
+
+security:
+  demoMode: false
+  # 该请求头必须由可信认证网关覆盖并剥离外部同名请求头。
+  trustedUserHeader: "X-Authenticated-User-Id"
+
+logger:
+  level: "info"
+  stdout: true
+
+database:
+  default:
+    # 复制为 config.prod.yaml 后填写部署环境的最小权限数据库账号。
+    link: "mysql:<user>:<password>@tcp(<host>:3306)/security_permission?loc=Local&parseTime=true&charset=utf8mb4"

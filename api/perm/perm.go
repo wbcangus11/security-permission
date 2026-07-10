@@ -19,8 +19,6 @@ type IPermV1 interface {
 	RoleDelete(ctx context.Context, req *v1.RoleDeleteReq) (res *v1.CommonRes, err error)
 	RoleGrantable(ctx context.Context, req *v1.RoleGrantableReq) (res *v1.CommonRes, err error)
 	RoleAreaChildren(ctx context.Context, req *v1.RoleAreaChildrenReq) (res *v1.CommonRes, err error)
-	RoleResourcePermission(ctx context.Context, req *v1.RoleResourcePermissionReq) (res *v1.CommonRes, err error)
-	RoleResourcePermissionSave(ctx context.Context, req *v1.RoleResourcePermissionSaveReq) (res *v1.CommonRes, err error)
 
 	UserList(ctx context.Context, req *v1.UserListReq) (res *v1.CommonRes, err error)
 	UserDetail(ctx context.Context, req *v1.UserDetailReq) (res *v1.CommonRes, err error)

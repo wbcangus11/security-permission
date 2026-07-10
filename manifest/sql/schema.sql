@@ -6,8 +6,8 @@
 --   1. 功能权限:menu 存菜单/权限点字典,role_menu 存角色与菜单 ID 关系;前后端用 code 交互。
 --   2. 数据权限:role_data_scope 统一承载「安保区域 / 组织 / 业务资源范围」三种树范围,
 --      用 scope_type 区分;存「节点 + 是否含子树」,不展开子节点。
---   3. 树(area/org)用物化路径 path 实现子树判断:WHERE path LIKE '授权节点path%'。
---   4. 资源级操作精细授权:role_resource_action(角色 x 资源 x 操作)。
+--   3. 业务资源权限只看 RES_AREA 区域范围;范围内资源默认拥有全部操作项。
+--   4. 树(area/org)用物化路径 path 实现子树判断:WHERE path LIKE '授权节点path%'。
 --   5. 真实系统统一表结构:所有表都有单列 id 主键,业务唯一性通过 UNIQUE KEY 保证。
 -- =============================================================================
 
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS `area` (
   `path`      VARCHAR(512) NOT NULL DEFAULT ''     COMMENT '物化路径,含自身,形如 /1/3/4/',
   `sort`      INT          NOT NULL DEFAULT 0      COMMENT '同级排序',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_area_parent_name` (`parent_id`,`name`),
   KEY `idx_parent` (`parent_id`),
   KEY `idx_path`   (`path`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='安保区域(树形)';
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS `org` (
   `path`      VARCHAR(512) NOT NULL DEFAULT ''     COMMENT '物化路径,含自身',
   `sort`      INT          NOT NULL DEFAULT 0      COMMENT '同级排序',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_org_parent_name` (`parent_id`,`name`),
   KEY `idx_parent` (`parent_id`),
   KEY `idx_path`   (`path`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='组织(树形)';
@@ -47,6 +49,7 @@ CREATE TABLE IF NOT EXISTS `resource` (
   `type`    VARCHAR(32)  NOT NULL DEFAULT ''     COMMENT '资源类型,如 camera',
   `name`    VARCHAR(128) NOT NULL DEFAULT ''     COMMENT '资源名称',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_resource_area_name` (`area_id`,`name`),
   KEY `idx_area` (`area_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='业务资源';
 
@@ -94,6 +97,7 @@ CREATE TABLE IF NOT EXISTS `role` (
   `created_at`  DATETIME              DEFAULT NULL    COMMENT '创建时间',
   `updated_at`  DATETIME              DEFAULT NULL    COMMENT '更新时间',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_role_name` (`name`),
   KEY `idx_created_by` (`created_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色';
 
@@ -120,18 +124,6 @@ CREATE TABLE IF NOT EXISTS `role_data_scope` (
   KEY `idx_role_type` (`role_id`, `scope_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色-数据范围(树范围授权)';
 
--- 角色-资源操作(应用域精细授权,仅对已存在资源生效)
---   某资源在本表有记录 => 覆盖模式,仅授予列出的操作;无记录 => 继承模式(范围内默认全部操作)
-CREATE TABLE IF NOT EXISTS `role_resource_action` (
-  `id`          BIGINT      NOT NULL AUTO_INCREMENT COMMENT '角色资源操作ID',
-  `role_id`     BIGINT      NOT NULL COMMENT '角色ID',
-  `resource_id` BIGINT      NOT NULL COMMENT '资源ID',
-  `action_code` VARCHAR(32) NOT NULL COMMENT '操作编码',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_role_resource_action` (`role_id`, `resource_id`, `action_code`),
-  KEY `idx_role_res` (`role_id`, `resource_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色-资源操作(精细授权)';
-
 -- 用户(账号)
 CREATE TABLE IF NOT EXISTS `user` (
   `id`           VARCHAR(64)  NOT NULL                COMMENT '用户ID',
@@ -139,6 +131,7 @@ CREATE TABLE IF NOT EXISTS `user` (
   `org_id`       BIGINT       NOT NULL DEFAULT 0      COMMENT '所属组织ID',
   `is_superuser` TINYINT(1)   NOT NULL DEFAULT 0      COMMENT '超级管理员:1=鉴权三关直接放行(仿海康内置root)',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_name` (`name`),
   KEY `idx_org` (`org_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户(账号)';
 

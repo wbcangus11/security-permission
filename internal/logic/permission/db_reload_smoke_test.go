@@ -1,4 +1,4 @@
-package service
+package permission
 
 import (
 	"context"

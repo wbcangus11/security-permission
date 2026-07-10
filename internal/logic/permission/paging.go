@@ -1,4 +1,4 @@
-package service
+package permission
 
 import (
 	"context"
@@ -78,62 +78,149 @@ func (f treeFilter) covers(path string, id int) bool {
 	return false
 }
 
-// treeScopeFilter 从内存缓存计算用户某类树范围的过滤。
-// 注意:这里必须使用运行时鉴权后的有效范围,不能直接翻译角色存储范围。
-// 否则创建人被上级收权后,点鉴权会拒绝,但列表/树分页仍会把旧范围查出来。
-func (s *Store) treeScopeFilter(u *model.User, kind string) treeFilter {
+func (s *PermissionService) addFilterScope(filter *treeFilter, scope model.DataScope) {
+	area := s.AreaById(scope.NodeId)
+	if area == nil || area.Path == "" {
+		return
+	}
+	if scope.IncludeChild {
+		for _, prefix := range filter.Prefixes {
+			if prefix == area.Path {
+				return
+			}
+		}
+		filter.Prefixes = append(filter.Prefixes, area.Path)
+	} else {
+		for _, id := range filter.ExactIds {
+			if id == area.Id {
+				return
+			}
+		}
+		filter.ExactIds = append(filter.ExactIds, area.Id)
+	}
+	filter.RootPaths = append(filter.RootPaths, area.Path)
+}
+
+func (s *PermissionService) roleTreeFilter(role *model.Role, pick scopePicker) treeFilter {
+	filter := treeFilter{}
+	for _, scope := range pick(role) {
+		s.addFilterScope(&filter, scope)
+	}
+	filter.None = len(filter.Prefixes) == 0 && len(filter.ExactIds) == 0
+	return filter
+}
+
+func (s *PermissionService) unionTreeFilters(left, right treeFilter) treeFilter {
+	if left.All || right.All {
+		return treeFilter{All: true}
+	}
+	out := treeFilter{}
+	for _, source := range []treeFilter{left, right} {
+		for _, prefix := range source.Prefixes {
+			s.addFilterScope(&out, model.DataScope{NodeId: pathLastID(prefix), IncludeChild: true})
+		}
+		for _, id := range source.ExactIds {
+			s.addFilterScope(&out, model.DataScope{NodeId: id})
+		}
+	}
+	out.None = len(out.Prefixes) == 0 && len(out.ExactIds) == 0
+	return out
+}
+
+func pathLastID(path string) int {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segments) == 0 {
+		return 0
+	}
+	id, _ := strconv.Atoi(segments[len(segments)-1])
+	return id
+}
+
+func (s *PermissionService) intersectTreeFilters(left, right treeFilter) treeFilter {
+	if left.None || right.None {
+		return treeFilter{None: true}
+	}
+	if left.All {
+		return right
+	}
+	if right.All {
+		return left
+	}
+	out := treeFilter{}
+	for _, id := range left.ExactIds {
+		if area := s.AreaById(id); area != nil && right.covers(area.Path, id) {
+			s.addFilterScope(&out, model.DataScope{NodeId: id})
+		}
+	}
+	for _, id := range right.ExactIds {
+		if area := s.AreaById(id); area != nil && left.covers(area.Path, id) {
+			s.addFilterScope(&out, model.DataScope{NodeId: id})
+		}
+	}
+	for _, leftPrefix := range left.Prefixes {
+		for _, rightPrefix := range right.Prefixes {
+			switch {
+			case strings.HasPrefix(leftPrefix, rightPrefix):
+				s.addFilterScope(&out, model.DataScope{NodeId: pathLastID(leftPrefix), IncludeChild: true})
+			case strings.HasPrefix(rightPrefix, leftPrefix):
+				s.addFilterScope(&out, model.DataScope{NodeId: pathLastID(rightPrefix), IncludeChild: true})
+			}
+		}
+	}
+	out.None = len(out.Prefixes) == 0 && len(out.ExactIds) == 0
+	return out
+}
+
+// treeScopeFilter computes compact effective scopes. Delegated roles are
+// intersected with their creator's current effective scopes without expanding
+// the complete area tree.
+func (s *PermissionService) treeScopeFilter(u *model.User, kind string) treeFilter {
+	return s.treeScopeFilterWithSkip(u, kind, nil)
+}
+
+func (s *PermissionService) treeScopeFilterWithSkip(u *model.User, kind string, skip map[int]bool) treeFilter {
 	if isSuper(u) {
 		return treeFilter{All: true}
 	}
-	f := treeFilter{}
-	seenExact := map[int]bool{}
-	// 这里遍历区域并复用鉴权结果,目的是得到“运行时最终有效范围”。
-	// 这样分页树和 CheckArea/CheckResource 的结果保持一致,不会把已被 created_by 收窄的旧授权查出来。
-	for _, a := range s.Areas() {
-		if a.Path == "" {
+	pick := pickAreaScopes
+	if kind == treeKindResArea {
+		pick = pickResAreaScopes
+	}
+	result := treeFilter{None: true}
+	for _, role := range s.effectiveRoles(u) {
+		if roleSkipped(skip, role.Id) {
 			continue
 		}
-		ok := false
-		if kind == treeKindArea {
-			ok = s.CheckArea(u, a.Id).Allow
-		} else {
-			ok = s.userResAreaCovers(u, a.Id)
+		roleFilter := s.roleTreeFilter(role, pick)
+		if roleFilter.None {
+			continue
 		}
-		if ok && !seenExact[a.Id] {
-			seenExact[a.Id] = true
-			f.ExactIds = append(f.ExactIds, a.Id)
-			f.RootPaths = append(f.RootPaths, a.Path)
+		if !s.delegatedRoleUncapped(role) {
+			creator := s.creatorByRole(role)
+			if creator == nil {
+				continue
+			}
+			creatorFilter := s.treeScopeFilterWithSkip(creator, kind, withSkippedRole(skip, role.Id))
+			roleFilter = s.intersectTreeFilters(roleFilter, creatorFilter)
 		}
+		result = s.unionTreeFilters(result, roleFilter)
 	}
-	if len(f.ExactIds) == 0 {
-		f.None = true
-	}
-	return f
+	return result
 }
 
 // treeNavAncestors 计算"导航祖先"id 集合:自己无权、但其子孙在范围内的区域。
 // 这些节点要在树里显示(否则用户点不进去看自己有权的深层节点)。
 // 它正好 = 各 scope 根 path 上的所有 id(path 形如 /1/3/4/,段就是祖先 id 链),小而可枚举。
-func (s *Store) treeNavAncestors(u *model.User, kind string) map[int]bool {
+func (s *PermissionService) treeNavAncestors(u *model.User, kind string) map[int]bool {
 	out := map[int]bool{}
-	if isSuper(u) {
+	filter := s.treeScopeFilter(u, kind)
+	if filter.All || filter.None {
 		return out // 全可见,无需导航补集
 	}
-	for _, a := range s.Areas() {
-		ok := false
-		if kind == treeKindArea {
-			ok = s.CheckArea(u, a.Id).Allow
-		} else {
-			ok = s.userResAreaCovers(u, a.Id)
-		}
-		if ok {
-			for _, seg := range strings.Split(strings.Trim(a.Path, "/"), "/") {
-				if seg == "" {
-					continue
-				}
-				if id, err := strconv.Atoi(seg); err == nil {
-					out[id] = true
-				}
+	for _, path := range filter.RootPaths {
+		for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+			if id, err := strconv.Atoi(seg); err == nil {
+				out[id] = true
 			}
 		}
 	}
@@ -171,24 +258,14 @@ func areaScopeWhere(alias string, f treeFilter) (string, []interface{}) {
 // ---------- 树:按层懒加载 + 分页 ----------
 
 // AreaNode 懒加载树的一个节点。
-type AreaNode struct {
-	Id          int           `json:"id"`
-	ParentId    int           `json:"parentId"`
-	Name        string        `json:"name"`
-	Accessible  bool          `json:"accessible"`          // false=仅导航祖先(点进去无权限)
-	HasChildren bool          `json:"hasChildren"`         // 是否有"可见的"子节点(决定是否显示展开箭头)
-	Ancestors   []AncestorRef `json:"ancestors,omitempty"` // 祖先链(root..parent),仅搜索结果用:前端据此拼局部树展示
-}
+type AreaNode = model.AreaNode
 
 // AncestorRef 祖先节点引用(搜索结果按树展示用:把匹配节点的 root..parent 链回传给前端拼局部树,对齐海康搜索)。
-type AncestorRef struct {
-	Id   int    `json:"id"`
-	Name string `json:"name"`
-}
+type AncestorRef = model.AncestorRef
 
 // visibilityWhere 把"可见性"(范围内 accessible 或 导航祖先)拼成 SQL 片段。
 // 返回 (sql, args, anyVisible):All=>("",nil,true) 不加过滤;啥也看不到=>("",nil,false)。
-func (s *Store) visibilityWhere(f treeFilter, nav map[int]bool) (string, []interface{}, bool) {
+func (s *ViewService) visibilityWhere(f treeFilter, nav map[int]bool) (string, []interface{}, bool) {
 	if f.All {
 		return "", nil, true
 	}
@@ -211,7 +288,7 @@ func (s *Store) visibilityWhere(f treeFilter, nav map[int]bool) (string, []inter
 
 // areaAncestors 把物化路径转成祖先链(root..parent,不含自身),如 /1/3/6/ -> [{1,根区域},{3,园区A}]。
 // 供搜索结果按树展示:前端用这条链把散落的匹配项拼回"局部树"(对齐海康搜索的树状结果)。
-func (s *Store) areaAncestors(path string) []AncestorRef {
+func (s *ViewService) areaAncestors(path string) []AncestorRef {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
 	out := []AncestorRef{}
 	for i, seg := range segs {
@@ -228,30 +305,25 @@ func (s *Store) areaAncestors(path string) []AncestorRef {
 }
 
 // PagedAreas 一层(某 parentId 下)的可见子节点分页结果。
-type PagedAreas struct {
-	Items []AreaNode `json:"items"`
-	Total int        `json:"total"`
-	Page  int        `json:"page"`
-	Size  int        `json:"size"`
-}
+type PagedAreas = model.PagedAreas
 
 // AreaChildren 应用端(RES_AREA):某节点下"可见的"直接子区域,分页。
-func (s *Store) AreaChildren(ctx context.Context, userId string, parentId, page, size int) *PagedAreas {
+func (s *ViewService) AreaChildren(ctx context.Context, userId string, parentId, page, size int) (*PagedAreas, error) {
 	return s.areaChildrenBy(ctx, userId, parentId, page, size, treeKindResArea)
 }
 
 // ManageAreaChildren 后台管理域(AREA):某节点下"可管理/可见的"直接子区域,分页。
-func (s *Store) ManageAreaChildren(ctx context.Context, userId string, parentId, page, size int) *PagedAreas {
+func (s *ViewService) ManageAreaChildren(ctx context.Context, userId string, parentId, page, size int) (*PagedAreas, error) {
 	return s.areaChildrenBy(ctx, userId, parentId, page, size, treeKindArea)
 }
 
 // areaChildrenBy 通用核心:可见 = 范围内(accessible)或导航祖先;过滤 + 分页全部下推 SQL。
-func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, page, size int, kind string) *PagedAreas {
+func (s *ViewService) areaChildrenBy(ctx context.Context, userId string, parentId, page, size int, kind string) (*PagedAreas, error) {
 	page, size = normPage(page, size)
 	out := &PagedAreas{Items: []AreaNode{}, Page: page, Size: size}
 	u := s.User(userId)
 	if u == nil {
-		return out
+		return out, nil
 	}
 	f := s.treeScopeFilter(u, kind)
 	nav := s.treeNavAncestors(u, kind)
@@ -261,13 +333,16 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, pag
 	// 这一步拼到 SQL 里,避免先取出整层/整树再在内存过滤。
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
-		return out // 啥也看不到
+		return out, nil // 啥也看不到
 	}
 	if visSQL != "" {
 		m = m.Where(visSQL, visArgs...)
 	}
 
-	total, _ := m.Count()
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
 	out.Total = total
 	var rows []struct {
 		Id       int
@@ -275,8 +350,8 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, pag
 		Name     string
 		Path     string
 	}
-	if err := m.Fields("id,parent_id,name,path").Page(page, size).Order("sort asc,id asc").Scan(&rows); err != nil {
-		return out
+	if err = m.Fields("id,parent_id,name,path").Page(page, size).Order("sort asc,id asc").Scan(&rows); err != nil {
+		return nil, err
 	}
 
 	// 一次查出本页中哪些节点"有子节点",用于 accessible 节点的 HasChildren
@@ -287,7 +362,9 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, pag
 	childParents := map[int]bool{}
 	if len(pageIds) > 0 {
 		var pps []struct{ ParentId int }
-		_ = dao.Area.Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", pageIds).Scan(&pps)
+		if err = dao.Area.Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", pageIds).Scan(&pps); err != nil {
+			return nil, err
+		}
 		for _, p := range pps {
 			childParents[p.ParentId] = true
 		}
@@ -308,7 +385,7 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, pag
 		}
 		out.Items = append(out.Items, AreaNode{Id: r.Id, ParentId: r.ParentId, Name: r.Name, Accessible: acc, HasChildren: hasCh})
 	}
-	return out
+	return out, nil
 }
 
 // searchLimit 搜索最多返回的匹配条数(对齐真实海康:超过则截断,前端提示"搜索结果过多,仅展示前 500 条")。
@@ -316,12 +393,12 @@ func (s *Store) areaChildrenBy(ctx context.Context, userId string, parentId, pag
 // scope="manage" 用 AREA(管理域),否则 RES_AREA(应用域)。
 // 对齐海康:最多返回前 searchLimit(500)条(Total 仍为真实总数,供前端判断是否被截断);
 // 每条匹配回传其祖先链(Ancestors,root..parent),前端据此拼出"局部树"展示(匹配项高亮),而非平铺列表。
-func (s *Store) SearchAreas(ctx context.Context, userId string, q, scope string, page, size int) *PagedAreas {
+func (s *ViewService) SearchAreas(ctx context.Context, userId string, q, scope string, page, size int) (*PagedAreas, error) {
 	out := &PagedAreas{Items: []AreaNode{}, Page: 1, Size: searchLimit}
 	u := s.User(userId)
 	q = strings.TrimSpace(q)
 	if u == nil || q == "" {
-		return out
+		return out, nil
 	}
 	kind := treeKindResArea
 	if scope == areaSearchScopeManage {
@@ -333,12 +410,15 @@ func (s *Store) SearchAreas(ctx context.Context, userId string, q, scope string,
 	// 搜索也必须叠加同一套可见性过滤。否则用户能通过搜索发现无权区域名称。
 	visSQL, visArgs, anyVisible := s.visibilityWhere(f, nav)
 	if !anyVisible {
-		return out
+		return out, nil
 	}
 	if visSQL != "" {
 		m = m.Where(visSQL, visArgs...)
 	}
-	total, _ := m.Count()
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
 	out.Total = total // 真实总数;前端用 Total>len(Items) 判断是否被截断(展示"仅前 500 条"提示)
 	var rows []struct {
 		Id       int
@@ -346,14 +426,14 @@ func (s *Store) SearchAreas(ctx context.Context, userId string, q, scope string,
 		Name     string
 		Path     string
 	}
-	if err := m.Fields("id,parent_id,name,path").Limit(searchLimit).Order("name asc,id asc").Scan(&rows); err != nil {
-		return out
+	if err = m.Fields("id,parent_id,name,path").Limit(searchLimit).Order("name asc,id asc").Scan(&rows); err != nil {
+		return nil, err
 	}
 	for _, r := range rows {
 		// 回传祖先链,让前端按“局部树”展示搜索结果,对齐海康;不是简单平铺列表。
 		out.Items = append(out.Items, AreaNode{Id: r.Id, ParentId: r.ParentId, Name: r.Name, Accessible: f.covers(r.Path, r.Id), Ancestors: s.areaAncestors(r.Path)})
 	}
-	return out
+	return out, nil
 }
 
 // ---------- 角色配置树:按层惰性加载(显式「包含子节点」,整层一次返回不分页) ----------
@@ -362,50 +442,25 @@ func (s *Store) SearchAreas(ctx context.Context, userId string, q, scope string,
 // 且整层一次返回(不分页)——因为角色树的勾选判断(子树覆盖/继承)需要同层兄弟节点全部在手,分页会切断判断依据。
 
 // RoleTreeNode 角色配置区域树的一个节点。
-type RoleTreeNode struct {
-	Id          int    `json:"id"`
-	ParentId    int    `json:"parentId"`
-	Name        string `json:"name"`
-	HasChildren bool   `json:"hasChildren"` // 是否有子区域(决定展开箭头)
-	CanCheck    bool   `json:"canCheck"`    // 操作者是否可授该节点(false=仅结构展示,不给勾选框)
-}
+type RoleTreeNode = model.RoleTreeNode
 
-// roleTreeGrantable 操作者在区域树某域(kind=area 管理域 / resarea 应用域)的可授节点集 + 其 path。
-// actorId<=0 或超管 ⇒ unlimited(可授全部);否则只遍历区域(不碰菜单/资源),比 GrantableSet 轻。
-func (s *Store) roleTreeGrantable(actorId string, kind string) (set map[int]bool, paths []string, unlimited bool) {
-	set = map[int]bool{}
+// roleTreeGrantable returns compact effective scopes for the role editor.
+func (s *PermissionService) roleTreeGrantable(actorId string, kind string) treeFilter {
 	if isUnrestrictedActor(actorId) {
-		return set, nil, true
+		return treeFilter{All: true}
 	}
 	actor := s.User(actorId)
 	if actor == nil {
-		return set, nil, false
+		return treeFilter{None: true}
 	}
-	if actor.IsSuperuser {
-		return set, nil, true
-	}
-	for _, a := range s.Areas() {
-		ok := false
-		if kind == treeKindResArea {
-			ok = s.userResAreaCovers(actor, a.Id)
-		} else {
-			ok = s.CheckArea(actor, a.Id).Allow
-		}
-		if ok {
-			set[a.Id] = true
-			if a.Path != "" {
-				paths = append(paths, a.Path)
-			}
-		}
-	}
-	return set, paths, false
+	return s.treeScopeFilter(actor, kind)
 }
 
 // RoleAreaChildren 角色配置树:父节点下「整一层」可见子区域(不分页),带 canCheck/hasChildren。
 // 可见 = 操作者可授(canCheck)或其子孙中有可授节点(仅作结构展示)。kind=area|resarea 决定可授范围来源。
-func (s *Store) RoleAreaChildren(ctx context.Context, actorId string, parentId int, kind string) []RoleTreeNode {
+func (s *PermissionService) RoleAreaChildren(ctx context.Context, actorId string, parentId int, kind string) ([]RoleTreeNode, error) {
 	out := []RoleTreeNode{}
-	set, paths, unlimited := s.roleTreeGrantable(actorId, kind)
+	filter := s.roleTreeGrantable(actorId, kind)
 	var rows []struct {
 		Id       int
 		ParentId int
@@ -414,7 +469,7 @@ func (s *Store) RoleAreaChildren(ctx context.Context, actorId string, parentId i
 	}
 	if err := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, parentId).
 		Fields("id,parent_id,name,path").Order("sort asc,id asc").Scan(&rows); err != nil {
-		return out
+		return nil, err
 	}
 	ids := make([]int, 0, len(rows))
 	for _, r := range rows {
@@ -423,60 +478,45 @@ func (s *Store) RoleAreaChildren(ctx context.Context, actorId string, parentId i
 	childParents := map[int]bool{}
 	if len(ids) > 0 {
 		var pps []struct{ ParentId int }
-		_ = dao.Area.Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", ids).Scan(&pps)
+		if err := dao.Area.Ctx(ctx).Fields("DISTINCT parent_id").Where("parent_id IN (?)", ids).Scan(&pps); err != nil {
+			return nil, err
+		}
 		for _, p := range pps {
 			childParents[p.ParentId] = true
 		}
 	}
 	for _, r := range rows {
-		canCheck := unlimited || set[r.Id]
-		if !canCheck && !hasGrantPrefix(r.Path, paths) {
+		canCheck := filter.covers(r.Path, r.Id)
+		if !canCheck && !filter.hasDescendantGrant(r.Path) {
 			continue // 自身不可授、子孙也无可授 → 隐藏(对齐海康:看不到操作者无权的部分)
 		}
 		out = append(out, RoleTreeNode{Id: r.Id, ParentId: r.ParentId, Name: r.Name, HasChildren: childParents[r.Id], CanCheck: canCheck})
 	}
-	return out
-}
-
-// hasGrantPrefix 是否存在「严格在 path 之下」的可授节点(=该节点有可授子孙,需作结构展示)。
-func hasGrantPrefix(path string, grantPaths []string) bool {
-	for _, gp := range grantPaths {
-		if len(gp) > len(path) && strings.HasPrefix(gp, path) {
-			return true
-		}
-	}
-	return false
+	return out, nil
 }
 
 // ---------- 资源:分页 + 权限下推(应用域 RES_AREA) ----------
 
 // AreaResourcesPage 某区域(含子树)下用户有权看的资源,分页。
-type AreaResourcesPage struct {
-	Accessible bool           `json:"accessible"` // false=该区域仅导航,无资源权限
-	AreaName   string         `json:"areaName"`
-	Resources  []ResourceView `json:"resources"`
-	Total      int            `json:"total"`
-	Page       int            `json:"page"`
-	Size       int            `json:"size"`
-}
+type AreaResourcesPage = model.AreaResourcesPage
 
 // AreaResourcesPaged 点击某区域:列出其子树内、用户范围内、非零权限的资源,分页。
 // 范围过滤(scope→WHERE)+ 子树前缀 + 隐藏零权限资源,全部下推 SQL;再对本页 ~size 条逐个点查操作。
-func (s *Store) AreaResourcesPaged(ctx context.Context, userId string, areaId, page, size int) *AreaResourcesPage {
+func (s *ViewService) AreaResourcesPaged(ctx context.Context, userId string, areaId, page, size int) (*AreaResourcesPage, error) {
 	page, size = normPage(page, size)
 	out := &AreaResourcesPage{Resources: []ResourceView{}, Page: page, Size: size}
 	u := s.User(userId)
 	if u == nil {
-		return out
+		return out, nil
 	}
 	area := s.AreaById(areaId)
 	if area == nil {
-		return out
+		return out, nil
 	}
 	out.AreaName = area.Name
 	if !s.userResAreaCovers(u, areaId) { // 沿用原语义:仅导航祖先 → 不可访问
 		out.Accessible = false
-		return out
+		return out, nil
 	}
 	out.Accessible = true
 
@@ -487,54 +527,31 @@ func (s *Store) AreaResourcesPaged(ctx context.Context, userId string, areaId, p
 	if accSQL, accArgs := areaScopeWhere("area", f); accSQL != "" {
 		m = m.Where(accSQL, accArgs...) // 叠加用户 RES_AREA 范围
 	}
-	if hidden := s.hiddenResourceIds(u); len(hidden) > 0 {
-		m = m.Where("resource.id NOT IN (?)", hidden) // 资源级可见:零权限资源隐藏
-	}
 
-	total, _ := m.Count()
+	total, err := m.Count()
+	if err != nil {
+		return nil, err
+	}
 	out.Total = total
 	var rows []struct {
 		Id     int
 		AreaId int
 		Name   string
 	}
-	if err := m.Fields("resource.id,resource.area_id,resource.name").Page(page, size).Order("resource.id asc").Scan(&rows); err != nil {
-		return out
+	if err = m.Fields("resource.id,resource.area_id,resource.name").Page(page, size).Order("resource.id asc").Scan(&rows); err != nil {
+		return nil, err
 	}
 	acts := s.Actions()
 	for _, row := range rows {
 		rv := ResourceView{Id: row.Id, Name: row.Name, Area: s.nodeName(treeKindArea, row.AreaId)}
-		anyAllowed := false
 		for _, act := range acts {
 			allowed := s.CheckResource(u, row.Id, act.Code).Allow
-			if allowed {
-				anyAllowed = true
-			}
 			rv.Actions = append(rv.Actions, ActionAllow{Code: act.Code, Name: act.Name, Allowed: allowed})
 		}
-		if !anyAllowed {
-			continue
-		}
+		// SQL 已按 RES_AREA 范围过滤,因此命中的资源就是可见资源;操作按钮统一按 CheckResource 标记。
 		out.Resources = append(out.Resources, rv)
 	}
-	return out
-}
-
-// hiddenResourceIds 用户"零权限被隐藏"的资源 id(资源级可见 L2)。
-// 只可能发生在"有精细配置却净授 0 操作"的资源上,故只遍历有 override 的资源(小集合),不扫全表。
-func (s *Store) hiddenResourceIds(u *model.User) []int {
-	if isSuper(u) {
-		return nil
-	}
-	p := s.userPermissions(u)
-	if p == nil || len(p.HiddenResourceIds) == 0 {
-		return nil
-	}
-	hidden := make([]int, 0, len(p.HiddenResourceIds))
-	for id := range p.HiddenResourceIds {
-		hidden = append(hidden, id)
-	}
-	return hidden
+	return out, nil
 }
 
 // ---------- 小工具 ----------

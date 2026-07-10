@@ -1,7 +1,8 @@
-package service
+package permission
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"security-permission/internal/dao"
@@ -16,42 +17,151 @@ import (
 //     点击会提示「暂无操作权限」(其本身资源不授权)。
 
 // VisibleArea 可见区域树节点。
-type VisibleArea struct {
-	Id         int    `json:"id"`
-	ParentId   int    `json:"parentId"`
-	Name       string `json:"name"`
-	Accessible bool   `json:"accessible"` // 是否可访问其资源(否=仅导航祖先)
-}
+type VisibleArea = model.VisibleArea
 
-// visibleAreaTree 通用:按 accessible 判定函数算出可见区域树(可见=自己可访问或有可访问后代)。
-func (s *Store) visibleAreaTree(accessible func(areaId int) bool) []VisibleArea {
-	areas := s.Areas()
-	acc := make(map[int]bool)
-	for _, a := range areas {
-		if accessible(a.Id) {
-			acc[a.Id] = true
+// Meta returns the frontend bootstrap dictionary. Demo mode intentionally keeps
+// the full dataset for the permission simulator. Production mode returns only
+// data reachable by the authenticated actor.
+func (s *RuntimeService) Meta(actorID string, demoMode bool) *model.MetaData {
+	if demoMode {
+		return &model.MetaData{
+			Areas: s.Areas(), Orgs: s.Orgs(), Menus: s.Menus(), Resources: s.Resources(),
+			Actions: s.Actions(), Users: s.Users(),
 		}
 	}
-	out := []VisibleArea{}
-	for _, a := range areas {
-		visible := acc[a.Id]
-		if !visible {
-			for _, b := range areas {
-				if acc[b.Id] && b.Id != a.Id && strings.HasPrefix(b.Path, a.Path) {
-					visible = true
-					break
-				}
-			}
+	out := &model.MetaData{
+		Areas: []*model.Area{}, Orgs: []*model.Org{}, Menus: []*model.Menu{},
+		Resources: []*model.Resource{}, Actions: s.Actions(), Users: []*model.User{},
+	}
+	actor := s.User(actorID)
+	if actor == nil {
+		return out
+	}
+	if actor.IsSuperuser {
+		out.Areas, out.Orgs, out.Menus = s.Areas(), s.Orgs(), s.Menus()
+		out.Resources, out.Users = s.Resources(), s.Users()
+		return out
+	}
+
+	grant := s.GrantableSet(actorID)
+	menuByID := make(map[int]*model.Menu)
+	menuVisible := make(map[int]bool)
+	for _, menu := range s.Menus() {
+		menuByID[menu.Id] = menu
+	}
+	var markMenu func(int)
+	markMenu = func(id int) {
+		if id == 0 || menuVisible[id] {
+			return
 		}
-		if visible {
-			out = append(out, VisibleArea{Id: a.Id, ParentId: a.ParentId, Name: a.Name, Accessible: acc[a.Id]})
+		menu := menuByID[id]
+		if menu == nil {
+			return
+		}
+		menuVisible[id] = true
+		markMenu(menu.ParentId)
+	}
+	for _, id := range grant.MenuIds {
+		markMenu(id)
+	}
+	for _, menu := range s.Menus() {
+		if menuVisible[menu.Id] {
+			out.Menus = append(out.Menus, menu)
+		}
+	}
+
+	areaVisible := make(map[int]bool)
+	for _, id := range append(append([]int{}, grant.AreaIds...), grant.ResAreaIds...) {
+		if area := s.AreaById(id); area != nil {
+			markPathIDs(areaVisible, area.Path)
+		}
+	}
+	for _, area := range s.Areas() {
+		if areaVisible[area.Id] {
+			out.Areas = append(out.Areas, area)
+		}
+	}
+
+	orgVisible := make(map[int]bool)
+	for _, id := range grant.OrgIds {
+		if org := s.OrgById(id); org != nil {
+			markPathIDs(orgVisible, org.Path)
+		}
+	}
+	for _, org := range s.Orgs() {
+		if orgVisible[org.Id] {
+			out.Orgs = append(out.Orgs, org)
+		}
+	}
+	for _, resource := range s.Resources() {
+		if s.userResAreaCovers(actor, resource.AreaId) {
+			out.Resources = append(out.Resources, resource)
+		}
+	}
+
+	canManageUsers := s.CheckMenu(actor, menuAccountManage).Allow
+	for _, user := range s.Users() {
+		if user.Id == actorID || (canManageUsers && !user.IsSuperuser && s.CheckOrg(actor, user.OrgId).Allow) {
+			out.Users = append(out.Users, user)
 		}
 	}
 	return out
 }
 
+func markPathIDs(set map[int]bool, path string) {
+	for _, segment := range strings.Split(strings.Trim(path, "/"), "/") {
+		if id, err := strconv.Atoi(segment); err == nil {
+			set[id] = true
+		}
+	}
+}
+
+type visibilityNode struct {
+	Id       int
+	ParentId int
+	Name     string
+	Path     string
+}
+
+// buildVisibleTree marks ancestors by materialized path. This is O(n*depth)
+// instead of comparing every node with every accessible node.
+func buildVisibleTree(nodes []visibilityNode, accessible map[int]bool) []VisibleArea {
+	visible := make(map[int]bool, len(accessible))
+	for _, node := range nodes {
+		if !accessible[node.Id] {
+			continue
+		}
+		for _, segment := range strings.Split(strings.Trim(node.Path, "/"), "/") {
+			if id, err := strconv.Atoi(segment); err == nil {
+				visible[id] = true
+			}
+		}
+	}
+	out := make([]VisibleArea, 0, len(visible))
+	for _, node := range nodes {
+		if visible[node.Id] {
+			out = append(out, VisibleArea{Id: node.Id, ParentId: node.ParentId, Name: node.Name, Accessible: accessible[node.Id]})
+		}
+	}
+	return out
+}
+
+// visibleAreaTree 通用:按 accessible 判定函数算出可见区域树(可见=自己可访问或有可访问后代)。
+func (s *ViewService) visibleAreaTree(accessible func(areaId int) bool) []VisibleArea {
+	areas := s.Areas()
+	acc := make(map[int]bool)
+	nodes := make([]visibilityNode, 0, len(areas))
+	for _, a := range areas {
+		nodes = append(nodes, visibilityNode{Id: a.Id, ParentId: a.ParentId, Name: a.Name, Path: a.Path})
+		if accessible(a.Id) {
+			acc[a.Id] = true
+		}
+	}
+	return buildVisibleTree(nodes, acc)
+}
+
 // VisibleAreas 应用端可见区域树(accessible=资源域 RES_AREA 覆盖)。
-func (s *Store) VisibleAreas(userId string) []VisibleArea {
+func (s *ViewService) VisibleAreas(userId string) []VisibleArea {
 	u := s.User(userId)
 	if u == nil {
 		return []VisibleArea{}
@@ -60,7 +170,7 @@ func (s *Store) VisibleAreas(userId string) []VisibleArea {
 }
 
 // ManageAreas 后台管理域可见区域树(accessible=安保区域管理权限 AREA 覆盖)。
-func (s *Store) ManageAreas(userId string) []VisibleArea {
+func (s *ViewService) ManageAreas(userId string) []VisibleArea {
 	u := s.User(userId)
 	if u == nil {
 		return []VisibleArea{}
@@ -69,92 +179,72 @@ func (s *Store) ManageAreas(userId string) []VisibleArea {
 }
 
 // ManageOrgs 后台管理域可见组织树(accessible=组织管理权限 ORG 覆盖)。
-func (s *Store) ManageOrgs(userId string) []VisibleArea {
+func (s *ViewService) ManageOrgs(userId string) []VisibleArea {
 	u := s.User(userId)
 	if u == nil {
 		return []VisibleArea{}
 	}
 	orgs := s.Orgs()
 	acc := make(map[int]bool)
+	nodes := make([]visibilityNode, 0, len(orgs))
 	for _, o := range orgs {
+		nodes = append(nodes, visibilityNode{Id: o.Id, ParentId: o.ParentId, Name: o.Name, Path: o.Path})
 		if s.CheckOrg(u, o.Id).Allow {
 			acc[o.Id] = true
 		}
 	}
-	out := []VisibleArea{}
-	for _, o := range orgs {
-		visible := acc[o.Id]
-		if !visible {
-			for _, b := range orgs {
-				if acc[b.Id] && b.Id != o.Id && strings.HasPrefix(b.Path, o.Path) {
-					visible = true
-					break
-				}
-			}
-		}
-		if visible {
-			out = append(out, VisibleArea{Id: o.Id, ParentId: o.ParentId, Name: o.Name, Accessible: acc[o.Id]})
-		}
-	}
-	return out
+	return buildVisibleTree(nodes, acc)
 }
 
 // ResourceBrief 资源管理用的精简条目(带 id/type,供后台增删改)。
-type ResourceBrief struct {
-	Id     int    `json:"id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	AreaId int    `json:"areaId"`
-}
+type ResourceBrief = model.ResourceBrief
 
 // ManageDetail 后台管理域:点击某节点的详情。
-type ManageDetail struct {
-	Accessible    bool            `json:"accessible"` // false => 暂无管理权限
-	Name          string          `json:"name"`
-	ParentId      int             `json:"parentId"`      // 父节点 id(区域用,供删除后回焦/移动)
-	ChildCount    int             `json:"childCount"`    // 直接子节点数(区域懒加载:不平铺子节点,只给数量)
-	Children      []string        `json:"children"`      // 直接子节点名(组织仍用;区域已改为左树懒加载)
-	Resources     []string        `json:"resources"`     // 区域直接挂的资源名(组织无)
-	ResourceItems []ResourceBrief `json:"resourceItems"` // 区域直接挂的资源(带 id/type,供增删改)
-}
+type ManageDetail = model.ManageDetail
 
 // ManageAreaDetail 点击安保区域:可管理则给出子区域数量 + 本区域直接资源;否则暂无管理权限。
 // 子区域由左侧树懒加载展开,不在详情里平铺;子区域数量与资源都走 DB 索引查询,避免全表扫描(支撑大数据量)。
-func (s *Store) ManageAreaDetail(ctx context.Context, userId string, areaId int) *ManageDetail {
+func (s *ViewService) ManageAreaDetail(ctx context.Context, userId string, areaId int) (*ManageDetail, error) {
 	u := s.User(userId)
 	d := &ManageDetail{Children: []string{}, Resources: []string{}, ResourceItems: []ResourceBrief{}}
 	if u == nil {
-		return d
+		return d, nil
 	}
 	area := s.AreaById(areaId)
 	if area == nil {
-		return d
+		return d, nil
 	}
 	d.Name = area.Name
 	d.ParentId = area.ParentId
 	if !s.CheckArea(u, areaId).Allow {
-		return d // accessible=false
+		return d, nil // accessible=false
 	}
 	d.Accessible = true
 	// 子区域数量:cheap COUNT 走 idx_parent(不平铺,左树懒加载展开)
-	d.ChildCount, _ = dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaId).Count()
+	var err error
+	d.ChildCount, err = dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaId).Count()
+	if err != nil {
+		return nil, err
+	}
 	// 本区域直接挂的资源:走 idx_area;直接资源通常很少,封顶 500 防御
 	var rs []ResourceBrief
-	_ = dao.Resource.Ctx(ctx).
+	if err = dao.Resource.Ctx(ctx).
 		Fields("id,name,type,area_id").
 		Where(dao.Resource.Columns().AreaId, areaId).
 		Order(dao.Resource.Columns().Id + " asc").
 		Limit(manageDetailResourceLimit).
-		Scan(&rs)
+		Scan(&rs); err != nil {
+		return nil, err
+	}
 	for _, r := range rs {
 		d.Resources = append(d.Resources, r.Name)
 		d.ResourceItems = append(d.ResourceItems, r)
 	}
-	return d
+	return d, nil
 }
 
 // ManageOrgDetail 点击组织:可管理则列出直接子组织;否则暂无管理权限。
-func (s *Store) ManageOrgDetail(userId string, orgId int) *ManageDetail {
+func (s *ViewService) ManageOrgDetail(userId string, orgId int) *ManageDetail {
 	u := s.User(userId)
 	d := &ManageDetail{Children: []string{}, Resources: []string{}}
 	if u == nil {
@@ -178,7 +268,7 @@ func (s *Store) ManageOrgDetail(userId string, orgId int) *ManageDetail {
 }
 
 // SysMenus 某用户可见的系统管理菜单(功能权限 SYS)。
-func (s *Store) SysMenus(userId string) []*model.Menu {
+func (s *ViewService) SysMenus(userId string) []*model.Menu {
 	u := s.User(userId)
 	if u == nil {
 		return []*model.Menu{}
@@ -187,30 +277,17 @@ func (s *Store) SysMenus(userId string) []*model.Menu {
 }
 
 // ActionAllow 资源上的某操作及当前用户是否有权。
-type ActionAllow struct {
-	Code    string `json:"code"`
-	Name    string `json:"name"`
-	Allowed bool   `json:"allowed"`
-}
+type ActionAllow = model.ActionAllow
 
 // ResourceView 应用端资源条目。
-type ResourceView struct {
-	Id      int           `json:"id"`
-	Name    string        `json:"name"`
-	Area    string        `json:"area"`
-	Actions []ActionAllow `json:"actions"`
-}
+type ResourceView = model.ResourceView
 
 // AreaResourcesView 点击某区域后的资源面板数据。
-type AreaResourcesView struct {
-	Accessible bool           `json:"accessible"` // false => 前端显示「暂无操作权限」
-	AreaName   string         `json:"areaName"`
-	Resources  []ResourceView `json:"resources"`
-}
+type AreaResourcesView = model.AreaResourcesView
 
 // AreaResources 返回某用户点击某区域时该看到的资源(含其子树),及每个操作是否有权。
 // 若该区域对用户不可访问(仅导航祖先),Accessible=false。
-func (s *Store) AreaResources(userId string, areaId int) *AreaResourcesView {
+func (s *ViewService) AreaResources(userId string, areaId int) *AreaResourcesView {
 	u := s.User(userId)
 	if u == nil {
 		return &AreaResourcesView{}
@@ -240,26 +317,18 @@ func (s *Store) AreaResources(userId string, areaId int) *AreaResourcesView {
 			continue
 		}
 		rv := ResourceView{Id: r.Id, Name: r.Name, Area: s.nodeName(treeKindArea, r.AreaId)}
-		anyAllowed := false
 		for _, act := range acts {
 			ok := s.CheckResource(u, r.Id, act.Code).Allow
-			if ok {
-				anyAllowed = true
-			}
 			rv.Actions = append(rv.Actions, ActionAllow{Code: act.Code, Name: act.Name, Allowed: ok})
 		}
-		// 资源级可见(L2,对齐海康):该角色对此资源无任何操作权 → 应用端不列出(隐藏)。
-		// 仅当精细模式且零操作时才会触发;继承(无精细)恒有全部操作 → 始终可见。
-		if !anyAllowed {
-			continue
-		}
+		// 资源可见性只由 RES_AREA 区域范围决定;范围内资源直接展示。
 		v.Resources = append(v.Resources, rv)
 	}
 	return v
 }
 
 // AppMenus 返回某用户在应用域可见的菜单(功能权限),用于应用端顶部菜单。
-func (s *Store) AppMenus(userId string) []*model.Menu {
+func (s *ViewService) AppMenus(userId string) []*model.Menu {
 	u := s.User(userId)
 	if u == nil {
 		return []*model.Menu{}
@@ -267,7 +336,7 @@ func (s *Store) AppMenus(userId string) []*model.Menu {
 	return s.visibleMenusWithAncestors(u, model.MenuDomainApp)
 }
 
-func (s *Store) visibleMenusWithAncestors(u *model.User, domain string) []*model.Menu {
+func (s *ViewService) visibleMenusWithAncestors(u *model.User, domain string) []*model.Menu {
 	menus := s.Menus()
 	byId := make(map[int]*model.Menu, len(menus))
 	visible := make(map[int]bool, len(menus))

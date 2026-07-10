@@ -1,4 +1,4 @@
-package service
+package permission
 
 import (
 	"testing"
@@ -6,8 +6,12 @@ import (
 	"security-permission/internal/model"
 )
 
-func newRuntimeCapStore() *Store {
-	return &Store{
+func newRuntimeCapPermission() *PermissionService {
+	store := &Store{
+		menus: map[int]*model.Menu{
+			1: {Id: 1, Code: "app.video.live", Name: "实时预览", Domain: model.MenuDomainApp},
+			2: {Id: 2, Code: menuRoleManage, Name: "角色管理", Domain: model.MenuDomainSys},
+		},
 		areas: map[int]*model.Area{
 			1: {Id: 1, Name: "根区域", Path: "/1/"},
 			2: {Id: 2, ParentId: 1, Name: "A区", Path: "/1/2/"},
@@ -25,6 +29,7 @@ func newRuntimeCapStore() *Store {
 				Id:        10,
 				Name:      "上级授权",
 				CreatedBy: "0",
+				MenuIds:   []int{1, 2},
 				AreaScopes: []model.DataScope{
 					{NodeId: 2, IncludeChild: true},
 				},
@@ -39,6 +44,7 @@ func newRuntimeCapStore() *Store {
 				Id:        20,
 				Name:      "张三创建",
 				CreatedBy: "1",
+				MenuIds:   []int{1},
 				AreaScopes: []model.DataScope{
 					{NodeId: 1, IncludeChild: true},
 				},
@@ -55,10 +61,11 @@ func newRuntimeCapStore() *Store {
 			"2": {Id: "2", Name: "李四", RoleIds: []int{20}},
 		},
 	}
+	return &PermissionService{Store: store}
 }
 
 func TestDelegatedRoleRuntimeCapForArea(t *testing.T) {
-	s := newRuntimeCapStore()
+	s := newRuntimeCapPermission()
 	li := s.User("2")
 
 	if d := s.CheckArea(li, 2); !d.Allow {
@@ -70,7 +77,7 @@ func TestDelegatedRoleRuntimeCapForArea(t *testing.T) {
 }
 
 func TestDelegatedRoleRuntimeCapForResourceArea(t *testing.T) {
-	s := newRuntimeCapStore()
+	s := newRuntimeCapPermission()
 	li := s.User("2")
 
 	if !s.userResAreaCovers(li, 2) {
@@ -82,7 +89,7 @@ func TestDelegatedRoleRuntimeCapForResourceArea(t *testing.T) {
 }
 
 func TestDelegatedRoleRuntimeCapForOrg(t *testing.T) {
-	s := newRuntimeCapStore()
+	s := newRuntimeCapPermission()
 	li := s.User("2")
 
 	if d := s.CheckOrg(li, 2); !d.Allow {
@@ -94,10 +101,11 @@ func TestDelegatedRoleRuntimeCapForOrg(t *testing.T) {
 }
 
 func TestDelegatedRoleRuntimeCapForPagedTreeFilter(t *testing.T) {
-	s := newRuntimeCapStore()
+	s := newRuntimeCapPermission()
 	li := s.User("2")
 
-	f := s.treeScopeFilter(li, treeKindResArea)
+	v := &ViewService{Store: s.Store, PermissionService: s}
+	f := v.treeScopeFilter(li, treeKindResArea)
 	if f.None {
 		t.Fatal("expected at least one effective resource area")
 	}

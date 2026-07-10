@@ -28,7 +28,7 @@ server.out.log
 server.err.log
 run.log
 
-# 注:config.yaml 含本地开发库连接(root/123456),作为可运行的演示项目一并纳入 git。
-#     接入真实环境时改用环境变量或私密配置,并在此重新忽略。
+# config.yaml 仅用于本地演示。生产配置从示例复制后必须保持未跟踪。
+/manifest/config/config.prod.yaml
 # git-bash 崩溃转储
 *.stackdump

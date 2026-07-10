@@ -36,7 +36,7 @@ INSERT IGNORE INTO `action` (`code`,`name`,`sort`) VALUES
 -- 角色
 INSERT IGNORE INTO `role` (`id`,`name`,`description`,`created_by`) VALUES
  (1,'安防管理员','全菜单 + 事件图片测试区域','0'),
- (2,'园区A值班员','应用域视频 + 园区A,1号楼大厅球机仅实时预览','0');
+ (2,'园区A值班员','应用域视频 + 园区A资源范围','0');
 
 -- 角色1:全部菜单。菜单以 code 维护,role_menu 内部仍保存 menu_id。
 INSERT IGNORE INTO `role_menu` (`role_id`,`menu_id`)
@@ -55,10 +55,6 @@ INSERT IGNORE INTO `role_data_scope` (`role_id`,`scope_type`,`node_id`,`include_
  (1,'ORG',1,1),
  (1,'RES_AREA',2,1),
  (2,'RES_AREA',3,1);
-
--- 资源精细授权:角色2 对 102 摄像头仅授予实时预览
-INSERT IGNORE INTO `role_resource_action` (`role_id`,`resource_id`,`action_code`) VALUES
- (2,102,'live');
 
 -- 用户与绑定
 INSERT IGNORE INTO `user` (`id`,`name`,`org_id`) VALUES

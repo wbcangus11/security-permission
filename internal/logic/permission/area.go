@@ -1,4 +1,4 @@
-package service
+package permission
 
 // 区域(安保区域树)增删改:写时鉴权 + 物化路径 path 自动维护。
 //
@@ -28,37 +28,34 @@ import (
 
 // AreaSaveInput 新增/重命名/移动区域的入参。
 // Id<=0 为新增(ParentId=父区域);更新时 ParentId 非 0 且与原值不同即移动。
-type AreaSaveInput struct {
-	Id       int    `json:"id"`
-	ParentId int    `json:"parentId"`
-	Name     string `json:"name"`
-}
+type AreaSaveInput = model.AreaSaveInput
 
 // AreaReorderInput 调整同级区域顺序的入参。
 // 前端根据“上移/下移”先算出目标兄弟区域 ToAreaId,后端只负责交换两个同父区域的位置。
-type AreaReorderInput struct {
-	AreaId   int `json:"areaId"`
-	ToAreaId int `json:"toAreaId"`
-}
+type AreaReorderInput = model.AreaReorderInput
 
-// SaveArea 新增或更新(重命名/移动)区域,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *Store) SaveArea(ctx context.Context, actorId string, in *AreaSaveInput) (*model.Area, error) {
+// Save 新增或更新(重命名/移动)区域,写时鉴权,成功后刷新缓存。actorId=操作人。
+func (s *AreaService) Save(ctx context.Context, actorId string, in *AreaSaveInput) (*model.Area, error) {
+	// 区域写操作先统一过功能关：必须有“安防区域管理”菜单权限。
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
 		return nil, err
 	}
+	// 名称先清洗再进入重名校验，避免同级节点只靠空格区分。
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
 		return nil, gerror.New("区域名称不能为空")
 	}
+	// Id<=0 是新增；否则是重命名/移动。新增校验父节点，更新校验原节点和可选新父节点。
 	if in.Id <= 0 {
 		return s.createArea(ctx, actor, in)
 	}
 	return s.updateArea(ctx, actor, in)
 }
 
-// DeleteArea 删除区域(仅叶子且无资源),同步清理对该节点的数据范围授权。
-func (s *Store) DeleteArea(ctx context.Context, actorId string, areaId int) error {
+// Delete 删除区域(仅叶子且无资源),同步清理对该节点的数据范围授权。
+func (s *AreaService) Delete(ctx context.Context, actorId string, areaId int) error {
+	// 删除区域先过功能关；真正的数据边界看目标区域本身是否在操作人 AREA 范围内。
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
 		return err
@@ -85,6 +82,7 @@ func (s *Store) DeleteArea(ctx context.Context, actorId string, areaId int) erro
 		}
 	}
 	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		// 区域主表和授权引用必须在同一事务内处理，避免留下指向不存在区域的授权行。
 		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Where(dao.Area.Columns().Id, areaId).Delete(); err != nil {
 			return err
 		}
@@ -98,12 +96,14 @@ func (s *Store) DeleteArea(ctx context.Context, actorId string, areaId int) erro
 	if err != nil {
 		return err
 	}
+	// 删除区域会同时影响 AREA/RES_AREA 范围和角色权限快照，所以区域与角色一起重载。
 	return s.reloadAreasAndRoles(ctx)
 }
 
 // ReorderArea 交换两个同级区域的排序。
 // 排序本身也是写操作,因此两个区域都要过“安保区域管理”菜单和区域数据权限。
-func (s *Store) ReorderArea(ctx context.Context, actorId string, in *AreaReorderInput) error {
+func (s *AreaService) Reorder(ctx context.Context, actorId string, in *AreaReorderInput) error {
+	// 排序是写操作，先过功能关；后面还要检查两个参与排序的区域都在数据范围内。
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
 		return err
@@ -128,6 +128,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId string, in *AreaReorder
 	if target.ParentId != to.ParentId {
 		return gerror.New("只能调整同一父区域下的区域顺序")
 	}
+	// 两个节点都要有权限，避免借排序操作触碰无权区域的展示顺序。
 	if d := s.CheckArea(actor, target.Id); !d.Allow {
 		return gerror.New("无权调整「" + target.Name + "」排序:" + d.Reason)
 	}
@@ -135,6 +136,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId string, in *AreaReorder
 		return gerror.New("无权与目标区域「" + to.Name + "」换序:" + d.Reason)
 	}
 
+	// 先按当前 sort/id 还原完整同级顺序，再交换两个节点，最后重新写成稳定的 10 递增序号。
 	siblings := make([]*model.Area, 0)
 	for _, a := range s.Areas() {
 		if a.ParentId == target.ParentId {
@@ -163,6 +165,7 @@ func (s *Store) ReorderArea(ctx context.Context, actorId string, in *AreaReorder
 	}
 
 	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		// 只更新发生变化的 sort，减少无意义写库；事务保证同级顺序不会半更新。
 		siblings[idx], siblings[toIdx] = siblings[toIdx], siblings[idx]
 		for i, a := range siblings {
 			nextSort := (i + 1) * 10
@@ -178,11 +181,12 @@ func (s *Store) ReorderArea(ctx context.Context, actorId string, in *AreaReorder
 	if err != nil {
 		return err
 	}
+	// 排序只影响区域展示，不改角色；重载区域缓存即可。
 	return s.reloadAreas(ctx)
 }
 
 // checkAreaWriter 写操作公共前置:操作人存在 + 功能关(sys.area 菜单)。
-func (s *Store) checkAreaWriter(actorId string) (*model.User, error) {
+func (s *AreaService) checkAreaWriter(actorId string) (*model.User, error) {
 	actor := s.User(actorId)
 	if actor == nil {
 		return nil, gerror.New("操作人不存在")
@@ -194,7 +198,7 @@ func (s *Store) checkAreaWriter(actorId string) (*model.User, error) {
 }
 
 // createArea 新增子区域:数据关看父区域;插入后回填 path=父.path+新ID+"/"。
-func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
+func (s *AreaService) createArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
 	parent := s.AreaById(in.ParentId)
 	if parent == nil {
 		return nil, gerror.New("父区域不存在")
@@ -247,7 +251,7 @@ func (s *Store) createArea(ctx context.Context, actor *model.User, in *AreaSaveI
 
 // nextAreaSort 计算新建子区域的默认排序号。
 // 这里用当前同级最大 sort + 10,方便以后在中间插入排序值。
-func (s *Store) nextAreaSort(parentId int) int {
+func (s *AreaService) nextAreaSort(parentId int) int {
 	maxSort := 0
 	for _, a := range s.Areas() {
 		if a.ParentId == parentId && a.Sort > maxSort {
@@ -263,7 +267,7 @@ func (s *Store) nextAreaSort(parentId int) int {
 //   - 超管 → 0(本就看全部)。
 //   - 若操作人已有「含子树且覆盖父区域」的授权 → 新区域会自动继承 → 0(不重复记)。
 //   - 否则取「第一个授权覆盖了父区域(直接节点或子树)的角色」= 赋予其建权的角色,补给它。
-func (s *Store) areaAutoGrantRole(actor *model.User, parent *model.Area) int {
+func (s *AreaService) areaAutoGrantRole(actor *model.User, parent *model.Area) int {
 	if actor == nil || actor.IsSuperuser || parent == nil {
 		return 0
 	}
@@ -291,7 +295,7 @@ func (s *Store) areaAutoGrantRole(actor *model.User, parent *model.Area) int {
 }
 
 // updateArea 重命名 + 可选移动:移动需对本节点和新父都有权,且防环(新父不能是自己或后代)。
-func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
+func (s *AreaService) updateArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
 	old := s.AreaById(in.Id)
 	if old == nil {
 		return nil, gerror.New("区域不存在")
@@ -303,6 +307,7 @@ func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		return nil, gerror.New("无权管理「" + old.Name + "」:" + d.Reason)
 	}
 
+	// ParentId 不传或等于原父级时只重命名；传了新的父级才进入移动逻辑。
 	moving := in.ParentId != 0 && in.ParentId != old.ParentId
 	var newParent *model.Area
 	if moving {
@@ -313,10 +318,12 @@ func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveI
 		if strings.HasPrefix(newParent.Path, old.Path) {
 			return nil, gerror.New("不能把区域移动到自己或自己的子区域下")
 		}
+		// 移动区域要同时有“原区域”和“新父区域”权限，避免把节点移动到无权管理的树枝下。
 		if d := s.CheckArea(actor, newParent.Id); !d.Allow {
 			return nil, gerror.New("无权移动到「" + newParent.Name + "」下:" + d.Reason)
 		}
 	}
+	// 重名校验使用最终父级：移动时检查新父级，不移动时检查原父级。
 	dupParent := old.ParentId
 	if moving {
 		dupParent = newParent.Id
@@ -326,6 +333,7 @@ func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	}
 
 	err := dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		// 名称总是更新；父级和 path 只有移动时才更新。
 		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).
 			Data(do.Area{Name: in.Name}).Where(dao.Area.Columns().Id, old.Id).Update(); err != nil {
 			return err
@@ -351,11 +359,12 @@ func (s *Store) updateArea(ctx context.Context, actor *model.User, in *AreaSaveI
 	if err = s.reloadAreas(ctx); err != nil {
 		return nil, err
 	}
+	// 移动后 path 已批量重写，必须从新缓存里返回对象。
 	return s.AreaById(old.Id), nil
 }
 
 // areaNameTaken 同一父节点下是否已存在同名区域(excludeId 排除自身,用于更新)。
-func (s *Store) areaNameTaken(parentId int, name string, excludeId int) bool {
+func (s *AreaService) areaNameTaken(parentId int, name string, excludeId int) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, a := range s.areas {
