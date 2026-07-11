@@ -11,7 +11,6 @@ import (
 // 规则:保存角色时,新角色的权限必须 ⊆ 操作者(创建人)的有效权限。
 // 校验通过后子角色权限独立存储;运行时再与创建人的当前有效权限取交集,
 // 避免上级收回创建人权限后,被委派出去的角色继续保有旧权限。
-// actorId=="0" 视为系统管理员/不受限。
 
 // ---------- 单角色级判断(供"新角色"求权限用) ----------
 
@@ -107,7 +106,6 @@ func (s *PermissionService) userResAreaCoversUncachedWithSkip(u *model.User, are
 //   - 操作者「范围外」、角色原有的权限 = 原样保留(编辑者看不到也删不掉)。
 // 即  最终 = (提交 ∩ 操作者可授范围) ∪ (原有 \ 操作者可授范围)。
 // 这样既防越权(超范围的提交被丢弃),又防误删(看不见的权限被保留)。
-// actorId<=0(系统管理员)直接采用提交内容。
 // 返回合并后的角色,以及被保留的范围外权限条数。
 
 func intSet(ids []int) map[int]bool {
@@ -143,17 +141,9 @@ func mergeScopes(old, sub []model.DataScope, grant map[int]bool) ([]model.DataSc
 
 // MergeDelegated 合并角色基础权限。
 // 当前用户只能改自己可授范围内的菜单和树范围;范围外旧权限会保留,避免编辑时误删看不见的权限。
-func isUnrestrictedActor(actorId string) bool {
-	return actorId == "0"
-}
-
 func (s *PermissionService) MergeDelegated(actorId string, old, sub *model.Role) (*model.Role, int) {
 	if old == nil {
 		old = &model.Role{}
-	}
-	// 不受限入口用于初始化/维护，直接采用提交内容，不做受控委派裁剪。
-	if isUnrestrictedActor(actorId) {
-		return sub, 0 // 不受限,直接采用提交
 	}
 	// 后端重新计算操作者当前可授范围,不能信任前端置灰/隐藏结果。
 	g := s.GrantableSet(actorId)
@@ -199,19 +189,10 @@ func (s *PermissionService) MergeDelegated(actorId string, old, sub *model.Role)
 
 // ---------- 供前端置灰:操作者可授出的范围上限 ----------
 
-// Grantable 是当前用户的可授权上限。
-// Unlimited=true 表示超级管理员/不受限,前端可展示全部权限;否则各列表只包含当前用户可授出的 ID。
-type Grantable = model.Grantable
-
 // GrantableSet 计算当前用户“能授出去什么”。
 // 角色编辑页用它隐藏或置灰超范围权限;保存时也用同一套结果做后端合并兜底。
-func (s *PermissionService) GrantableSet(actorId string) *Grantable {
-	g := &Grantable{MenuIds: []int{}, MenuCodes: []string{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}, RoleIds: []int{}}
-	// actorId=0 是系统维护入口，前端可以展示全部权限，保存时也不做裁剪。
-	if isUnrestrictedActor(actorId) {
-		g.Unlimited = true
-		return g
-	}
+func (s *PermissionService) GrantableSet(actorId string) *model.Grantable {
+	g := &model.Grantable{MenuIds: []int{}, MenuCodes: []string{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}}
 	actor := s.User(actorId)
 	if actor == nil {
 		return g
@@ -240,13 +221,6 @@ func (s *PermissionService) GrantableSet(actorId string) *Grantable {
 			g.OrgIds = append(g.OrgIds, o.Id)
 		}
 	}
-	// 可见 + 可分配的角色集:普通用户仅自建角色,超管全部。
-	mset, _ := s.ManageableRoles(actorId)
-	for _, r := range s.Roles() { // 按角色 id 有序输出,便于前端/截图稳定
-		if mset[r.Id] {
-			g.RoleIds = append(g.RoleIds, r.Id)
-		}
-	}
 	return g
 }
 
@@ -254,12 +228,9 @@ func (s *PermissionService) GrantableSet(actorId string) *Grantable {
 //
 //	manageable(actor) = { 自己创建的角色 }
 //
-// actorId<=0(不受限)或超级管理员 → unlimited=true(可见全部角色)。
+// 超级管理员返回 unlimited=true(可见全部角色)。
 func (s *PermissionService) ManageableRoles(actorId string) (set map[int]bool, unlimited bool) {
 	set = map[int]bool{}
-	if isUnrestrictedActor(actorId) {
-		return set, true
-	}
 	actor := s.User(actorId)
 	if actor == nil {
 		return set, false
@@ -268,30 +239,6 @@ func (s *PermissionService) ManageableRoles(actorId string) (set map[int]bool, u
 		return set, true
 	}
 	for _, r := range s.Roles() { // 1) 自己创建的角色(模型 A)
-		if r.CreatedBy == actorId {
-			set[r.Id] = true
-		}
-	}
-	return set, false
-}
-
-// OwnedRoles 返回操作者「可编辑/删除」的角色集合 = 仅自己创建的角色(created_by)。
-//
-// 与 ManageableRoles 当前保持一致:普通用户只能看到、分配、编辑、删除自己创建的角色。
-// actorId<=0(不受限)或超级管理员 → unlimited=true(可编辑/删除全部角色)。
-func (s *PermissionService) OwnedRoles(actorId string) (set map[int]bool, unlimited bool) {
-	set = map[int]bool{}
-	if isUnrestrictedActor(actorId) {
-		return set, true
-	}
-	actor := s.User(actorId)
-	if actor == nil {
-		return set, false
-	}
-	if actor.IsSuperuser {
-		return set, true
-	}
-	for _, r := range s.Roles() {
 		if r.CreatedBy == actorId {
 			set[r.Id] = true
 		}

@@ -22,8 +22,10 @@ func newRuntimeCapPermission() *PermissionService {
 			2: {Id: 2, ParentId: 1, Name: "研发部", Path: "/1/2/"},
 			3: {Id: 3, ParentId: 1, Name: "财务部", Path: "/1/3/"},
 		},
-		resources: map[int]*model.Resource{},
-		actions:   []model.Action{},
+		resources: map[int]*model.Resource{
+			100: {Id: 100, AreaId: 2, Name: "A区摄像头"},
+		},
+		actions: []model.Action{{Code: "live", Name: "实时预览"}},
 		roles: map[int]*model.Role{
 			10: {
 				Id:        10,
@@ -62,6 +64,16 @@ func newRuntimeCapPermission() *PermissionService {
 		},
 	}
 	return &PermissionService{Store: store}
+}
+
+func TestResourceRequiresFunctionAndDataPermission(t *testing.T) {
+	s := newRuntimeCapPermission()
+	li := s.User("2")
+	s.roles[20].MenuIds = nil
+
+	if d := s.CheckResource(li, 100, "live"); d.Allow {
+		t.Fatalf("expected missing action menu to deny resource access, got allow: %s", d.Reason)
+	}
 }
 
 func TestDelegatedRoleRuntimeCapForArea(t *testing.T) {

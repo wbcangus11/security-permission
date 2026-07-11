@@ -24,9 +24,7 @@ type RoleColumns struct {
 	Id          string // 角色ID
 	Name        string // 角色名称
 	Description string // 描述
-	CreatedBy   string // 创建人(委派来源用户),0为系统创建/不受限
-	CreatedAt   string // 创建时间
-	UpdatedAt   string // 更新时间
+	CreatedBy   string // 创建人用户ID,0表示系统内置角色
 }
 
 // roleColumns holds the columns for the table role.
@@ -35,8 +33,6 @@ var roleColumns = RoleColumns{
 	Name:        "name",
 	Description: "description",
 	CreatedBy:   "created_by",
-	CreatedAt:   "created_at",
-	UpdatedAt:   "updated_at",
 }
 
 // NewRoleDao creates and returns a new DAO object for table data access.

@@ -26,13 +26,11 @@ type IPermV1 interface {
 	UserDelete(ctx context.Context, req *v1.UserDeleteReq) (res *v1.CommonRes, err error)
 
 	AppMenu(ctx context.Context, req *v1.AppMenuReq) (res *v1.CommonRes, err error)
-	AppAreaTree(ctx context.Context, req *v1.AppAreaTreeReq) (res *v1.CommonRes, err error)
 	AppAreaChildren(ctx context.Context, req *v1.AppAreaChildrenReq) (res *v1.CommonRes, err error)
 	AppAreaSearch(ctx context.Context, req *v1.AppAreaSearchReq) (res *v1.CommonRes, err error)
 	AppResourceList(ctx context.Context, req *v1.AppResourceListReq) (res *v1.CommonRes, err error)
 
 	ManageMenu(ctx context.Context, req *v1.ManageMenuReq) (res *v1.CommonRes, err error)
-	ManageAreaTree(ctx context.Context, req *v1.ManageAreaTreeReq) (res *v1.CommonRes, err error)
 	ManageAreaChildren(ctx context.Context, req *v1.ManageAreaChildrenReq) (res *v1.CommonRes, err error)
 	ManageAreaDetail(ctx context.Context, req *v1.ManageAreaDetailReq) (res *v1.CommonRes, err error)
 	ManageAreaSave(ctx context.Context, req *v1.ManageAreaSaveReq) (res *v1.CommonRes, err error)

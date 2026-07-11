@@ -26,16 +26,8 @@ import (
 	"security-permission/internal/model/do"
 )
 
-// AreaSaveInput 新增/重命名/移动区域的入参。
-// Id<=0 为新增(ParentId=父区域);更新时 ParentId 非 0 且与原值不同即移动。
-type AreaSaveInput = model.AreaSaveInput
-
-// AreaReorderInput 调整同级区域顺序的入参。
-// 前端根据“上移/下移”先算出目标兄弟区域 ToAreaId,后端只负责交换两个同父区域的位置。
-type AreaReorderInput = model.AreaReorderInput
-
 // Save 新增或更新(重命名/移动)区域,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *AreaService) Save(ctx context.Context, actorId string, in *AreaSaveInput) (*model.Area, error) {
+func (s *AreaService) Save(ctx context.Context, actorId string, in *model.AreaSaveInput) (*model.Area, error) {
 	// 区域写操作先统一过功能关：必须有“安防区域管理”菜单权限。
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
@@ -102,7 +94,7 @@ func (s *AreaService) Delete(ctx context.Context, actorId string, areaId int) er
 
 // ReorderArea 交换两个同级区域的排序。
 // 排序本身也是写操作,因此两个区域都要过“安保区域管理”菜单和区域数据权限。
-func (s *AreaService) Reorder(ctx context.Context, actorId string, in *AreaReorderInput) error {
+func (s *AreaService) Reorder(ctx context.Context, actorId string, in *model.AreaReorderInput) error {
 	// 排序是写操作，先过功能关；后面还要检查两个参与排序的区域都在数据范围内。
 	actor, err := s.checkAreaWriter(actorId)
 	if err != nil {
@@ -198,7 +190,7 @@ func (s *AreaService) checkAreaWriter(actorId string) (*model.User, error) {
 }
 
 // createArea 新增子区域:数据关看父区域;插入后回填 path=父.path+新ID+"/"。
-func (s *AreaService) createArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
+func (s *AreaService) createArea(ctx context.Context, actor *model.User, in *model.AreaSaveInput) (*model.Area, error) {
 	parent := s.AreaById(in.ParentId)
 	if parent == nil {
 		return nil, gerror.New("父区域不存在")
@@ -295,7 +287,7 @@ func (s *AreaService) areaAutoGrantRole(actor *model.User, parent *model.Area) i
 }
 
 // updateArea 重命名 + 可选移动:移动需对本节点和新父都有权,且防环(新父不能是自己或后代)。
-func (s *AreaService) updateArea(ctx context.Context, actor *model.User, in *AreaSaveInput) (*model.Area, error) {
+func (s *AreaService) updateArea(ctx context.Context, actor *model.User, in *model.AreaSaveInput) (*model.Area, error) {
 	old := s.AreaById(in.Id)
 	if old == nil {
 		return nil, gerror.New("区域不存在")

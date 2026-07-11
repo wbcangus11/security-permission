@@ -64,8 +64,6 @@ type Resource interface {
 }
 
 type View interface {
-	VisibleAreas(userID string) []model.VisibleArea
-	ManageAreas(userID string) []model.VisibleArea
 	ManageOrgs(userID string) []model.VisibleArea
 	ManageAreaDetail(ctx context.Context, userID string, areaID int) (*model.ManageDetail, error)
 	ManageOrgDetail(userID string, orgID int) *model.ManageDetail

@@ -14,7 +14,7 @@ import (
 
 // Store 是运行时读模型,只负责保存 MySQL 快照和用户有效权限缓存。
 //
-// 业务入口不要直接依赖 Store;应从 service.S.Roles / Users / Auth / Views 等服务进入。
+// 业务入口不要直接依赖 Store;应从 RoleService、UserService、PermissionService、ViewService 等服务进入。
 type Store struct {
 	mu sync.RWMutex
 
@@ -147,7 +147,7 @@ func (s *Store) Actions() []model.Action {
 }
 
 // Roles 返回全部角色,按 ID 排序。
-// 普通用户能不能看到某个角色,由 ManageableRoles/前端可见性再过滤。
+// 普通用户能不能看到某个角色,由 RoleService.List 统一过滤。
 func (s *Store) Roles() []*model.Role {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

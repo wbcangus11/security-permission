@@ -24,12 +24,8 @@ import (
 	"security-permission/internal/model/do"
 )
 
-// ResourceSaveInput 新增/重命名/改类型/移动资源的入参。
-// Id<=0 为新增(AreaId=所在区域);更新时 AreaId 非 0 且与原值不同即移动到新区域。
-type ResourceSaveInput = model.ResourceSaveInput
-
 // Save 新增或更新(重命名/改类型/移动)资源,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *ResourceService) Save(ctx context.Context, actorId string, in *ResourceSaveInput) (*model.Resource, error) {
+func (s *ResourceService) Save(ctx context.Context, actorId string, in *model.ResourceSaveInput) (*model.Resource, error) {
 	// 资源写操作先统一过功能关：必须有“资源管理”菜单权限。
 	actor, err := s.checkResourceWriter(actorId)
 	if err != nil {
@@ -81,7 +77,7 @@ func (s *ResourceService) checkResourceWriter(actorId string) (*model.User, erro
 }
 
 // createResource 在某区域下新增资源:数据关看所在区域;新增后授权了该区域 RES_AREA 子树的角色自动继承。
-func (s *ResourceService) createResource(ctx context.Context, actor *model.User, in *ResourceSaveInput) (*model.Resource, error) {
+func (s *ResourceService) createResource(ctx context.Context, actor *model.User, in *model.ResourceSaveInput) (*model.Resource, error) {
 	area := s.AreaById(in.AreaId)
 	if area == nil {
 		return nil, gerror.New("所在区域不存在")
@@ -120,7 +116,7 @@ func (s *ResourceService) createResource(ctx context.Context, actor *model.User,
 }
 
 // updateResource 重命名/改类型 + 可选移动:移动需对原区域和新区域都有权。
-func (s *ResourceService) updateResource(ctx context.Context, actor *model.User, in *ResourceSaveInput) (*model.Resource, error) {
+func (s *ResourceService) updateResource(ctx context.Context, actor *model.User, in *model.ResourceSaveInput) (*model.Resource, error) {
 	old := s.ResourceById(in.Id)
 	if old == nil {
 		return nil, gerror.New("资源不存在")

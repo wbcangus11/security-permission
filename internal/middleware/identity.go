@@ -30,8 +30,8 @@ func Identity(r *ghttp.Request) {
 	r.Middleware.Next()
 }
 
-// ActorID returns the authenticated actor. The unrestricted maintenance actor
-// "0" is deliberately unavailable over HTTP.
+// ActorID returns the authenticated actor. "0" is reserved for system-owned
+// seed data and is never a valid login identity.
 func ActorID(ctx context.Context) (string, error) {
 	r := g.RequestFromCtx(ctx)
 	if r == nil {
@@ -42,7 +42,7 @@ func ActorID(ctx context.Context) (string, error) {
 		return "", gerror.New("未登录或身份凭证缺失")
 	}
 	if actorID == "0" {
-		return "", gerror.New("系统维护身份不能通过 HTTP 使用")
+		return "", gerror.New("系统内置身份不能登录")
 	}
 	if service.RuntimeService().User(actorID) == nil {
 		return "", gerror.New("当前登录用户不存在")

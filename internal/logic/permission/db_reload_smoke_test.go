@@ -6,10 +6,10 @@ import (
 )
 
 func TestReloadFromDatabaseSmoke(t *testing.T) {
-	if err := S.Reload(context.Background()); err != nil {
+	if err := S.Runtime.Reload(context.Background()); err != nil {
 		t.Fatalf("reload failed: %v", err)
 	}
-	if menu := S.menuByCode("app.video.live"); menu == nil {
+	if menu := S.Permission.menuByCode("app.video.live"); menu == nil {
 		t.Fatal("expected menu app.video.live loaded from database")
 	}
 }

@@ -122,12 +122,6 @@ type AppMenuReq struct {
 	g.Meta `path:"/app/menu" method:"get" tags:"权限/应用端" summary:"查询应用端可见菜单"`
 }
 
-// AppAreaTreeReq 查询应用端完整可见区域树。
-// 该接口保留用于小数据量演示;大数据量场景优先用 AppAreaChildrenReq。
-type AppAreaTreeReq struct {
-	g.Meta `path:"/app/area-tree" method:"get" tags:"权限/应用端" summary:"查询应用端完整可见区域树"`
-}
-
 // AppAreaChildrenReq 分页查询应用端区域树某一层。
 // 它使用 RES_AREA 资源范围过滤,返回“可访问节点 + 导航祖先”。
 type AppAreaChildrenReq struct {
@@ -159,12 +153,6 @@ type AppResourceListReq struct {
 // ManageMenuReq 查询后台系统管理可见菜单。
 type ManageMenuReq struct {
 	g.Meta `path:"/manage/menu" method:"get" tags:"权限/后台管理" summary:"查询后台可见菜单"`
-}
-
-// ManageAreaTreeReq 查询后台完整可见区域树。
-// 该接口保留用于小数据量演示;大数据量场景优先用 ManageAreaChildrenReq。
-type ManageAreaTreeReq struct {
-	g.Meta `path:"/manage/area-tree" method:"get" tags:"权限/后台管理" summary:"查询后台完整可见区域树"`
 }
 
 // ManageAreaChildrenReq 分页查询后台区域树某一层。

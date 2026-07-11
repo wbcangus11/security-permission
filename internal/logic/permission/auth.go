@@ -6,14 +6,11 @@ import (
 	"security-permission/internal/model"
 )
 
-// Decision 是鉴权结果,会返回给前端鉴权测试面板展示。
-type Decision = model.Decision
-
 func isSuper(u *model.User) bool { return u != nil && u.IsSuperuser }
 
-func superDecision(what string) *Decision {
+func superDecision(what string) *model.Decision {
 	r := "超级管理员拥有全部" + what
-	return &Decision{Allow: true, Reason: r, Trace: []string{r}}
+	return &model.Decision{Allow: true, Reason: r, Trace: []string{r}}
 }
 
 func (s *PermissionService) effectiveRoles(u *model.User) []*model.Role {
@@ -24,10 +21,7 @@ func (s *PermissionService) effectiveRoles(u *model.User) []*model.Role {
 	defer s.mu.RUnlock()
 	roles := make([]*model.Role, 0, len(u.RoleIds))
 	for _, rid := range u.RoleIds {
-		// 用户绑定表里可能残留已删除角色的历史 id，运行时直接跳过，避免一次坏绑定拖垮鉴权。
-		if r := s.roles[rid]; r != nil {
-			roles = append(roles, r)
-		}
+		roles = append(roles, s.roles[rid])
 	}
 	return roles
 }
@@ -52,7 +46,7 @@ func (s *PermissionService) creatorByRole(r *model.Role) *model.User {
 	return s.User(r.CreatedBy)
 }
 
-// created_by=0 表示系统创建/不受限角色;超级管理员创建的角色也不受创建人当前权限收窄。
+// 系统内置角色和超级管理员创建的角色不受创建人当前权限收窄。
 func (s *PermissionService) delegatedRoleUncapped(r *model.Role) bool {
 	if r == nil || r.CreatedBy == "" || r.CreatedBy == "0" {
 		return true
@@ -104,11 +98,11 @@ func (s *PermissionService) creatorAllowsResArea(r *model.Role, areaId int, skip
 
 // CheckMenu 判断用户是否拥有某个菜单/功能权限。
 // 这是“功能关”:只看角色里有没有该菜单 code;超级管理员直接通过。
-func (s *PermissionService) CheckMenu(u *model.User, menuCode string) *Decision {
+func (s *PermissionService) CheckMenu(u *model.User, menuCode string) *model.Decision {
 	if isSuper(u) {
 		return superDecision("功能权限")
 	}
-	d := &Decision{}
+	d := &model.Decision{}
 	// 接口只接受稳定 menu code；先转成数据库菜单记录，避免调用方依赖自增 id。
 	menu := s.menuByCode(menuCode)
 	if menu == nil {
@@ -128,17 +122,17 @@ func (s *PermissionService) CheckMenu(u *model.User, menuCode string) *Decision 
 
 // CheckArea 判断用户是否覆盖某个安保区域。
 // 这是后台管理域的数据关,用于区域管理、资源管理等写操作。
-func (s *PermissionService) CheckArea(u *model.User, areaId int) *Decision {
+func (s *PermissionService) CheckArea(u *model.User, areaId int) *model.Decision {
 	return s.checkCachedTree(u, areaId, treeKindArea)
 }
 
 // CheckOrg 判断用户是否覆盖某个组织节点。
 // 这是后台人员/组织管理的数据关。
-func (s *PermissionService) CheckOrg(u *model.User, orgId int) *Decision {
+func (s *PermissionService) CheckOrg(u *model.User, orgId int) *model.Decision {
 	return s.checkCachedTree(u, orgId, treeKindOrg)
 }
 
-func (s *PermissionService) checkCachedTree(u *model.User, nodeId int, kind string) *Decision {
+func (s *PermissionService) checkCachedTree(u *model.User, nodeId int, kind string) *model.Decision {
 	if isSuper(u) {
 		return superDecision("数据权限")
 	}
@@ -149,11 +143,11 @@ func (s *PermissionService) checkCachedTree(u *model.User, nodeId int, kind stri
 }
 
 // checkTreeScopeWithSkip 是不读缓存的树范围判定,用于重建用户权限快照和应用创建人动态收窄。
-func (s *PermissionService) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope, skip map[int]bool) *Decision {
+func (s *PermissionService) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope, skip map[int]bool) *model.Decision {
 	if isSuper(u) {
 		return superDecision("数据权限")
 	}
-	d := &Decision{}
+	d := &model.Decision{}
 	targetPath := s.nodePath(kind, nodeId)
 	if targetPath == "" {
 		d.Reason = "目标节点不存在"
@@ -196,11 +190,21 @@ func (s *PermissionService) checkTreeScopeWithSkip(u *model.User, nodeId int, ki
 
 // CheckResource 判断用户是否能对某个业务资源执行某个操作。
 // 资源所在区域落在 RES_AREA 范围内时,该资源的所有操作都可用。
-func (s *PermissionService) CheckResource(u *model.User, resourceId int, actionCode string) *Decision {
+func (s *PermissionService) CheckResource(u *model.User, resourceId int, actionCode string) *model.Decision {
 	if isSuper(u) {
 		return superDecision("业务资源操作权限")
 	}
-	d := &Decision{}
+	d := &model.Decision{}
+	menuCode, ok := resourceActionMenus[actionCode]
+	if !ok {
+		d.Reason = "未知资源操作:" + actionCode
+		return d
+	}
+	if menuDecision := s.CheckMenu(u, menuCode); !menuDecision.Allow {
+		d.Reason = "功能权限不足:" + menuDecision.Reason
+		d.Trace = append(d.Trace, menuDecision.Trace...)
+		return d
+	}
 	// 资源先从内存快照读取；鉴权路径不查库，保证高频访问稳定。
 	res := func() *model.Resource {
 		s.mu.RLock()
@@ -224,11 +228,21 @@ func (s *PermissionService) CheckResource(u *model.User, resourceId int, actionC
 
 // checkResourceWithSkip 是不读缓存的资源操作判定,用于重建权限快照和应用创建人动态收窄。
 // 这里的 actionCode 只用于输出可读 trace;实际授权只看资源所在区域是否在 RES_AREA 范围内。
-func (s *PermissionService) checkResourceWithSkip(u *model.User, resourceId int, actionCode string, skip map[int]bool) *Decision {
+func (s *PermissionService) checkResourceWithSkip(u *model.User, resourceId int, actionCode string, skip map[int]bool) *model.Decision {
 	if isSuper(u) {
 		return superDecision("业务资源操作权限")
 	}
-	d := &Decision{}
+	d := &model.Decision{}
+	menuCode, ok := resourceActionMenus[actionCode]
+	if !ok {
+		d.Reason = "未知资源操作:" + actionCode
+		return d
+	}
+	menu := s.menuByCode(menuCode)
+	if menu == nil || !s.userHasMenuIdWithSkip(u, menu.Id, skip) {
+		d.Reason = "没有资源操作对应的功能权限"
+		return d
+	}
 	res := func() *model.Resource {
 		s.mu.RLock()
 		defer s.mu.RUnlock()

@@ -1,7 +1,7 @@
 # 本文件仅用于本地演示。生产环境使用 config.prod.yaml 并设置 GF_GCFG_FILE。
 # https://goframe.org/docs/web/server-config-file-template
 server:
-  address:     ":8849"
+  address:     ":8001"
   openapiPath: "/api.json"
   swaggerPath: "/swagger"
 

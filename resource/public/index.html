@@ -206,7 +206,6 @@
   .rolechk { display:flex!important; align-items:center; gap:6px; min-width:0; width:auto!important; font-size:13px; color:var(--ink2); }
   .rolechk input{ width:auto!important; flex:none; }
   .rolechk span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .rolechk.disabled{ color:var(--ink4); }
   .danger-link{ border-color:var(--danger-line)!important; color:var(--danger)!important; }
   @media (max-width: 960px){ .account-layout{ grid-template-columns:1fr; } }
   .modal-mask{ position:fixed; inset:0; z-index:2500; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(17,24,39,.42); }
@@ -409,7 +408,6 @@
     </div>
 
     <div class="violations" id="violations"></div>
-    <div id="roleReadonly" class="tip" style="display:none;background:var(--danger-soft);color:var(--danger);border-color:var(--danger-line)">只读:该角色非当前用户创建,无法保存修改。</div>
     <div class="footer-bar">
       <button class="btn btn-primary" id="btnSaveRole" onclick="saveRole()">保存</button>
       <button class="btn btn-default" onclick="loadRole(currentRoleId)">重置</button>
@@ -498,12 +496,11 @@ function resetTreeFold(kind){
   fold.expanded.clear(); fold.collapsed.clear();
 }
 let GRANT = {unlimited:true}; // 当前用户可授出的上限,用于置灰
-let ALL_ROLES = [];       // 最近一次拉取的角色列表
-// 角色管理一律以「当前登录」用户身份运作。demo 由前端传 userId,实际项目应由后端从 token 解析。
+// 角色管理一律以身份请求头解析出的当前用户运作。
 function currentUserId(){ return loginUserId(); }
 function isMenuKind(kind){ return kind==='sysmenu' || kind==='appmenu'; }
 function permKey(kind, node){ return isMenuKind(kind) ? node.code : node.id; }
-// 某菜单 code / 节点 id 在该树是否可授(不受限或在允许集合内)
+// 某菜单 code / 节点 id 在该树是否可授(超级管理员或在允许集合内)
 function grantAllows(kind, key){
   if(GRANT.unlimited) return true;
   const m={sysmenu:'menuCodes',appmenu:'menuCodes',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
@@ -514,13 +511,8 @@ function grantIds(kind){
   const m={area:'areaIds',resarea:'resAreaIds'}[kind];
   return (GRANT[m]||[]).map(Number);
 }
-// 角色管理列表的两个维度(对齐用户要求):
-//   可见/可编辑/删除 = 不受限/超管 ∪ 自建(created_by==当前用户)
-function roleCanSee(id){ return GRANT.unlimited || (GRANT.roleIds||[]).includes(Number(id)) || roleCanManage(id); } // 自建角色恒可见——即便 GRANT 尚未刷新(刚新建)
-function roleCanManage(id){ if(GRANT.unlimited) return true; const r=(ALL_ROLES||[]).find(x=>x.id===Number(id)); return !!r && String(r.createdBy)===currentUserId(); }
-
 // ---------- 角色配置:惰性分层区域树(级联勾选 + 推断 nodeType,对齐真实海康) ----------
-// 实测海康(docs/海康对照.md §二.6):就是普通 el-tree 级联勾选框,无「含子节点」开关。
+// 角色区域树对齐海康交互:使用普通 el-tree 级联勾选框,不单设「含子节点」开关。
 //   - 勾未展开节点 = 勾整棵子树(subTree);展开后被覆盖的子显实勾、可单独取消。
 //   - 取消某子 → 父降为半选(singleNode),其余兄弟保持子树。保存按「整子树全勾?」推断:
 //     全勾→{includeChild:true}(subTree);勾但非全→{includeChild:false}(singleNode)+递归。
@@ -782,6 +774,16 @@ function applyScopes(roots, scopes, store){
 }
 
 // ---------- 初始化 ----------
+const loginUserStorageKey = 'security-permission.demo-user-id';
+function storedLoginUserId(){
+  try{ return localStorage.getItem(loginUserStorageKey) || ''; }catch(_){ return ''; }
+}
+function persistLoginUserId(id){
+  try{
+    if(id && id!=='0') localStorage.setItem(loginUserStorageKey, id);
+    else localStorage.removeItem(loginUserStorageKey);
+  }catch(_){}
+}
 async function init(){
   await reloadMeta();
   await refreshRolePanel();   // 以当前登录用户身份初始化角色面板(grantable+列表+树+编辑门禁)
@@ -791,11 +793,16 @@ async function init(){
 }
 // 重新拉取元数据并刷新所有用户/角色下拉
 async function reloadMeta(){
+  // 重建用户选项前先记住当前身份；首次加载则恢复上次选择，避免刷新后回到第一位用户。
+  const loginSelect = document.getElementById('loginUser');
+  const previousUserId = loginSelect.value || storedLoginUserId();
   META = await api('/api/meta');
   META._areaById = {}; (META.areas||[]).forEach(a=>META._areaById[a.id]=a); // path 查询(惰性区域树的覆盖/继承判断用)
   const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}${u.isSuperuser?' ★超管':''}</option>`).join('');
   document.getElementById('tUser').innerHTML = userOpts;
-  document.getElementById('loginUser').innerHTML = userOpts;
+  loginSelect.innerHTML = userOpts;
+  if((META.users||[]).some(u=>String(u.id)===previousUserId)) loginSelect.value = previousUserId;
+  persistLoginUserId(loginSelect.value);
   syncLoginDisplay();
   META._roles = await api('/api/role/list');
   renderAccountPanel();
@@ -814,7 +821,7 @@ function switchView(v){
   document.querySelectorAll('.main-tab').forEach(e=>e.classList.toggle('active',e.dataset.view===v));
   document.querySelectorAll('.main-view').forEach(e=>e.classList.toggle('active',e.id==='view-'+v));
 }
-async function onLoginChange(){ syncLoginDisplay(); await loadAppView(); await loadSysView(); await refreshRolePanel(); }
+async function onLoginChange(){ persistLoginUserId(loginUserId()); syncLoginDisplay(); await loadAppView(); await loadSysView(); await refreshRolePanel(); }
 async function loadAppView(){
   // 应用菜单(功能权限)→ 卡片
   const menus=await api('/api/app/menu');
@@ -1442,10 +1449,6 @@ let EDIT_USER_ID = '';
 
 function orgName(id){ const o=(META.orgs||[]).find(x=>x.id===Number(id)); return o?o.name:('#'+id); }
 function roleName(id){ const r=(META._roles||[]).find(x=>x.id===Number(id)); return r?r.name:('#'+id); }
-function accountCanAssignRole(id){
-  if(!GRANT || GRANT.unlimited) return true;
-  return (GRANT.roleIds||[]).includes(Number(id));
-}
 function renderAccountPanel(){
   renderUserList();
   renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
@@ -1483,11 +1486,8 @@ function renderRoleChecks(selectedIds){
   const selected=new Set((selectedIds||[]).map(Number));
   const roles=META._roles||[];
   el.innerHTML=roles.map(r=>{
-    const can=accountCanAssignRole(r.id);
     const checked=selected.has(r.id);
-    const disabled=!can && checked ? 'disabled' : (!can ? 'disabled' : '');
-    const tip=!can ? ' title="不在当前登录用户可分配的自建角色范围内;已有绑定会被保留"' : '';
-    return `<label class="rolechk ${can?'':'disabled'}"${tip}><input type="checkbox" value="${r.id}" ${checked?'checked':''} ${disabled}> <span>${h(r.name)}</span></label>`;
+    return `<label class="rolechk"><input type="checkbox" value="${r.id}" ${checked?'checked':''}> <span>${h(r.name)}</span></label>`;
   }).join('') || '<span class="muted">暂无角色</span>';
 }
 function newUserForm(){ renderUserForm(null); }
@@ -1533,27 +1533,19 @@ async function fetchGrantable(){
 async function refreshRolePanel(){
   await fetchGrantable(); rerenderAll(); await refreshRoles();
   renderAccountPanel();
-  // 登录用户变 → 重算当前角色的可编辑性(只读/禁用保存)
-  if(currentRoleId){ const editable=roleCanManage(currentRoleId);
-    document.getElementById('btnSaveRole').disabled=!editable;
-    document.getElementById('roleReadonly').style.display=editable?'none':'block'; }
   renderRoleAreaTrees(); // 登录用户变 → canCheck/可编辑性变,惰性区域树重拉(放最后,读到最新 editable)
 }
 
 async function refreshRoles(){
   const roles = await api('/api/role/list');
   META._roles = roles;            // 供用户管理用
-  ALL_ROLES = roles;
   if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
   const el=document.getElementById('roleList');
   // 列表只显示「可见」角色:普通用户仅自建,超管全部。
-  const visible = roles.filter(r=>roleCanSee(r.id));
+  const visible = roles;
   el.innerHTML = visible.map(r=>{
-    // 可编辑/删除 = 不受限/超管 ∪ 仅自建。
-    const canEdit = roleCanManage(r.id);
-    const del = canEdit ? `<span class="role-del" title="删除角色" onclick="event.stopPropagation();delRole(${r.id})">${svgIco('i-trash')}</span>` : '';
-    const lock = canEdit ? '' : ' <span class="muted" title="非自己创建的角色,只读(仅可查看,不能编辑/删除)">🔒</span>';
-    return `<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})"><span class="role-nm">${r.name}${lock}<small>${r.description||''}</small></span>${del}</div>`;
+    const del = `<span class="role-del" title="删除角色" onclick="event.stopPropagation();delRole(${r.id})">${svgIco('i-trash')}</span>`;
+    return `<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})"><span class="role-nm">${r.name}<small>${r.description||''}</small></span>${del}</div>`;
   }).join('');
   const visIds=new Set(visible.map(r=>r.id));
   if(currentRoleId && !visIds.has(currentRoleId)) currentRoleId=0; // 当前角色对该登录用户不可见 → 取消选中
@@ -1596,9 +1588,7 @@ async function loadRole(id){
   applyScopes(buildTree(META.orgs), role.orgScopes||[], checked.org);
   rtApplyScopes('resarea', role.resourceAreaScopes||[]);
   // 编辑门禁(对齐海康 canEdit):非自己创建的角色 → 只读,禁用保存
-  const editable = roleCanManage(id);
-  document.getElementById('btnSaveRole').disabled = !editable;
-  document.getElementById('roleReadonly').style.display = editable ? 'none' : 'block';
+  document.getElementById('btnSaveRole').disabled = false;
   rerenderAll(); renderRoleAreaTrees(); // 切换角色不必重拉/重建列表,高亮已在开头同步更新;区域树惰性重渲
 }
 
@@ -1609,7 +1599,6 @@ function newRole(){ currentRoleId=0; role=blankRole();
   rtApplyScopes('area', []); rtApplyScopes('resarea', []); // 惰性区域树:清空显式授权
   // 新建:当前用户即创建人,始终可保存
   document.getElementById('btnSaveRole').disabled = false;
-  document.getElementById('roleReadonly').style.display = 'none';
   // 注意:不要在此调用 refreshRoles()——它结尾的 `if(!currentRoleId)...loadRole(roles[0])`
   // 会因 currentRoleId 刚被置 0 而立刻把第一个角色回填进表单,导致「新建」表单被覆盖。
   // 新建态下角色列表无需重拉,只需取消列表选中高亮。

@@ -235,14 +235,6 @@ func (c *ControllerV1) AppMenu(ctx context.Context, req *v1.AppMenuReq) (*v1.Com
 	return ok(service.ViewService().AppMenus(actorID)), nil
 }
 
-func (c *ControllerV1) AppAreaTree(ctx context.Context, req *v1.AppAreaTreeReq) (*v1.CommonRes, error) {
-	actorID, failure := requestActor(ctx)
-	if failure != nil {
-		return failure, nil
-	}
-	return ok(service.ViewService().VisibleAreas(actorID)), nil
-}
-
 func (c *ControllerV1) AppAreaChildren(ctx context.Context, req *v1.AppAreaChildrenReq) (*v1.CommonRes, error) {
 	actorID, failure := requestActor(ctx)
 	if failure != nil {
@@ -285,14 +277,6 @@ func (c *ControllerV1) ManageMenu(ctx context.Context, req *v1.ManageMenuReq) (*
 		return failure, nil
 	}
 	return ok(service.ViewService().SysMenus(actorID)), nil
-}
-
-func (c *ControllerV1) ManageAreaTree(ctx context.Context, req *v1.ManageAreaTreeReq) (*v1.CommonRes, error) {
-	actorID, failure := requestActor(ctx)
-	if failure != nil {
-		return failure, nil
-	}
-	return ok(service.ViewService().ManageAreas(actorID)), nil
 }
 
 func (c *ControllerV1) ManageAreaChildren(ctx context.Context, req *v1.ManageAreaChildrenReq) (*v1.CommonRes, error) {

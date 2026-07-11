@@ -73,7 +73,7 @@ type Role struct {
 	Id          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	CreatedBy   string `json:"createdBy"` // 创建该角色的用户(委派来源),"0" 表示系统创建/不受限
+	CreatedBy   string `json:"createdBy"` // 创建该角色的用户,"0" 表示系统内置角色
 
 	// 功能权限:菜单 id 列表(含系统域与应用域)
 	MenuIds []int `json:"-"`

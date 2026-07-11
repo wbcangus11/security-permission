@@ -24,7 +24,6 @@ type Grantable struct {
 	AreaIds    []int    `json:"areaIds"`
 	OrgIds     []int    `json:"orgIds"`
 	ResAreaIds []int    `json:"resAreaIds"`
-	RoleIds    []int    `json:"roleIds"`
 }
 
 type AreaSaveInput struct {
@@ -86,12 +85,6 @@ type ResourceView struct {
 	Name    string        `json:"name"`
 	Area    string        `json:"area"`
 	Actions []ActionAllow `json:"actions"`
-}
-
-type AreaResourcesView struct {
-	Accessible bool           `json:"accessible"`
-	AreaName   string         `json:"areaName"`
-	Resources  []ResourceView `json:"resources"`
 }
 
 type AncestorRef struct {

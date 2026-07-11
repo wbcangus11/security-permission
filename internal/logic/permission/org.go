@@ -24,12 +24,8 @@ import (
 	"security-permission/internal/model/do"
 )
 
-// OrgSaveInput 新增/重命名/移动组织的入参。
-// Id<=0 为新增(ParentId=父组织);更新时 ParentId 非 0 且与原值不同即移动。
-type OrgSaveInput = model.OrgSaveInput
-
 // Save 新增或更新(重命名/移动)组织,写时鉴权,成功后刷新缓存。actorId=操作人。
-func (s *OrgService) Save(ctx context.Context, actorId string, in *OrgSaveInput) (*model.Org, error) {
+func (s *OrgService) Save(ctx context.Context, actorId string, in *model.OrgSaveInput) (*model.Org, error) {
 	// 所有组织写操作先统一过功能关：必须拥有“人员信息”菜单权限。
 	actor, err := s.checkOrgWriter(actorId)
 	if err != nil {
@@ -107,7 +103,7 @@ func (s *OrgService) checkOrgWriter(actorId string) (*model.User, error) {
 }
 
 // createOrg 新增子组织:数据关看父组织;插入后回填 path=父.path+新ID+"/"。
-func (s *OrgService) createOrg(ctx context.Context, actor *model.User, in *OrgSaveInput) (*model.Org, error) {
+func (s *OrgService) createOrg(ctx context.Context, actor *model.User, in *model.OrgSaveInput) (*model.Org, error) {
 	parent := s.OrgById(in.ParentId)
 	if parent == nil {
 		return nil, gerror.New("父组织不存在")
@@ -147,7 +143,7 @@ func (s *OrgService) createOrg(ctx context.Context, actor *model.User, in *OrgSa
 }
 
 // updateOrg 重命名 + 可选移动:移动需对本节点和新父都有权,且防环(新父不能是自己或后代)。
-func (s *OrgService) updateOrg(ctx context.Context, actor *model.User, in *OrgSaveInput) (*model.Org, error) {
+func (s *OrgService) updateOrg(ctx context.Context, actor *model.User, in *model.OrgSaveInput) (*model.Org, error) {
 	old := s.OrgById(in.Id)
 	if old == nil {
 		return nil, gerror.New("组织不存在")

@@ -23,3 +23,9 @@ const (
 	// areaSearchScopeManage 表示区域搜索使用后台管理 AREA 范围;其他值默认按应用端 RES_AREA 范围。
 	areaSearchScopeManage = "manage"
 )
+
+var resourceActionMenus = map[string]string{
+	"live":     "app.video.live",
+	"playback": "app.video.playback",
+	"picture":  "app.video.picture",
+}
