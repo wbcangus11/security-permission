@@ -3,344 +3,221 @@ package permission
 import (
 	"strings"
 
+	"github.com/gogf/gf/v2/errors/gcode"
+	"github.com/gogf/gf/v2/errors/gerror"
+
 	"security-permission/internal/model"
 )
 
-func isSuper(u *model.User) bool { return u != nil && u.IsSuperuser }
+func isSuper(user *model.User) bool { return user != nil && user.IsSuperuser }
 
-func superDecision(what string) *model.Decision {
-	r := "超级管理员拥有全部" + what
-	return &model.Decision{Allow: true, Reason: r, Trace: []string{r}}
+type decision struct {
+	Allow  bool
+	Reason string
 }
 
-func (s *PermissionService) effectiveRoles(u *model.User) []*model.Role {
-	if u == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	roles := make([]*model.Role, 0, len(u.RoleIds))
-	for _, rid := range u.RoleIds {
-		roles = append(roles, s.roles[rid])
-	}
-	return roles
+func superDecision(what string) *decision {
+	reason := "超级管理员拥有全部" + what
+	return &decision{Allow: true, Reason: reason}
 }
 
-func withSkippedRole(skip map[int]bool, roleId int) map[int]bool {
-	next := make(map[int]bool, len(skip)+1)
-	for id, ok := range skip {
-		next[id] = ok
-	}
-	next[roleId] = true
-	return next
-}
-
-func roleSkipped(skip map[int]bool, roleId int) bool {
-	return skip != nil && skip[roleId]
-}
-
-func (s *PermissionService) creatorByRole(r *model.Role) *model.User {
-	if r == nil || r.CreatedBy == "" || r.CreatedBy == "0" {
-		return nil
-	}
-	return s.User(r.CreatedBy)
-}
-
-// 系统内置角色和超级管理员创建的角色不受创建人当前权限收窄。
-func (s *PermissionService) delegatedRoleUncapped(r *model.Role) bool {
-	if r == nil || r.CreatedBy == "" || r.CreatedBy == "0" {
-		return true
-	}
-	creator := s.User(r.CreatedBy)
-	return creator != nil && creator.IsSuperuser
-}
-
-func (s *PermissionService) creatorAllowsMenu(r *model.Role, menuId int, skip map[int]bool) bool {
-	if s.delegatedRoleUncapped(r) {
-		return true
-	}
-	creator := s.creatorByRole(r)
-	if creator == nil {
-		return false
-	}
-	// 运行时动态收窄:角色存着的权限还要再受创建人当前权限约束。
-	// skip 当前角色是为了避免“角色通过自己证明创建人仍有权限”的递归闭环。
-	return s.userHasMenuIdUncachedWithSkip(creator, menuId, withSkippedRole(skip, r.Id))
-}
-
-func (s *PermissionService) creatorAllowsTree(r *model.Role, kind string, nodeId int, skip map[int]bool) bool {
-	if s.delegatedRoleUncapped(r) {
-		return true
-	}
-	creator := s.creatorByRole(r)
-	if creator == nil {
-		return false
-	}
-	d := s.checkTreeScopeWithSkip(creator, nodeId, kind, func(x *model.Role) []model.DataScope {
-		if kind == treeKindArea {
-			return x.AreaScopes
+func roleHasMenuID(role *model.Role, menuID int) bool {
+	for _, id := range role.MenuIds {
+		if id == menuID {
+			return true
 		}
-		return x.OrgScopes
-	}, withSkippedRole(skip, r.Id))
-	return d.Allow
+	}
+	return false
 }
 
-func (s *PermissionService) creatorAllowsResArea(r *model.Role, areaId int, skip map[int]bool) bool {
-	if s.delegatedRoleUncapped(r) {
+func (e *evaluator) userHasMenuID(user *model.User, menuID int) bool {
+	if isSuper(user) {
 		return true
 	}
-	creator := s.creatorByRole(r)
-	if creator == nil {
-		return false
+	for _, role := range e.effectiveRoles(user) {
+		if roleHasMenuID(role, menuID) {
+			return true
+		}
 	}
-	return s.userResAreaCoversUncachedWithSkip(creator, areaId, withSkippedRole(skip, r.Id))
+	return false
 }
 
-// CheckMenu 判断用户是否拥有某个菜单/功能权限。
-// 这是“功能关”:只看角色里有没有该菜单 code;超级管理员直接通过。
-func (s *PermissionService) CheckMenu(u *model.User, menuCode string) *model.Decision {
-	if isSuper(u) {
+func (e *evaluator) roleAllowsTree(scopes []model.DataScope, kind string, nodeID int) bool {
+	targetPath := e.nodePath(kind, nodeID)
+	if targetPath == "" {
+		return false
+	}
+	for _, scope := range scopes {
+		if scope.NodeId == nodeID {
+			return true
+		}
+		if scope.IncludeChild {
+			if path := e.nodePath(kind, scope.NodeId); path != "" && strings.HasPrefix(targetPath, path) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (e *evaluator) userResourceAreaCovers(user *model.User, areaID int) bool {
+	if isSuper(user) {
+		return true
+	}
+	for _, role := range e.effectiveRoles(user) {
+		if e.roleAllowsTree(role.ResourceAreaScopes, treeKindArea, areaID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *evaluator) checkMenu(user *model.User, menuCode string) *decision {
+	if isSuper(user) {
 		return superDecision("功能权限")
 	}
-	d := &model.Decision{}
-	// 接口只接受稳定 menu code；先转成数据库菜单记录，避免调用方依赖自增 id。
-	menu := s.menuByCode(menuCode)
+	decision := &decision{}
+	menu := e.menuByCode(menuCode)
 	if menu == nil {
-		d.Reason = "菜单不存在: " + menuCode
-		return d
+		decision.Reason = "菜单不存在：" + menuCode
+		return decision
 	}
-	// userPermissions 已经合并多角色、created_by 动态收窄和缓存版本，读这里就是最终生效结果。
-	if p := s.userPermissions(u); p != nil && p.MenuCodes[menuCode] {
-		d.Allow = true
-		d.Reason = "用户有效权限包含菜单「" + menu.Name + "」"
-		d.Trace = append(d.Trace, d.Reason)
-		return d
+	if e.userHasMenuID(user, menu.Id) {
+		decision.Allow = true
+		decision.Reason = "用户有效角色包含菜单“" + menu.Name + "”"
+		return decision
 	}
-	d.Reason = "没有任何有效权限授予菜单「" + menu.Name + "」"
-	return d
+	decision.Reason = "没有有效角色授予菜单“" + menu.Name + "”"
+	return decision
 }
 
-// CheckArea 判断用户是否覆盖某个安保区域。
-// 这是后台管理域的数据关,用于区域管理、资源管理等写操作。
-func (s *PermissionService) CheckArea(u *model.User, areaId int) *model.Decision {
-	return s.checkCachedTree(u, areaId, treeKindArea)
+func (e *evaluator) hasAnyMenu(user *model.User, menuCodes ...string) bool {
+	if user == nil || e.err != nil {
+		return false
+	}
+	for _, menuCode := range menuCodes {
+		if e.checkMenu(user, menuCode).Allow {
+			return true
+		}
+		if e.err != nil {
+			return false
+		}
+	}
+	return false
 }
 
-// CheckOrg 判断用户是否覆盖某个组织节点。
-// 这是后台人员/组织管理的数据关。
-func (s *PermissionService) CheckOrg(u *model.User, orgId int) *model.Decision {
-	return s.checkCachedTree(u, orgId, treeKindOrg)
+// requireAnyMenu 是服务入口的功能权限门。数据范围决定“能看哪些数据”，
+// 菜单权限决定“能否使用这个接口”；两者必须同时满足。
+func (e *evaluator) requireAnyMenu(user *model.User, menuCodes ...string) error {
+	if e.err != nil {
+		return e.err
+	}
+	if user == nil {
+		return gerror.NewCode(gcode.CodeNotAuthorized, "当前用户不存在或已失效")
+	}
+	if e.hasAnyMenu(user, menuCodes...) {
+		return e.err
+	}
+	if e.err != nil {
+		return e.err
+	}
+	return gerror.NewCode(gcode.CodeNotAuthorized, "功能权限不足")
 }
 
-func (s *PermissionService) checkCachedTree(u *model.User, nodeId int, kind string) *model.Decision {
-	if isSuper(u) {
+// checkTree 判断用户是否拥有某棵业务树中指定节点的数据权限。
+//
+// 参数说明：
+//   - user：当前被鉴权的用户；
+//   - nodeID：目标区域或组织节点 ID；
+//   - kind：树类型，area=后台区域、resarea=视频监控区域、org=组织；
+//
+// 角色权限在保存后独立生效，created_by 只记录创建人，不参与运行时鉴权。
+// 判定结果采用“默认拒绝”：只有用户当前绑定角色的已保存范围覆盖目标节点时，才返回 Allow=true。
+func (e *evaluator) checkTree(user *model.User, nodeID int, kind string) *decision {
+	// 第 1 步：超级管理员不受树范围限制，直接放行。
+	if isSuper(user) {
 		return superDecision("数据权限")
 	}
-	if kind == treeKindArea {
-		return s.checkTreeScopeWithSkip(u, nodeId, kind, func(r *model.Role) []model.DataScope { return r.AreaScopes }, nil)
-	}
-	return s.checkTreeScopeWithSkip(u, nodeId, kind, func(r *model.Role) []model.DataScope { return r.OrgScopes }, nil)
-}
 
-// checkTreeScopeWithSkip 是不读缓存的树范围判定,用于重建用户权限快照和应用创建人动态收窄。
-func (s *PermissionService) checkTreeScopeWithSkip(u *model.User, nodeId int, kind string, pick func(*model.Role) []model.DataScope, skip map[int]bool) *model.Decision {
-	if isSuper(u) {
-		return superDecision("数据权限")
-	}
-	d := &model.Decision{}
-	targetPath := s.nodePath(kind, nodeId)
+	// 第 2 步：先读取目标节点的物化路径。区域和组织的 path 都类似 /1/3/4/，
+	// 后续用路径前缀即可判断目标是否位于某个已授权节点的子树中。
+	decision := &decision{}
+	targetPath := e.nodePath(kind, nodeID)
 	if targetPath == "" {
-		d.Reason = "目标节点不存在"
-		return d
+		// 查不到路径表示目标节点不存在；不存在的目标按拒绝处理。
+		decision.Reason = "目标节点不存在"
+		return decision
 	}
-	for _, r := range s.effectiveRoles(u) {
-		if roleSkipped(skip, r.Id) {
-			continue
+
+	// 第 3 步：遍历用户绑定的所有可读取角色。任意一个角色满足条件即可放行。
+	for _, role := range e.effectiveRoles(user) {
+		// 第 4 步：根据树类型选择角色中对应的数据范围，三个权限域不能混用。
+		var scopes []model.DataScope
+		switch kind {
+		case treeKindOrg:
+			// 组织管理使用 ORG 范围。
+			scopes = role.OrgScopes
+		case treeKindResArea:
+			// 视频监控应用使用 RES_AREA 范围。
+			scopes = role.ResourceAreaScopes
+		default:
+			// 后台区域管理使用 AREA 范围。
+			scopes = role.AreaScopes
 		}
-		for _, sc := range pick(r) {
-			// include_child=false 时只认当前节点;这是角色树“半选/单节点授权”的落库语义。
-			if sc.NodeId == nodeId {
-				if !s.creatorAllowsTree(r, kind, nodeId, skip) {
-					d.Trace = append(d.Trace, "角色「"+r.Name+"」直接授权了该节点, 但已超出创建人当前可授权范围")
-					continue
-				}
-				d.Allow = true
-				d.Reason = "角色「" + r.Name + "」直接授权了该节点"
-				d.Trace = append(d.Trace, d.Reason)
-				return d
+
+		// 第 5 步：逐条判断该角色的数据范围是否覆盖目标节点。
+		for _, scope := range scopes {
+			// 精确授权：授权节点就是目标节点时，无论 includeChild 是否开启都覆盖目标自身。
+			covered := scope.NodeId == nodeID
+			if !covered && scope.IncludeChild {
+				// 子树授权：includeChild=true 时，目标 path 以授权节点 path 开头即表示
+				// 目标位于其子树中。path 的每一级都带“/”，可避免节点 1 和 10 误匹配。
+				path := e.nodePath(kind, scope.NodeId)
+				covered = path != "" && strings.HasPrefix(targetPath, path)
 			}
-			if sc.IncludeChild {
-				// include_child=true 时用物化路径前缀判断子树覆盖,新增子节点天然继承权限。
-				if scPath := s.nodePath(kind, sc.NodeId); scPath != "" && strings.HasPrefix(targetPath, scPath) {
-					if !s.creatorAllowsTree(r, kind, nodeId, skip) {
-						d.Trace = append(d.Trace, "角色「"+r.Name+"」授权的子树包含该节点, 但已超出创建人当前可授权范围")
-						continue
-					}
-					d.Allow = true
-					d.Reason = "角色「" + r.Name + "」授权的子树「" + s.nodeName(kind, sc.NodeId) + "」包含该节点"
-					d.Trace = append(d.Trace, d.Reason)
-					return d
-				}
+			if !covered {
+				// 当前范围不覆盖目标，继续检查该角色的下一条范围。
+				continue
 			}
+
+			// 第 6 步：角色的已保存范围覆盖目标，鉴权成功并立即返回。
+			// 创建人的权限变化或账号删除不会在这里反向修改该角色。
+			decision.Allow = true
+			decision.Reason = "角色“" + role.Name + "”的数据范围覆盖目标节点"
+			return decision
 		}
 	}
-	d.Reason = "没有任何角色的数据范围覆盖该节点"
-	return d
+
+	// 第 7 步：所有角色及其范围都检查完仍未命中，按默认拒绝返回。
+	decision.Reason = "没有有效角色的数据范围覆盖目标节点"
+	return decision
 }
 
-// CheckResource 判断用户是否能对某个业务资源执行某个操作。
-// 资源所在区域落在 RES_AREA 范围内时,该资源的所有操作都可用。
-func (s *PermissionService) CheckResource(u *model.User, resourceId int, actionCode string) *model.Decision {
-	if isSuper(u) {
+func (e *evaluator) checkResource(user *model.User, resourceID int, actionCode string) *decision {
+	if isSuper(user) {
 		return superDecision("业务资源操作权限")
 	}
-	d := &model.Decision{}
-	menuCode, ok := resourceActionMenus[actionCode]
+	decision := &decision{}
+	action, ok := resourceAction(actionCode)
 	if !ok {
-		d.Reason = "未知资源操作:" + actionCode
-		return d
+		decision.Reason = "未知资源操作：" + actionCode
+		return decision
 	}
-	if menuDecision := s.CheckMenu(u, menuCode); !menuDecision.Allow {
-		d.Reason = "功能权限不足:" + menuDecision.Reason
-		d.Trace = append(d.Trace, menuDecision.Trace...)
-		return d
+	menuDecision := e.checkMenu(user, action.MenuCode)
+	if !menuDecision.Allow {
+		decision.Reason = "功能权限不足：" + menuDecision.Reason
+		return decision
 	}
-	// 资源先从内存快照读取；鉴权路径不查库，保证高频访问稳定。
-	res := func() *model.Resource {
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		return s.resource(resourceId)
-	}()
-	if res == nil {
-		d.Reason = "资源不存在"
-		return d
+	resource := e.resource(resourceID)
+	if resource == nil {
+		decision.Reason = "资源不存在"
+		return decision
 	}
-	actionName := s.actionName(actionCode)
-	if s.userResAreaCoversUncachedWithSkip(u, res.AreaId, nil) {
-		d.Allow = true
-		d.Reason = "用户有效业务资源范围覆盖资源「" + res.Name + "」,允许「" + actionName + "」"
-		d.Trace = append(d.Trace, d.Reason)
-		return d
+	if !e.userResourceAreaCovers(user, resource.AreaId) {
+		decision.Reason = "资源不在任何有效视频监控区域范围内"
+		return decision
 	}
-	d.Reason = "资源不在任何有效业务范围内"
-	return d
-}
-
-// checkResourceWithSkip 是不读缓存的资源操作判定,用于重建权限快照和应用创建人动态收窄。
-// 这里的 actionCode 只用于输出可读 trace;实际授权只看资源所在区域是否在 RES_AREA 范围内。
-func (s *PermissionService) checkResourceWithSkip(u *model.User, resourceId int, actionCode string, skip map[int]bool) *model.Decision {
-	if isSuper(u) {
-		return superDecision("业务资源操作权限")
-	}
-	d := &model.Decision{}
-	menuCode, ok := resourceActionMenus[actionCode]
-	if !ok {
-		d.Reason = "未知资源操作:" + actionCode
-		return d
-	}
-	menu := s.menuByCode(menuCode)
-	if menu == nil || !s.userHasMenuIdWithSkip(u, menu.Id, skip) {
-		d.Reason = "没有资源操作对应的功能权限"
-		return d
-	}
-	res := func() *model.Resource {
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		return s.resource(resourceId)
-	}()
-	if res == nil {
-		d.Reason = "资源不存在"
-		return d
-	}
-	areaPath := s.nodePath(treeKindArea, res.AreaId)
-
-	for _, r := range s.effectiveRoles(u) {
-		if roleSkipped(skip, r.Id) {
-			continue
-		}
-		// 资源权限只认 RES_AREA 区域范围;资源落在范围内时默认拥有全部操作。
-		inScope := false
-		var scopeName string
-		// 第一层:资源所在区域必须落在角色的 RES_AREA 范围内。
-		for _, sc := range r.ResourceAreaScopes {
-			if sc.NodeId == res.AreaId {
-				inScope, scopeName = true, s.nodeName(treeKindArea, sc.NodeId)
-				break
-			}
-			if sc.IncludeChild {
-				if scPath := s.nodePath(treeKindArea, sc.NodeId); scPath != "" && strings.HasPrefix(areaPath, scPath) {
-					inScope, scopeName = true, s.nodeName(treeKindArea, sc.NodeId)
-					break
-				}
-			}
-		}
-		if !inScope {
-			continue
-		}
-		if !s.creatorAllowsResArea(r, res.AreaId, skip) {
-			d.Trace = append(d.Trace, "角色「"+r.Name+"」业务范围「"+scopeName+"」覆盖资源所在区域, 但已超出创建人当前资源范围")
-			continue
-		}
-		d.Trace = append(d.Trace, "角色「"+r.Name+"」业务范围「"+scopeName+"」覆盖资源所在区域")
-
-		d.Allow = true
-		d.Reason = "角色「" + r.Name + "」业务范围覆盖资源所在区域,默认允许「" + s.actionName(actionCode) + "」"
-		d.Trace = append(d.Trace, d.Reason)
-		return d
-	}
-	if d.Reason == "" {
-		d.Reason = "资源不在任何角色的业务范围内"
-	}
-	return d
-}
-
-func (s *PermissionService) menuByCode(code string) *model.Menu {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, menu := range s.menus {
-		if menu.Code == code {
-			item := *menu
-			return &item
-		}
-	}
-	return nil
-}
-
-func (s *PermissionService) nodePath(kind string, id int) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if kind == treeKindArea {
-		if a := s.area(id); a != nil {
-			return a.Path
-		}
-	} else {
-		if o := s.org(id); o != nil {
-			return o.Path
-		}
-	}
-	return ""
-}
-
-func (s *PermissionService) nodeName(kind string, id int) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if kind == treeKindArea {
-		if a := s.area(id); a != nil {
-			return a.Name
-		}
-	} else {
-		if o := s.org(id); o != nil {
-			return o.Name
-		}
-	}
-	return ""
-}
-
-func (s *PermissionService) actionName(code string) string {
-	for _, a := range s.Actions() {
-		if a.Code == code {
-			return a.Name
-		}
-	}
-	return code
+	decision.Allow = true
+	decision.Reason = "视频监控区域范围覆盖资源“" + resource.Name + "”，允许“" + action.Name + "”"
+	return decision
 }

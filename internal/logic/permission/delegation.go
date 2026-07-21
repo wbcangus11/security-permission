@@ -1,247 +1,204 @@
 package permission
 
 import (
-	"strings"
+	"context"
 
+	"security-permission/internal/dao"
 	"security-permission/internal/model"
 )
 
-// 受控委派(二次授权)—— 模型 A:写时合并 + 运行时按创建人当前权限收窄。
-//
-// 规则:保存角色时,新角色的权限必须 ⊆ 操作者(创建人)的有效权限。
-// 校验通过后子角色权限独立存储;运行时再与创建人的当前有效权限取交集,
-// 避免上级收回创建人权限后,被委派出去的角色继续保有旧权限。
+// 角色委派采用“写时限制、运行时独立生效”：创建或编辑角色时，操作者只能授予
+// 自己当前拥有的权限；保存后角色不再随创建人的权限变化而自动收窄。
+// 保存时只检查本次提交及旧角色中实际出现的 ID，不为了鉴权加载整张树。
 
-// ---------- 单角色级判断(供"新角色"求权限用) ----------
-
-func roleHasMenuId(r *model.Role, menuId int) bool {
-	for _, m := range r.MenuIds {
-		if m == menuId {
-			return true
-		}
-	}
-	return false
-}
-
-// roleAllowsTree 判断某角色的树范围是否覆盖目标节点(精确命中或含子树)。
-func (s *PermissionService) roleAllowsTree(scopes []model.DataScope, kind string, nodeId int) bool {
-	targetPath := s.nodePath(kind, nodeId)
-	if targetPath == "" {
-		return false
-	}
-	for _, sc := range scopes {
-		if sc.NodeId == nodeId {
-			return true
-		}
-		if sc.IncludeChild {
-			if p := s.nodePath(kind, sc.NodeId); p != "" && strings.HasPrefix(targetPath, p) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// ---------- 操作者(用户)级判断 ----------
-
-func (s *PermissionService) userHasMenuId(u *model.User, menuId int) bool {
-	return s.userHasMenuIdWithSkip(u, menuId, nil)
-}
-
-func (s *PermissionService) userHasMenuIdWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
-	if skip == nil {
-		if isSuper(u) {
-			return true
-		}
-		if p := s.userPermissions(u); p != nil {
-			return p.MenuIds[menuId]
-		}
-		return false
-	}
-	return s.userHasMenuIdUncachedWithSkip(u, menuId, skip)
-}
-
-func (s *PermissionService) userHasMenuIdUncachedWithSkip(u *model.User, menuId int, skip map[int]bool) bool {
-	if isSuper(u) { // 超级管理员拥有全部菜单 → SysMenus/AppMenus 自动返回全集
-		return true
-	}
-	for _, r := range s.effectiveRoles(u) {
-		if roleSkipped(skip, r.Id) {
-			continue
-		}
-		if roleHasMenuId(r, menuId) && s.creatorAllowsMenu(r, menuId, skip) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *PermissionService) userResAreaCovers(u *model.User, areaId int) bool {
-	return s.userResAreaCoversWithSkip(u, areaId, nil)
-}
-
-func (s *PermissionService) userResAreaCoversWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
-	return s.userResAreaCoversUncachedWithSkip(u, areaId, skip)
-}
-
-func (s *PermissionService) userResAreaCoversUncachedWithSkip(u *model.User, areaId int, skip map[int]bool) bool {
-	if isSuper(u) { // 超级管理员覆盖全部区域资源 → 应用端可见全部
-		return true
-	}
-	for _, r := range s.effectiveRoles(u) {
-		if roleSkipped(skip, r.Id) {
-			continue
-		}
-		if s.roleAllowsTree(r.ResourceAreaScopes, treeKindArea, areaId) && s.creatorAllowsResArea(r, areaId, skip) {
-			return true
-		}
-	}
-	return false
-}
-
-// ---------- 合并:海康式委派(模型 A) ----------
-//
-// 保存角色时:
-//   - 操作者「范围内」的权限 = 以本次提交为准(可增可删);
-//   - 操作者「范围外」、角色原有的权限 = 原样保留(编辑者看不到也删不掉)。
-// 即  最终 = (提交 ∩ 操作者可授范围) ∪ (原有 \ 操作者可授范围)。
-// 这样既防越权(超范围的提交被丢弃),又防误删(看不见的权限被保留)。
-// 返回合并后的角色,以及被保留的范围外权限条数。
-
-func intSet(ids []int) map[int]bool {
-	m := make(map[int]bool, len(ids))
-	for _, id := range ids {
-		m[id] = true
-	}
-	return m
-}
-
-// mergeScopes 合并树范围:范围内取提交,范围外保留原有。
-func mergeScopes(old, sub []model.DataScope, grant map[int]bool) ([]model.DataScope, int) {
-	out := []model.DataScope{}
+func mergeScopes(old, submitted []model.DataScope, grantable map[int]bool) ([]model.DataScope, int) {
+	out := make([]model.DataScope, 0, len(old)+len(submitted))
 	seen := map[int]bool{}
-	// 范围内以本次提交为准：前端取消勾选就真正删除，新增勾选也可以写入。
-	for _, sc := range sub {
-		if grant[sc.NodeId] {
-			out = append(out, sc)
-			seen[sc.NodeId] = true
+	for _, scope := range submitted {
+		if scope.NodeId > 0 && grantable[scope.NodeId] && !seen[scope.NodeId] {
+			out = append(out, scope)
+			seen[scope.NodeId] = true
 		}
 	}
 	preserved := 0
-	// 范围外保留旧值：编辑者看不到/无权触碰的授权不能被一次保存误删。
-	for _, sc := range old {
-		if !grant[sc.NodeId] && !seen[sc.NodeId] {
-			out = append(out, sc)
-			seen[sc.NodeId] = true
+	for _, scope := range old {
+		if scope.NodeId > 0 && !grantable[scope.NodeId] && !seen[scope.NodeId] {
+			out = append(out, scope)
+			seen[scope.NodeId] = true
 			preserved++
 		}
 	}
 	return out, preserved
 }
 
-// MergeDelegated 合并角色基础权限。
-// 当前用户只能改自己可授范围内的菜单和树范围;范围外旧权限会保留,避免编辑时误删看不见的权限。
-func (s *PermissionService) MergeDelegated(actorId string, old, sub *model.Role) (*model.Role, int) {
+func uniqueMenuIDs(old, submitted *model.Role) []int {
+	seen := map[int]bool{}
+	out := []int{}
+	for _, source := range [][]int{submitted.MenuIds, old.MenuIds} {
+		for _, id := range source {
+			if id > 0 && !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+func uniqueScopeIDs(old, submitted []model.DataScope) []int {
+	seen := map[int]bool{}
+	out := []int{}
+	for _, source := range [][]model.DataScope{submitted, old} {
+		for _, scope := range source {
+			if scope.NodeId > 0 && !seen[scope.NodeId] {
+				seen[scope.NodeId] = true
+				out = append(out, scope.NodeId)
+			}
+		}
+	}
+	return out
+}
+
+func (e *evaluator) mergeDelegated(userID string, old, submitted *model.Role) (*model.Role, int) {
 	if old == nil {
 		old = &model.Role{}
 	}
-	// 后端重新计算操作者当前可授范围,不能信任前端置灰/隐藏结果。
-	g := s.GrantableSet(actorId)
-	if g.Unlimited { // 超级管理员作为操作者:可授全部,直接采用提交
-		return sub, 0
+	user := e.user(userID)
+	if user == nil {
+		return submitted, 0
 	}
-	menuG, areaG, orgG, resAreaG := intSet(g.MenuIds), intSet(g.AreaIds), intSet(g.OrgIds), intSet(g.ResAreaIds)
+	if user.IsSuperuser {
+		return submitted, 0
+	}
 
-	res := &model.Role{Id: sub.Id, Name: sub.Name, Description: sub.Description, CreatedBy: sub.CreatedBy}
+	menuGrant := map[int]bool{}
+	for _, id := range uniqueMenuIDs(old, submitted) {
+		menuGrant[id] = e.userHasMenuID(user, id)
+	}
+	areaGrant := map[int]bool{}
+	for _, id := range uniqueScopeIDs(old.AreaScopes, submitted.AreaScopes) {
+		areaGrant[id] = e.checkTree(user, id, treeKindArea).Allow
+	}
+	orgGrant := map[int]bool{}
+	for _, id := range uniqueScopeIDs(old.OrgScopes, submitted.OrgScopes) {
+		orgGrant[id] = e.checkTree(user, id, treeKindOrg).Allow
+	}
+	resourceAreaGrant := map[int]bool{}
+	for _, id := range uniqueScopeIDs(old.ResourceAreaScopes, submitted.ResourceAreaScopes) {
+		resourceAreaGrant[id] = e.userResourceAreaCovers(user, id)
+	}
+
+	result := &model.Role{
+		Id:          submitted.Id,
+		Name:        submitted.Name,
+		Description: submitted.Description,
+		CreatedBy:   submitted.CreatedBy,
+	}
 	preserved := 0
-
-	// 菜单
-	seenM := map[int]bool{}
-	// 可授范围内:以本次提交为准,用户取消勾选就真正删除。
-	for _, m := range sub.MenuIds {
-		if menuG[m] {
-			res.MenuIds = append(res.MenuIds, m)
-			seenM[m] = true
+	seenMenu := map[int]bool{}
+	for _, id := range submitted.MenuIds {
+		if id > 0 && menuGrant[id] && !seenMenu[id] {
+			result.MenuIds = append(result.MenuIds, id)
+			seenMenu[id] = true
 		}
 	}
-	// 可授范围外:编辑者本来就看不到/无权改,旧值必须保留,防止低权限编辑误删高权限。
-	for _, m := range old.MenuIds {
-		if !menuG[m] && !seenM[m] {
-			res.MenuIds = append(res.MenuIds, m)
-			seenM[m] = true
+	for _, id := range old.MenuIds {
+		if id > 0 && !menuGrant[id] && !seenMenu[id] {
+			result.MenuIds = append(result.MenuIds, id)
+			seenMenu[id] = true
 			preserved++
 		}
 	}
 
-	// 三类树范围
-	var p int
-	// AREA=后台安保区域管理范围;ORG=人员组织范围;RES_AREA=应用端业务资源区域范围。
-	// 三者都使用相同合并公式:范围内采用提交,范围外保留旧值。
-	res.AreaScopes, p = mergeScopes(old.AreaScopes, sub.AreaScopes, areaG)
-	preserved += p
-	res.OrgScopes, p = mergeScopes(old.OrgScopes, sub.OrgScopes, orgG)
-	preserved += p
-	res.ResourceAreaScopes, p = mergeScopes(old.ResourceAreaScopes, sub.ResourceAreaScopes, resAreaG)
-	preserved += p
-
-	return res, preserved
+	var count int
+	result.AreaScopes, count = mergeScopes(old.AreaScopes, submitted.AreaScopes, areaGrant)
+	preserved += count
+	result.OrgScopes, count = mergeScopes(old.OrgScopes, submitted.OrgScopes, orgGrant)
+	preserved += count
+	result.ResourceAreaScopes, count = mergeScopes(old.ResourceAreaScopes, submitted.ResourceAreaScopes, resourceAreaGrant)
+	preserved += count
+	return result, preserved
 }
 
-// ---------- 供前端置灰:操作者可授出的范围上限 ----------
-
-// GrantableSet 计算当前用户“能授出去什么”。
-// 角色编辑页用它隐藏或置灰超范围权限;保存时也用同一套结果做后端合并兜底。
-func (s *PermissionService) GrantableSet(actorId string) *model.Grantable {
-	g := &model.Grantable{MenuIds: []int{}, MenuCodes: []string{}, AreaIds: []int{}, OrgIds: []int{}, ResAreaIds: []int{}}
-	actor := s.User(actorId)
-	if actor == nil {
-		return g
+func emptyGrantable() *model.Grantable {
+	return &model.Grantable{
+		MenuCodes: []string{}, AreaIds: []int{},
+		OrgIds: []int{}, ResAreaIds: []int{},
 	}
-	if actor.IsSuperuser { // 超级管理员可授出全部权限
-		g.Unlimited = true
-		return g
-	}
-	// 菜单、区域、组织、业务资源区域都按“当前最终生效权限”推导，可授权范围不会超过自己实际拥有的范围。
-	for _, m := range s.Menus() {
-		if s.userHasMenuId(actor, m.Id) {
-			g.MenuIds = append(g.MenuIds, m.Id)
-			g.MenuCodes = append(g.MenuCodes, m.Code)
-		}
-	}
-	for _, a := range s.Areas() {
-		if s.CheckArea(actor, a.Id).Allow {
-			g.AreaIds = append(g.AreaIds, a.Id)
-		}
-		if s.userResAreaCovers(actor, a.Id) {
-			g.ResAreaIds = append(g.ResAreaIds, a.Id)
-		}
-	}
-	for _, o := range s.Orgs() {
-		if s.CheckOrg(actor, o.Id).Allow {
-			g.OrgIds = append(g.OrgIds, o.Id)
-		}
-	}
-	return g
 }
 
-// ManageableRoles 返回操作者可见/可分配的角色集合。
-//
-//	manageable(actor) = { 自己创建的角色 }
-//
-// 超级管理员返回 unlimited=true(可见全部角色)。
-func (s *PermissionService) ManageableRoles(actorId string) (set map[int]bool, unlimited bool) {
-	set = map[int]bool{}
-	actor := s.User(actorId)
-	if actor == nil {
+// grantableSet 是角色编辑页的显式全集接口。只有该接口需要遍历菜单和树节点；
+// 数据只存在于当前请求的局部变量中，请求结束即释放。
+func (e *evaluator) grantableSet(userID string) *model.Grantable {
+	grantable := emptyGrantable()
+	user := e.user(userID)
+	if user == nil || e.err != nil {
+		return grantable
+	}
+	if user.IsSuperuser {
+		grantable.Unlimited = true
+		return grantable
+	}
+
+	for _, menu := range e.menus() {
+		if e.userHasMenuID(user, menu.Id) {
+			grantable.MenuCodes = append(grantable.MenuCodes, menu.Code)
+		}
+	}
+	areas, err := listAllAreas(e.ctx)
+	e.fail(err)
+	for _, area := range areas {
+		e.areas[area.Id] = area
+		e.areaLoaded[area.Id] = true
+		if e.checkTree(user, area.Id, treeKindArea).Allow {
+			grantable.AreaIds = append(grantable.AreaIds, area.Id)
+		}
+		if e.userResourceAreaCovers(user, area.Id) {
+			grantable.ResAreaIds = append(grantable.ResAreaIds, area.Id)
+		}
+	}
+	orgs, err := listAllOrgs(e.ctx)
+	e.fail(err)
+	for _, org := range orgs {
+		e.orgs[org.Id] = org
+		e.orgLoaded[org.Id] = true
+		if e.checkTree(user, org.Id, treeKindOrg).Allow {
+			grantable.OrgIds = append(grantable.OrgIds, org.Id)
+		}
+	}
+	return grantable
+}
+
+func (e *evaluator) manageableRoles(userID string) (map[int]bool, bool) {
+	set := map[int]bool{}
+	user := e.user(userID)
+	if user == nil || e.err != nil {
 		return set, false
 	}
-	if actor.IsSuperuser {
+	if user.IsSuperuser {
 		return set, true
 	}
-	for _, r := range s.Roles() { // 1) 自己创建的角色(模型 A)
-		if r.CreatedBy == actorId {
-			set[r.Id] = true
-		}
+	var rows []struct{ Id int }
+	if err := dao.Role.Ctx(e.ctx).Fields(dao.Role.Columns().Id).
+		Where(dao.Role.Columns().CreatedBy, userID).Scan(&rows); err != nil {
+		e.fail(err)
+		return set, false
+	}
+	for _, row := range rows {
+		set[row.Id] = true
 	}
 	return set, false
+}
+
+func GrantableSet(ctx context.Context, userID string) (*model.Grantable, error) {
+	ev := newEvaluator(ctx)
+	user := ev.user(userID)
+	if ev.err != nil {
+		return emptyGrantable(), ev.err
+	}
+	if err := ev.requireAnyMenu(user, menuRoleManage); err != nil {
+		return emptyGrantable(), err
+	}
+	grantable := ev.grantableSet(userID)
+	return grantable, ev.err
 }

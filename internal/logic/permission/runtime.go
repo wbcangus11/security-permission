@@ -2,269 +2,216 @@ package permission
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
 	"security-permission/internal/dao"
 	"security-permission/internal/model"
+	"security-permission/internal/model/entity"
 )
 
-// Meta returns the frontend bootstrap dictionary. Demo mode intentionally keeps
-// the full dataset for the permission simulator. Production mode returns only
-// data reachable by the authenticated actor.
-func (s *RuntimeService) Meta(actorID string, demoMode bool) *model.MetaData {
-	if demoMode {
-		return &model.MetaData{
-			Areas: s.Areas(), Orgs: s.Orgs(), Menus: s.Menus(), Resources: s.Resources(),
-			Actions: s.Actions(), Users: s.Users(),
-		}
-	}
-	out := &model.MetaData{
-		Areas: []*model.Area{}, Orgs: []*model.Org{}, Menus: []*model.Menu{},
-		Resources: []*model.Resource{}, Actions: s.Actions(), Users: []*model.User{},
-	}
-	actor := s.User(actorID)
-	if actor == nil {
-		return out
-	}
-	if actor.IsSuperuser {
-		out.Areas, out.Orgs, out.Menus = s.Areas(), s.Orgs(), s.Menus()
-		out.Resources, out.Users = s.Resources(), s.Users()
-		return out
-	}
-
-	grant := s.GrantableSet(actorID)
-	menuByID := make(map[int]*model.Menu)
-	menuVisible := make(map[int]bool)
-	for _, menu := range s.Menus() {
-		menuByID[menu.Id] = menu
-	}
-	var markMenu func(int)
-	markMenu = func(id int) {
-		if id == 0 || menuVisible[id] {
-			return
-		}
-		menu := menuByID[id]
-		if menu == nil {
-			return
-		}
-		menuVisible[id] = true
-		markMenu(menu.ParentId)
-	}
-	for _, id := range grant.MenuIds {
-		markMenu(id)
-	}
-	for _, menu := range s.Menus() {
-		if menuVisible[menu.Id] {
-			out.Menus = append(out.Menus, menu)
-		}
-	}
-
-	areaVisible := make(map[int]bool)
-	for _, id := range append(append([]int{}, grant.AreaIds...), grant.ResAreaIds...) {
-		if area := s.AreaById(id); area != nil {
-			markPathIDs(areaVisible, area.Path)
-		}
-	}
-	for _, area := range s.Areas() {
-		if areaVisible[area.Id] {
-			out.Areas = append(out.Areas, area)
-		}
-	}
-
-	orgVisible := make(map[int]bool)
-	for _, id := range grant.OrgIds {
-		if org := s.OrgById(id); org != nil {
-			markPathIDs(orgVisible, org.Path)
-		}
-	}
-	for _, org := range s.Orgs() {
-		if orgVisible[org.Id] {
-			out.Orgs = append(out.Orgs, org)
-		}
-	}
-	for _, resource := range s.Resources() {
-		if s.userResAreaCovers(actor, resource.AreaId) {
-			out.Resources = append(out.Resources, resource)
-		}
-	}
-
-	canManageUsers := s.CheckMenu(actor, menuAccountManage).Allow
-	for _, user := range s.Users() {
-		if user.Id == actorID || (canManageUsers && !user.IsSuperuser && s.CheckOrg(actor, user.OrgId).Allow) {
-			out.Users = append(out.Users, user)
-		}
-	}
-	return out
+func UserByID(ctx context.Context, id string) (*model.User, error) {
+	return cachedUser(ctx, id)
 }
 
-func markPathIDs(set map[int]bool, path string) {
-	for _, segment := range strings.Split(strings.Trim(path, "/"), "/") {
-		if id, err := strconv.Atoi(segment); err == nil {
-			set[id] = true
-		}
-	}
-}
-
-type visibilityNode struct {
-	Id       int
-	ParentId int
-	Name     string
-	Path     string
-}
-
-// buildVisibleTree marks ancestors by materialized path. This is O(n*depth)
-// instead of comparing every node with every accessible node.
-func buildVisibleTree(nodes []visibilityNode, accessible map[int]bool) []model.VisibleArea {
-	visible := make(map[int]bool, len(accessible))
-	for _, node := range nodes {
-		if !accessible[node.Id] {
-			continue
-		}
-		for _, segment := range strings.Split(strings.Trim(node.Path, "/"), "/") {
-			if id, err := strconv.Atoi(segment); err == nil {
-				visible[id] = true
-			}
-		}
-	}
-	out := make([]model.VisibleArea, 0, len(visible))
-	for _, node := range nodes {
-		if visible[node.Id] {
-			out = append(out, model.VisibleArea{Id: node.Id, ParentId: node.ParentId, Name: node.Name, Accessible: accessible[node.Id]})
-		}
-	}
-	return out
-}
-
-// ManageOrgs 后台管理域可见组织树(accessible=组织管理权限 ORG 覆盖)。
-func (s *ViewService) ManageOrgs(userId string) []model.VisibleArea {
-	u := s.User(userId)
-	if u == nil {
-		return []model.VisibleArea{}
-	}
-	orgs := s.Orgs()
-	acc := make(map[int]bool)
-	nodes := make([]visibilityNode, 0, len(orgs))
-	for _, o := range orgs {
-		nodes = append(nodes, visibilityNode{Id: o.Id, ParentId: o.ParentId, Name: o.Name, Path: o.Path})
-		if s.CheckOrg(u, o.Id).Allow {
-			acc[o.Id] = true
-		}
-	}
-	return buildVisibleTree(nodes, acc)
-}
-
-// ManageAreaDetail 点击安保区域:可管理则给出子区域数量 + 本区域直接资源;否则暂无管理权限。
-// 子区域由左侧树懒加载展开,不在详情里平铺;子区域数量与资源都走 DB 索引查询,避免全表扫描(支撑大数据量)。
-func (s *ViewService) ManageAreaDetail(ctx context.Context, userId string, areaId int) (*model.ManageDetail, error) {
-	u := s.User(userId)
-	d := &model.ManageDetail{Children: []string{}, Resources: []string{}, ResourceItems: []model.ResourceBrief{}}
-	if u == nil {
-		return d, nil
-	}
-	area := s.AreaById(areaId)
-	if area == nil {
-		return d, nil
-	}
-	d.Name = area.Name
-	d.ParentId = area.ParentId
-	if !s.CheckArea(u, areaId).Allow {
-		return d, nil // accessible=false
-	}
-	d.Accessible = true
-	// 子区域数量:cheap COUNT 走 idx_parent(不平铺,左树懒加载展开)
-	var err error
-	d.ChildCount, err = dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaId).Count()
-	if err != nil {
+func allUsers(ctx context.Context) ([]*model.User, error) {
+	var rows []struct{ Id string }
+	if err := dao.User.Ctx(ctx).Fields(dao.User.Columns().Id).
+		Order(dao.User.Columns().Id).Scan(&rows); err != nil {
 		return nil, err
 	}
-	// 本区域直接挂的资源:走 idx_area;直接资源通常很少,封顶 500 防御
-	var rs []model.ResourceBrief
-	if err = dao.Resource.Ctx(ctx).
-		Fields("id,name,type,area_id").
-		Where(dao.Resource.Columns().AreaId, areaId).
-		Order(dao.Resource.Columns().Id + " asc").
-		Limit(manageDetailResourceLimit).
-		Scan(&rs); err != nil {
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.Id)
+	}
+	return listUsersByIDs(ctx, ids)
+}
+
+func visibleOrgs(ctx context.Context, filter treeFilter) ([]*model.Org, error) {
+	where, args, visible := visibilityWhere(filter, treeNavAncestors(filter))
+	if !visible {
+		return []*model.Org{}, nil
+	}
+	query := dao.Org.Ctx(ctx).Order(dao.Org.Columns().Id)
+	if where != "" {
+		query = query.Where(where, args...)
+	}
+	var rows []entity.Org
+	if err := query.Scan(&rows); err != nil {
 		return nil, err
 	}
-	for _, r := range rs {
-		d.Resources = append(d.Resources, r.Name)
-		d.ResourceItems = append(d.ResourceItems, r)
+	out := make([]*model.Org, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &model.Org{Id: int(row.Id), ParentId: int(row.ParentId), Name: row.Name, Path: row.Path})
 	}
-	return d, nil
+	return out, nil
 }
 
-// ManageOrgDetail 点击组织:可管理则列出直接子组织;否则暂无管理权限。
-func (s *ViewService) ManageOrgDetail(userId string, orgId int) *model.ManageDetail {
-	u := s.User(userId)
-	d := &model.ManageDetail{Children: []string{}, Resources: []string{}}
-	if u == nil {
-		return d
-	}
-	for _, o := range s.Orgs() {
-		if o.Id == orgId {
-			d.Name = o.Name
-		}
-	}
-	if !s.CheckOrg(u, orgId).Allow {
-		return d
-	}
-	d.Accessible = true
-	for _, o := range s.Orgs() {
-		if o.ParentId == orgId {
-			d.Children = append(d.Children, o.Name)
-		}
-	}
-	return d
-}
-
-// SysMenus 某用户可见的系统管理菜单(功能权限 SYS)。
-func (s *ViewService) SysMenus(userId string) []*model.Menu {
-	u := s.User(userId)
-	if u == nil {
-		return []*model.Menu{}
-	}
-	return s.visibleMenusWithAncestors(u, model.MenuDomainSys)
-}
-
-// AppMenus 返回某用户在应用域可见的菜单(功能权限),用于应用端顶部菜单。
-func (s *ViewService) AppMenus(userId string) []*model.Menu {
-	u := s.User(userId)
-	if u == nil {
-		return []*model.Menu{}
-	}
-	return s.visibleMenusWithAncestors(u, model.MenuDomainApp)
-}
-
-func (s *ViewService) visibleMenusWithAncestors(u *model.User, domain string) []*model.Menu {
-	menus := s.Menus()
-	byId := make(map[int]*model.Menu, len(menus))
+func (e *evaluator) visibleMenusWithAncestors(user *model.User, domain string) []*model.Menu {
+	menus := e.menus()
+	byID := make(map[int]*model.Menu, len(menus))
 	visible := make(map[int]bool, len(menus))
-	for _, m := range menus {
-		byId[m.Id] = m
+	for _, menu := range menus {
+		byID[menu.Id] = menu
 	}
-	// 用户只拿到子菜单权限时,父菜单也要返回给前端当分组节点,否则左侧树会缺层级。
 	var mark func(*model.Menu)
-	mark = func(m *model.Menu) {
-		if m == nil || m.Domain != domain || visible[m.Id] {
+	mark = func(menu *model.Menu) {
+		if menu == nil || visible[menu.Id] || (domain != "" && menu.Domain != domain) {
 			return
 		}
-		visible[m.Id] = true
-		if m.ParentId > 0 {
-			mark(byId[m.ParentId])
-		}
+		visible[menu.Id] = true
+		mark(byID[menu.ParentId])
 	}
-	for _, m := range menus {
-		if m.Domain == domain && s.userHasMenuId(u, m.Id) {
-			mark(m)
+	for _, menu := range menus {
+		if (domain == "" || menu.Domain == domain) && e.userHasMenuID(user, menu.Id) {
+			mark(menu)
 		}
 	}
 	out := make([]*model.Menu, 0, len(visible))
-	for _, m := range menus {
-		if m.Domain == domain && visible[m.Id] {
-			out = append(out, m)
+	for _, menu := range menus {
+		if visible[menu.Id] {
+			out = append(out, menu)
 		}
 	}
 	return out
+}
+
+func fullMeta(ctx context.Context) (*model.MetaData, error) {
+	areas, err := listAllAreas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgs, err := listAllOrgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	menus, err := cachedMenus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	users, err := allUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &model.MetaData{
+		Areas: areas, Orgs: orgs, Menus: menus, Users: users,
+	}, nil
+}
+
+// Meta 返回前端初始化角色和用户管理所需的小型字典，不包含资源等大表。
+func Meta(ctx context.Context) (*model.MetaData, error) {
+	return fullMeta(ctx)
+}
+
+func ManageOrgs(ctx context.Context, userID string) ([]model.VisibleArea, error) {
+	ev := newEvaluator(ctx)
+	user := ev.user(userID)
+	if ev.err != nil {
+		return []model.VisibleArea{}, ev.err
+	}
+	if err := ev.requireAnyMenu(user, manageOrgReadMenus...); err != nil {
+		return []model.VisibleArea{}, err
+	}
+	filter := ev.treeScopeFilter(user, treeKindOrg)
+	orgs, err := visibleOrgs(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.VisibleArea, 0, len(orgs))
+	for _, org := range orgs {
+		out = append(out, model.VisibleArea{
+			Id: org.Id, ParentId: org.ParentId, Name: org.Name,
+			Accessible: filter.covers(org.Path, org.Id),
+		})
+	}
+	return out, ev.err
+}
+
+func ManageAreaDetail(ctx context.Context, userID string, areaID int) (*model.ManageDetail, error) {
+	out := &model.ManageDetail{Children: []string{}, ResourceItems: []model.ResourceBrief{}}
+	ev := newEvaluator(ctx)
+	user := ev.user(userID)
+	if ev.err != nil {
+		return out, ev.err
+	}
+	if err := ev.requireAnyMenu(user, manageAreaReadMenus...); err != nil {
+		return out, err
+	}
+	area := ev.area(areaID)
+	if ev.err != nil {
+		return out, ev.err
+	}
+	if area == nil {
+		return out, nil
+	}
+	out.Name, out.ParentId = area.Name, area.ParentId
+	if !ev.checkTree(user, areaID, treeKindArea).Allow {
+		return out, ev.err
+	}
+	out.Accessible = true
+	var err error
+	out.ChildCount, err = dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaID).Count()
+	if err != nil {
+		return nil, err
+	}
+	var resources []model.ResourceBrief
+	if err = dao.Resource.Ctx(ctx).Fields("id,name,type,area_id").
+		Where(dao.Resource.Columns().AreaId, areaID).Order(dao.Resource.Columns().Id).
+		Limit(manageDetailResourceLimit).Scan(&resources); err != nil {
+		return nil, err
+	}
+	for _, resource := range resources {
+		out.ResourceItems = append(out.ResourceItems, resource)
+	}
+	return out, ev.err
+}
+
+func ManageOrgDetail(ctx context.Context, userID string, orgID int) (*model.ManageDetail, error) {
+	out := &model.ManageDetail{Children: []string{}, ResourceItems: []model.ResourceBrief{}}
+	ev := newEvaluator(ctx)
+	user := ev.user(userID)
+	if ev.err != nil {
+		return out, ev.err
+	}
+	if err := ev.requireAnyMenu(user, manageOrgReadMenus...); err != nil {
+		return out, err
+	}
+	org := ev.org(orgID)
+	if ev.err != nil {
+		return out, ev.err
+	}
+	if org == nil {
+		return out, nil
+	}
+	out.Name, out.ParentId = org.Name, org.ParentId
+	if !ev.checkTree(user, orgID, treeKindOrg).Allow {
+		return out, ev.err
+	}
+	out.Accessible = true
+	var rows []struct{ Name string }
+	if err := dao.Org.Ctx(ctx).Fields(dao.Org.Columns().Name).
+		Where(dao.Org.Columns().ParentId, orgID).Order(dao.Org.Columns().Id).Scan(&rows); err != nil {
+		return nil, err
+	}
+	out.ChildCount = len(rows)
+	for _, row := range rows {
+		out.Children = append(out.Children, row.Name)
+	}
+	return out, ev.err
+}
+
+func SysMenus(ctx context.Context, userID string) ([]*model.Menu, error) {
+	return visibleMenus(ctx, userID, model.MenuDomainSys)
+}
+
+func AppMenus(ctx context.Context, userID string) ([]*model.Menu, error) {
+	return visibleMenus(ctx, userID, model.MenuDomainApp)
+}
+
+func visibleMenus(ctx context.Context, userID, domain string) ([]*model.Menu, error) {
+	ev := newEvaluator(ctx)
+	user := ev.user(userID)
+	if ev.err != nil || user == nil {
+		return []*model.Menu{}, ev.err
+	}
+	out := ev.visibleMenusWithAncestors(user, domain)
+	return out, ev.err
 }

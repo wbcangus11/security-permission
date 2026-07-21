@@ -1,5 +1,5 @@
-// dbinit always rebuilds the demo database from the current schema and seed.
-// It intentionally provides no migration or data-preservation behavior.
+// dbinit destructively rebuilds the current test database from schema, menu
+// and seed files. --recreate is required to avoid accidental execution.
 package main
 
 import (
@@ -14,6 +14,9 @@ import (
 const defaultDSN = "root:123456@tcp(127.0.0.1:3306)/?multiStatements=true&charset=utf8mb4&parseTime=true&loc=Local"
 
 func main() {
+	if len(os.Args) != 2 || os.Args[1] != "--recreate" {
+		exit("拒绝执行：重建会删除全部数据，请显式使用 --recreate", nil)
+	}
 	dsn := strings.TrimSpace(os.Getenv("DB_INIT_DSN"))
 	if dsn == "" {
 		dsn = defaultDSN
@@ -36,7 +39,7 @@ func main() {
 			exit("执行 "+path+" 失败", err)
 		}
 	}
-	fmt.Println("✅ 已按当前 schema 重建 security_permission 并导入种子数据")
+	fmt.Println("✅ 已按当前 schema 重建 security_permission 并导入测试数据")
 }
 
 func execFile(db *sql.DB, path string) error {
@@ -49,6 +52,10 @@ func execFile(db *sql.DB, path string) error {
 }
 
 func exit(message string, err error) {
-	fmt.Println("❌", message+":", err)
+	if err == nil {
+		fmt.Println("❌", message)
+	} else {
+		fmt.Println("❌", message+":", err)
+	}
 	os.Exit(1)
 }

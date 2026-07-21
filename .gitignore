@@ -15,7 +15,6 @@ output/
 manifest/output/
 temp/
 temp.yaml
-bin
 
 # 本项目编译产物与运行日志(不纳入版本管理)
 /security-permission.exe
@@ -28,7 +27,5 @@ server.out.log
 server.err.log
 run.log
 
-# config.yaml 仅用于本地演示。生产配置从示例复制后必须保持未跟踪。
-/manifest/config/config.prod.yaml
 # git-bash 崩溃转储
 *.stackdump

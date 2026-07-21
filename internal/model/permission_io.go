@@ -1,29 +1,24 @@
 package model
 
 type MetaData struct {
-	Areas     []*Area     `json:"areas"`
-	Orgs      []*Org      `json:"orgs"`
-	Menus     []*Menu     `json:"menus"`
-	Resources []*Resource `json:"resources"`
-	Actions   []Action    `json:"actions"`
-	Users     []*User     `json:"users"`
+	Areas []*Area `json:"areas"`
+	Orgs  []*Org  `json:"orgs"`
+	Menus []*Menu `json:"menus"`
+	Users []*User `json:"users"`
 }
 
-// Decision is the reusable authorization result returned by the permission engine.
-type Decision struct {
-	Allow  bool     `json:"allow"`
-	Reason string   `json:"reason"`
-	Trace  []string `json:"trace"`
-}
-
-// Grantable describes the current actor's delegation ceiling.
+// Grantable describes the current user's delegation ceiling.
 type Grantable struct {
 	Unlimited  bool     `json:"unlimited"`
-	MenuIds    []int    `json:"-"`
 	MenuCodes  []string `json:"menuCodes"`
 	AreaIds    []int    `json:"areaIds"`
 	OrgIds     []int    `json:"orgIds"`
 	ResAreaIds []int    `json:"resAreaIds"`
+}
+
+type RoleSaveResult struct {
+	Role      *Role `json:"role"`
+	Preserved int   `json:"preserved"`
 }
 
 type AreaSaveInput struct {
@@ -70,7 +65,6 @@ type ManageDetail struct {
 	ParentId      int             `json:"parentId"`
 	ChildCount    int             `json:"childCount"`
 	Children      []string        `json:"children"`
-	Resources     []string        `json:"resources"`
 	ResourceItems []ResourceBrief `json:"resourceItems"`
 }
 

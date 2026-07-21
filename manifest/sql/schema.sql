@@ -6,7 +6,7 @@
 --   1. 功能权限:menu 存菜单/权限点字典,role_menu 存角色与菜单 ID 关系;前后端用 code 交互。
 --   2. 数据权限:role_data_scope 统一承载「安保区域 / 组织 / 业务资源范围」三种树范围,
 --      用 scope_type 区分;存「节点 + 是否含子树」,不展开子节点。
---   3. 业务资源权限只看 RES_AREA 区域范围;范围内资源默认拥有全部操作项。
+--   3. 业务资源数据范围只看 RES_AREA;具体操作还必须拥有对应应用菜单。
 --   4. 树(area/org)用物化路径 path 实现子树判断:WHERE path LIKE '授权节点path%'。
 --   5. 真实系统统一表结构:所有表都有单列 id 主键,业务唯一性通过 UNIQUE KEY 保证。
 -- =============================================================================
@@ -54,16 +54,6 @@ CREATE TABLE `resource` (
   KEY `idx_area` (`area_id`),
   CONSTRAINT `fk_resource_area` FOREIGN KEY (`area_id`) REFERENCES `area` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='业务资源';
-
--- 操作项(资源上的动作:实时预览/远程回放/图片查询)
-CREATE TABLE `action` (
-  `id`   BIGINT       NOT NULL AUTO_INCREMENT COMMENT '操作项ID',
-  `code` VARCHAR(32)  NOT NULL            COMMENT '操作编码,如 live/playback/picture',
-  `name` VARCHAR(64)  NOT NULL DEFAULT '' COMMENT '操作名称',
-  `sort` INT          NOT NULL DEFAULT 0  COMMENT '排序',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_action_code` (`code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='资源操作项';
 
 -- 菜单/功能权限点。
 -- code 是稳定业务标识,前后端和后端鉴权都用它;id 只作为数据库关系主键。

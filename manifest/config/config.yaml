@@ -1,21 +1,26 @@
-# 本文件仅用于本地演示。生产环境使用 config.prod.yaml 并设置 GF_GCFG_FILE。
+# 当前项目唯一运行配置（实际用于测试环境）。
 # https://goframe.org/docs/web/server-config-file-template
 server:
   address:     ":8001"
-  openapiPath: "/api.json"
-  swaggerPath: "/swagger"
-
-security:
-  # 本地演示保留“切换当前登录用户”。生产必须设为 false，并由可信网关写入下方用户头。
-  demoMode: true
-  trustedUserHeader: "X-Authenticated-User-Id"
+  readTimeout: "15s"
+  writeTimeout: "30s"
+  idleTimeout: "60s"
+  maxHeaderBytes: 16384
+  clientMaxBodySize: 1048576
 
 # https://goframe.org/docs/core/glog-config
 logger:
-  level : "all"
+  level : "info"
   stdout: true
 
 # https://goframe.org/docs/core/gdb-config-file
 database:
   default:
     link: "mysql:root:123456@tcp(127.0.0.1:3306)/security_permission?loc=Local&parseTime=true&charset=utf8mb4"
+    maxIdle: 10
+    maxOpen: 30
+    maxLifeTime: "30m"
+    maxIdleTime: "10m"
+    queryTimeout: "5s"
+    execTimeout: "10s"
+    tranTimeout: "15s"

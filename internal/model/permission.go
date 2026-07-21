@@ -56,12 +56,6 @@ type Resource struct {
 	Name   string `json:"name"`
 }
 
-// Action 资源上的操作项(实时预览/远程回放/图片查询)。
-type Action struct {
-	Code string `json:"code"`
-	Name string `json:"name"`
-}
-
 // DataScope 树范围授权项:授权某节点,IncludeChild=true 表示含整棵子树(及未来新增节点)。
 type DataScope struct {
 	NodeId       int  `json:"nodeId"`

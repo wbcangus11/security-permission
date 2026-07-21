@@ -1,5 +1,6 @@
 package consts
 
 const (
-	ContextKeyActorID = "request.actor_id"
+	ContextKeyUserId = "request.user_id"
+	ContextKeyUser   = "request.user"
 )

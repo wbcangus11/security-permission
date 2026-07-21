@@ -2,6 +2,8 @@ package permission
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/gogf/gf/v2/errors/gerror"
 
@@ -9,95 +11,140 @@ import (
 	"security-permission/internal/model"
 )
 
-// List 返回当前用户可见的角色。普通用户需要角色管理功能且只能看自建角色,超级管理员可看全部。
-func (s *RoleService) List(actorID string) []*model.Role {
-	actor := s.User(actorID)
-	if actor == nil {
-		return []*model.Role{}
+func SaveRole(ctx context.Context, userID string, role *model.Role) (*model.Role, int, error) {
+	role.Name = strings.TrimSpace(role.Name)
+	if role.Name == "" {
+		return nil, 0, fmt.Errorf("角色名称不能为空")
 	}
-	if !actor.IsSuperuser && !s.CheckMenu(actor, menuRoleManage).Allow {
-		return []*model.Role{}
-	}
-	visible, unlimited := s.ManageableRoles(actorID)
-	roles := s.Roles()
-	if unlimited {
-		return roles
-	}
-	out := make([]*model.Role, 0, len(visible))
-	for _, role := range roles {
-		if visible[role.Id] {
-			out = append(out, role)
-		}
-	}
-	return out
-}
-
-// Get 返回当前用户可见的角色详情。
-func (s *RoleService) Get(actorID string, roleID int) (*model.Role, error) {
-	for _, role := range s.List(actorID) {
-		if role.Id == roleID {
-			return role, nil
-		}
-	}
-	if s.Role(roleID) == nil {
-		return nil, gerror.New("角色不存在")
-	}
-	return nil, gerror.New("无权查看该角色")
-}
-
-// Delete 删除角色并清理所有引用。
-// 角色即使已经绑定用户也允许删除;删除后 user_role 会被清掉,用户自然失去该角色带来的权限。
-func (s *RoleService) Delete(ctx context.Context, actorId string, roleId int) error {
-	// 第一步先确认目标存在，避免后面的权限判断和事务删除对空角色产生误导性结果。
-	if s.Role(roleId) == nil {
-		return gerror.New("角色不存在")
-	}
-	// 删除角色走和编辑角色相同的门禁：有角色管理菜单，并且普通用户只能操作自己创建的角色。
-	if err := s.GuardManageRole(actorId, roleId); err != nil {
-		return err
+	if exists, err := roleNameExists(ctx, role.Name, role.Id); err != nil {
+		return nil, 0, err
+	} else if exists {
+		return nil, 0, fmt.Errorf("角色名称已存在：%s", role.Name)
 	}
 
-	// 当前 schema 通过外键级联清理 role_menu、role_data_scope 和 user_role。
-	_, err := dao.Role.Ctx(ctx).Where(dao.Role.Columns().Id, roleId).Delete()
+	ids, missing, err := menuIDsByCodes(ctx, role.MenuCodes)
 	if err != nil {
-		return err
+		return nil, 0, err
 	}
-	// 角色删除会影响角色列表、用户绑定和权限快照，所以必须同时刷新角色与用户缓存。
-	return s.reloadRolesAndUsers(ctx)
+	if len(missing) > 0 {
+		return nil, 0, fmt.Errorf("菜单权限码不存在：%s", strings.Join(missing, ","))
+	}
+	role.MenuIds = ids
+
+	ev := newEvaluator(ctx)
+	old := ev.role(role.Id)
+	if err := ev.err; err != nil {
+		return nil, 0, err
+	}
+	if role.Id > 0 && old == nil {
+		return nil, 0, fmt.Errorf("角色不存在")
+	}
+	if old != nil {
+		if err := ev.guardManageRole(userID, role.Id); err != nil {
+			return nil, 0, err
+		}
+		role.CreatedBy = old.CreatedBy
+	} else {
+		if err := ev.guardRoleWriter(userID); err != nil {
+			return nil, 0, err
+		}
+		role.CreatedBy = userID
+	}
+
+	merged, preserved := ev.mergeDelegated(userID, old, role)
+	if err := ev.err; err != nil {
+		return nil, 0, err
+	}
+	saved, err := saveRole(ctx, merged)
+	if err != nil {
+		return nil, 0, err
+	}
+	return saved, preserved, nil
 }
 
-// GuardManageRole 是编辑/删除角色的统一门禁。
-// 普通用户必须有“角色管理”菜单,且目标角色必须是自己创建的;超级管理员不受限制。
-func (s *RoleService) GuardManageRole(actorId string, roleId int) error {
-	if err := s.guardRoleWriter(actorId); err != nil {
-		return err
+func (e *evaluator) guardRoleWriter(userID string) error {
+	user := e.user(userID)
+	if e.err != nil {
+		return e.err
 	}
-	if s.User(actorId).IsSuperuser {
+	if user == nil {
+		return gerror.New("操作人不存在")
+	}
+	if user.IsSuperuser {
 		return nil
 	}
-	// 委派边界：普通用户只能编辑/删除自己创建的角色，避免通过角色列表接触到别人创建的高权限角色。
-	if set, unlimited := s.ManageableRoles(actorId); !unlimited && !set[roleId] {
-		name := ""
-		if target := s.Role(roleId); target != nil {
-			name = target.Name
-		}
-		return gerror.New("无权管理角色「" + name + "」:仅可编辑/删除自己创建的角色")
+	decision := e.checkMenu(user, menuRoleManage)
+	if e.err != nil {
+		return e.err
+	}
+	if !decision.Allow {
+		return gerror.New("功能权限不足：" + decision.Reason)
 	}
 	return nil
 }
 
-// guardRoleWriter is the common function-permission gate for role creation,
-// editing and deletion. Ownership checks are applied separately for existing roles.
-func (s *RoleService) guardRoleWriter(actorId string) error {
-	actor := s.User(actorId)
-	if actor == nil {
-		return gerror.New("操作人不存在")
+func (e *evaluator) guardManageRole(userID string, roleID int) error {
+	if err := e.guardRoleWriter(userID); err != nil {
+		return err
 	}
-	if actor.IsSuperuser {
+	user := e.user(userID)
+	target := e.role(roleID)
+	if e.err != nil {
+		return e.err
+	}
+	if target == nil {
+		return gerror.New("角色不存在")
+	}
+	if user.IsSuperuser || target.CreatedBy == userID {
 		return nil
 	}
-	if d := s.CheckMenu(actor, menuRoleManage); !d.Allow {
-		return gerror.New("功能权限不足:" + d.Reason)
+	return gerror.New("无权管理角色“" + target.Name + "”：普通管理员只能管理自己创建的角色")
+}
+
+// List 返回当前用户可管理的角色。超级管理员查看全部，普通管理员只查看自己创建的角色。
+func ListRoles(ctx context.Context, userID string) ([]*model.Role, error) {
+	out := []*model.Role{}
+	ev := newEvaluator(ctx)
+	if err := ev.guardRoleWriter(userID); err != nil {
+		// 列表接口保持“无权限即空列表”的既有行为；数据库错误仍向上传递。
+		if ev.err != nil {
+			return nil, ev.err
+		}
+		return out, nil
 	}
+	user := ev.user(userID)
+	query := dao.Role.Ctx(ctx).Fields(dao.Role.Columns().Id).Order(dao.Role.Columns().Id)
+	if !user.IsSuperuser {
+		query = query.Where(dao.Role.Columns().CreatedBy, userID)
+	}
+	var rows []struct{ Id int }
+	if err := query.Scan(&rows); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if role := ev.role(row.Id); role != nil {
+			out = append(out, role)
+		}
+	}
+	return out, ev.err
+}
+
+func GetRole(ctx context.Context, userID string, roleID int) (*model.Role, error) {
+	ev := newEvaluator(ctx)
+	if err := ev.guardManageRole(userID, roleID); err != nil {
+		return nil, err
+	}
+	return ev.role(roleID), ev.err
+}
+
+func DeleteRole(ctx context.Context, userID string, roleID int) error {
+	ev := newEvaluator(ctx)
+	if err := ev.guardManageRole(userID, roleID); err != nil {
+		return err
+	}
+	if _, err := dao.Role.Ctx(ctx).Where(dao.Role.Columns().Id, roleID).Delete(); err != nil {
+		return err
+	}
+	permissionHotCache.invalidateAll()
 	return nil
 }

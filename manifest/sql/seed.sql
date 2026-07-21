@@ -26,12 +26,6 @@ INSERT INTO `resource` (`id`,`area_id`,`type`,`name`) VALUES
  (103,4,'camera','1号楼-电梯口'),
  (104,5,'camera','2号楼-停车场');
 
--- 操作项
-INSERT INTO `action` (`code`,`name`,`sort`) VALUES
- ('live','实时预览',1),
- ('playback','远程回放',2),
- ('picture','图片查询',3);
-
 -- 角色
 INSERT INTO `role` (`id`,`name`,`description`,`created_by`) VALUES
  (1,'安防管理员','全菜单 + 事件图片测试区域','0'),
