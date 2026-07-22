@@ -18,10 +18,18 @@ const maxIdentityLength = 64
 
 // Identity 读取当前用户请求头并写入请求上下文。
 func Identity(r *ghttp.Request) {
+	setPermissionResponseHeaders(r.Response.Header())
 	if userID := identityHeaderValue(r.Header, userHeader); userID != "" {
 		r.SetCtxVar(consts.ContextKeyUserId, userID)
 	}
 	r.Middleware.Next()
+}
+
+// 权限结果随当前用户和角色配置变化，禁止浏览器或代理复用旧用户的 GET 响应。
+func setPermissionResponseHeaders(header http.Header) {
+	header.Set("Cache-Control", "no-store, private")
+	header.Set("Pragma", "no-cache")
+	header.Set("Vary", userHeader)
 }
 
 // UserId 返回当前用户并验证账号仍然存在。

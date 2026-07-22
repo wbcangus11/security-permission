@@ -648,6 +648,7 @@ async function api(path, opts){
   const options={...(opts||{})}, headers=new Headers(options.headers||{});
   const userId=loginUserId();
   if(userId && userId!=='0') headers.set('X-User-Id', userId);
+  options.cache='no-store';
   options.headers=headers;
   const r = await fetch(path, options); return unwrapRes(await r.json());
 }
@@ -759,10 +760,16 @@ function persistLoginUserId(id){
   }catch(_){}
 }
 async function init(){
-  await reloadMeta();
-  await refreshRolePanel();   // 以当前登录用户身份初始化角色面板(grantable+列表+树+编辑门禁)
-  await loadAppView();   // 默认进应用端
-  await loadSysView();
+  const select=document.getElementById('loginUser');
+  select.disabled=true;
+  try{
+    await reloadMeta();
+    await refreshRolePanel();   // 以当前登录用户身份初始化角色面板(grantable+列表+树+编辑门禁)
+    await loadAppView();   // 默认进应用端
+    await loadSysView();
+  }finally{
+    select.disabled=false;
+  }
 }
 // 重新拉取元数据并刷新所有用户/角色下拉
 async function reloadMeta(){
@@ -793,13 +800,24 @@ function switchView(v){
   document.querySelectorAll('.main-tab').forEach(e=>e.classList.toggle('active',e.dataset.view===v));
   document.querySelectorAll('.main-view').forEach(e=>e.classList.toggle('active',e.id==='view-'+v));
 }
-async function onLoginChange(){ persistLoginUserId(loginUserId()); syncLoginDisplay(); await loadAppView(); await loadSysView(); await refreshRolePanel(); }
+async function onLoginChange(){
+  const select=document.getElementById('loginUser');
+  select.disabled=true; // 等本次身份相关视图全部刷新完成，避免连续切换产生响应覆盖。
+  persistLoginUserId(loginUserId()); syncLoginDisplay();
+  try{
+    await loadAppView();
+    await loadSysView();
+    await refreshRolePanel();
+  }finally{
+    select.disabled=false;
+  }
+}
 async function loadAppView(){
   // 应用菜单(功能权限)→ 卡片
   const menus=await api('/api/app/menu');
   renderAppCards(menus);
-  // 视频监控模块用的可见区域树(按层懒加载 + 分页)
-  await loadAppAreaRoot();
+  // 应用首页不预加载区域树；进入具体视频应用时再按 RES_AREA 实时查询。
+  document.getElementById('appAreaTree').innerHTML='';
   document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>';
   showAppHome();
 }
@@ -867,9 +885,15 @@ function renderAppCards(menus){
   });
   box.innerHTML=html;
 }
-function openCard(code,name){
-  if(isVideoCard(code)){ showAppBrowse(); }
-  else { toast('「'+name+'」为演示占位','i-grid'); }
+async function openCard(code,name){
+  if(!isVideoCard(code)){ toast('「'+name+'」为演示占位','i-grid'); return; }
+  showAppBrowse();
+  document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>';
+  try{
+    await loadAppAreaRoot(); // 每次进入都按当前用户的 APP 菜单 + RES_AREA 重新查询。
+  }catch(e){
+    await modalError('刷新应用区域权限失败', e);
+  }
 }
 function showAppHome(){ document.getElementById('appHome').style.display='block'; document.getElementById('appBrowse').style.display='none'; }
 function showAppBrowse(){ document.getElementById('appHome').style.display='none'; document.getElementById('appBrowse').style.display='block'; }
@@ -930,8 +954,14 @@ function lazyTreeNode(n, opts){
 }
 // 应用端浏览树(RES_AREA 数据权限)
 function appTreeOpts(){ return { url:(p,pg,s)=>`/api/app/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'该用户无任何可见区域', icon:'i-area', activeSel:'#appAreaTree .area-node', onClick:(n)=>openArea(n.id), defaultExpandRoot:true }; }
-async function loadAppAreaRoot(){ mountTreeSearch('appAreaTree','app', appTreeOpts, renderAppTreeRoot); await renderAppTreeRoot(); }
-async function renderAppTreeRoot(){ const el=document.getElementById('appAreaTree'); el.innerHTML=''; await lazyTreeLevel(el, 0, 1, true, appTreeOpts()); }
+async function loadAppAreaRoot(){
+  mountTreeSearch('appAreaTree','app', appTreeOpts, renderAppTreeRoot);
+  // 每次重新进入视频应用都清空上一次搜索条件，确保展示的是本次实时获取的完整权限树。
+  const tree=document.getElementById('appAreaTree');
+  const input=tree&&tree.parentNode.querySelector(':scope > .tree-search input'); if(input) input.value='';
+  await renderAppTreeRoot();
+}
+async function renderAppTreeRoot(){ const el=document.getElementById('appAreaTree'); el.innerHTML='<div class="muted">加载中…</div>'; await lazyTreeLevel(el, 0, 1, true, appTreeOpts()); }
 // 树搜索框:挂到树容器上方;输入即搜(全树扫描 + 权限过滤,后端下推),清空恢复懒加载树
 function mountTreeSearch(treeElId, scope, optsFn, restoreFn){
   const tree=document.getElementById(treeElId); if(!tree) return;
@@ -1021,10 +1051,25 @@ function doOp(res,act,allowed){ if(!allowed){ toast('无「'+act+'」操作权�
 // ---------- 后台管理(体验) ----------
 // 菜单 code -> 右侧配置界面
 const SYS_ROUTE = { 'sys.area':'area', 'sys.person.info':'person', 'sys.person.role':'role', 'sys.person.account':'user' };
-function onSysMenu(code, name, el){
+async function onSysMenu(code, name, el){
   document.querySelectorAll('#sysMenus .nav-item').forEach(x=>x.classList.remove('on'));
   if(el) el.classList.add('on');
-  showSysPanel(SYS_ROUTE[code] || 'placeholder', name);
+  const panel=SYS_ROUTE[code] || 'placeholder';
+  showSysPanel(panel, name);
+  try{
+    if(panel==='area'){
+      curManage.area=0; curAreaNode=null; CUR_RES_ITEMS=[];
+      document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
+      await loadManageAreaRoot(); // 每次进入都按当前登录用户重新查询 AREA 权限树。
+    }else if(panel==='person'){
+      curManage.org=0;
+      document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
+      MANAGE_ORGS=await api('/api/manage/org-tree');
+      renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
+    }
+  }catch(e){
+    await modalError('刷新权限数据失败', e);
+  }
 }
 function toggleSysGroup(el){
   const group=el.closest('.nav-group');
@@ -1071,13 +1116,8 @@ async function loadSysView(){
   // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
   const hasChild=id=>menus.some(m=>m.parentId===id);
   let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus.find(m=>!hasChild(m.id)) || menus[0];
-  if(def){ const el=navEl.querySelector(`.nav-item[data-code="${def.code}"]`); onSysMenu(def.code, def.name, el); }
+  if(def){ const el=navEl.querySelector(`.nav-item[data-code="${def.code}"]`); await onSysMenu(def.code, def.name, el); }
   else { showSysPanel('none'); }
-  await loadManageAreaRoot(); // 安保区域:按层懒加载 + 分页(AREA 数据权限)
-  MANAGE_ORGS = await api('/api/manage/org-tree');
-  renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
-  document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
-  document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
 }
 function renderManageTree(elId, flat, kind){
   const el=document.getElementById(elId);

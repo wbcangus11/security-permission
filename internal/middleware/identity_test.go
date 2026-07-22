@@ -22,3 +22,17 @@ func TestIdentityHeaderRequiresOneCleanValue(t *testing.T) {
 		}
 	}
 }
+
+func TestPermissionResponsesCannotBeCachedAcrossUsers(t *testing.T) {
+	header := http.Header{}
+	setPermissionResponseHeaders(header)
+	if got := header.Get("Cache-Control"); got != "no-store, private" {
+		t.Fatalf("unexpected Cache-Control %q", got)
+	}
+	if got := header.Get("Pragma"); got != "no-cache" {
+		t.Fatalf("unexpected Pragma %q", got)
+	}
+	if got := header.Get("Vary"); got != userHeader {
+		t.Fatalf("permission response must vary by identity, got %q", got)
+	}
+}
