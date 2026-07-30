@@ -21,10 +21,10 @@ type Access struct {
 	snapshot *permissionSnapshot
 }
 
-// ForUser 返回指定用户当前可用的鉴权对象。
+// ForUser 返回 ctx 中当前用户可用的鉴权对象。
 // 有缓存就直接复用，没缓存才回源数据库。
-func ForUser(ctx context.Context, userID string) (*Access, error) {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+func ForUser(ctx context.Context) (*Access, error) {
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}

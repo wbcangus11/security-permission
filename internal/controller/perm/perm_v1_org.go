@@ -9,11 +9,7 @@ import (
 )
 
 func (c *ControllerV1) ManageOrgTree(ctx context.Context, req *v1.ManageOrgTreeReq) (*v1.ManageOrgTreeRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	orgs, err := permission.ManageOrgs(ctx, userID)
+	orgs, err := permission.ManageOrgs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -27,11 +23,7 @@ func (c *ControllerV1) ManageOrgTree(ctx context.Context, req *v1.ManageOrgTreeR
 }
 
 func (c *ControllerV1) ManageOrgDetail(ctx context.Context, req *v1.ManageOrgDetailReq) (*v1.ManageOrgDetailRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	detail, err := permission.ManageOrgDetail(ctx, userID, req.OrgId)
+	detail, err := permission.ManageOrgDetail(ctx, req.OrgId)
 	if err != nil {
 		return nil, err
 	}
@@ -49,11 +41,7 @@ func (c *ControllerV1) ManageOrgDetail(ctx context.Context, req *v1.ManageOrgDet
 }
 
 func (c *ControllerV1) ManageOrgSave(ctx context.Context, req *v1.ManageOrgSaveReq) (*v1.ManageOrgSaveRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	org, err := permission.SaveOrg(ctx, userID, &model.OrgSaveInput{
+	org, err := permission.SaveOrg(ctx, &model.OrgSaveInput{
 		Id: req.Id, ParentId: req.ParentId, Name: req.Name,
 	})
 	if err != nil {
@@ -65,11 +53,7 @@ func (c *ControllerV1) ManageOrgSave(ctx context.Context, req *v1.ManageOrgSaveR
 }
 
 func (c *ControllerV1) ManageOrgDelete(ctx context.Context, req *v1.ManageOrgDeleteReq) (*v1.ManageOrgDeleteRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = permission.DeleteOrg(ctx, userID, req.Id); err != nil {
+	if err := permission.DeleteOrg(ctx, req.Id); err != nil {
 		return nil, err
 	}
 	return &v1.ManageOrgDeleteRes{Success: true}, nil

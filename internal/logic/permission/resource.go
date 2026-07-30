@@ -11,11 +11,11 @@ import (
 	"security-permission/internal/model/do"
 )
 
-func SaveResource(ctx context.Context, userID string, input *model.ResourceSaveInput) (*model.Resource, error) {
+func SaveResource(ctx context.Context, input *model.ResourceSaveInput) (*model.Resource, error) {
 	if input == nil {
 		return nil, gerror.New("资源保存参数不能为空")
 	}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuResourceManage)
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuResourceManage)
 	if err != nil {
 		return nil, err
 	}
@@ -29,8 +29,8 @@ func SaveResource(ctx context.Context, userID string, input *model.ResourceSaveI
 	return updateResource(ctx, snapshot, input)
 }
 
-func DeleteResource(ctx context.Context, userID string, resourceID int) error {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuResourceManage)
+func DeleteResource(ctx context.Context, resourceID int) error {
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuResourceManage)
 	if err != nil {
 		return err
 	}

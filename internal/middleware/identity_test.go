@@ -1,9 +1,12 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
+
+	"security-permission/internal/consts"
 )
 
 func TestIdentityHeaderRequiresOneCleanValue(t *testing.T) {
@@ -34,5 +37,15 @@ func TestPermissionResponsesCannotBeCachedAcrossUsers(t *testing.T) {
 	}
 	if got := header.Get("Vary"); got != userHeader {
 		t.Fatalf("permission response must vary by identity, got %q", got)
+	}
+}
+
+func TestGetUserIdReadsContextValue(t *testing.T) {
+	ctx := context.WithValue(context.Background(), consts.ContextKeyUserId, " user-123 ")
+	if got := GetUserId(ctx); got != "user-123" {
+		t.Fatalf("GetUserId 应该直接读取 ctx 中的用户 ID，got=%q", got)
+	}
+	if got := GetUserId(context.Background()); got != "" {
+		t.Fatalf("ctx 中没有用户 ID 时应该返回空字符串，got=%q", got)
 	}
 }

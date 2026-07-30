@@ -15,8 +15,8 @@ import (
 
 // ListUsers 先把组织范围下推到 SQL，再批量装配角色绑定。
 // 权限范围有多大就查多大，不会先把用户全表搬进内存再过滤。
-func ListUsers(ctx context.Context, userID string) ([]*model.User, error) {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAccountManage)
+func ListUsers(ctx context.Context) ([]*model.User, error) {
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAccountManage)
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +46,8 @@ func ListUsers(ctx context.Context, userID string) ([]*model.User, error) {
 	return listUsersByIDs(ctx, ids)
 }
 
-func GetUser(ctx context.Context, userID, targetUserID string) (*model.User, error) {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAccountManage)
+func GetUser(ctx context.Context, targetUserID string) (*model.User, error) {
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAccountManage)
 	if err != nil {
 		return nil, err
 	}
@@ -125,11 +125,11 @@ func mergeAssignableUserRoles(
 	return out, nil
 }
 
-func SaveUser(ctx context.Context, userID string, input *model.User) (*model.User, error) {
+func SaveUser(ctx context.Context, input *model.User) (*model.User, error) {
 	if input == nil {
 		return nil, gerror.New("用户保存参数不能为空")
 	}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAccountManage)
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAccountManage)
 	if err != nil {
 		return nil, err
 	}
@@ -195,8 +195,8 @@ func SaveUser(ctx context.Context, userID string, input *model.User) (*model.Use
 	return saved, nil
 }
 
-func DeleteUser(ctx context.Context, userID, targetUserID string) error {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAccountManage)
+func DeleteUser(ctx context.Context, targetUserID string) error {
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAccountManage)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func DeleteUser(ctx context.Context, userID, targetUserID string) error {
 	if target == nil {
 		return gerror.New("用户不存在")
 	}
-	if userID == targetUserID {
+	if snapshot.user.Id == targetUserID {
 		return gerror.New("不能删除当前登录用户")
 	}
 	if !snapshot.isSuper() {

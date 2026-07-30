@@ -6,8 +6,19 @@ import (
 	"testing"
 	"time"
 
+	"security-permission/internal/consts"
 	"security-permission/internal/model"
 )
+
+func TestLoadPermissionSnapshotRequiresContextUser(t *testing.T) {
+	if _, err := loadPermissionSnapshot(context.Background()); err == nil {
+		t.Fatal("ctx 中没有当前用户时必须拒绝请求")
+	}
+	systemCtx := context.WithValue(context.Background(), consts.ContextKeyUserId, "0")
+	if _, err := loadPermissionSnapshot(systemCtx); err == nil {
+		t.Fatal("系统内置身份不能作为当前登录用户")
+	}
+}
 
 func TestFindUserSkipsDatabaseWhenIDIsEmpty(t *testing.T) {
 	user, err := findUser(context.Background(), "")

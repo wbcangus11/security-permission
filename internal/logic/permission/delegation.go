@@ -28,8 +28,8 @@ func appendUniqueScope(target []model.DataScope, seen map[model.DataScope]bool, 
 
 // GrantableSet 是角色编辑页唯一需要的权限全集。
 // 这里明确查完整菜单和树，普通列表接口就不用背这些大字段。
-func GrantableSet(ctx context.Context, userID string) (*model.Grantable, error) {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+func GrantableSet(ctx context.Context) (*model.Grantable, error) {
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return emptyGrantable(), err
 	}

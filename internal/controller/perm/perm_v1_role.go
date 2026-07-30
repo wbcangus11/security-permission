@@ -9,11 +9,7 @@ import (
 )
 
 func (c *ControllerV1) RoleList(ctx context.Context, req *v1.RoleListReq) (*v1.RoleListRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	roles, err := permission.ListRoles(ctx, userID)
+	roles, err := permission.ListRoles(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -29,11 +25,7 @@ func (c *ControllerV1) RoleList(ctx context.Context, req *v1.RoleListReq) (*v1.R
 }
 
 func (c *ControllerV1) RoleDetail(ctx context.Context, req *v1.RoleDetailReq) (*v1.RoleDetailRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	role, err := permission.GetRole(ctx, userID, req.Id)
+	role, err := permission.GetRole(ctx, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -41,11 +33,7 @@ func (c *ControllerV1) RoleDetail(ctx context.Context, req *v1.RoleDetailReq) (*
 }
 
 func (c *ControllerV1) RoleSave(ctx context.Context, req *v1.RoleSaveReq) (*v1.RoleSaveRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	role, err := permission.SaveRole(ctx, userID, &model.RoleSaveInput{
+	role, err := permission.SaveRole(ctx, &model.RoleSaveInput{
 		RoleId: req.Id, Name: req.Name, Description: req.Description,
 		Permissions: rolePermissionChangesInput(req.Permissions),
 	})
@@ -58,22 +46,14 @@ func (c *ControllerV1) RoleSave(ctx context.Context, req *v1.RoleSaveReq) (*v1.R
 }
 
 func (c *ControllerV1) RoleDelete(ctx context.Context, req *v1.RoleDeleteReq) (*v1.RoleDeleteRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = permission.DeleteRole(ctx, userID, req.Id); err != nil {
+	if err := permission.DeleteRole(ctx, req.Id); err != nil {
 		return nil, err
 	}
 	return &v1.RoleDeleteRes{Success: true}, nil
 }
 
 func (c *ControllerV1) RoleGrantable(ctx context.Context, req *v1.RoleGrantableReq) (*v1.RoleGrantableRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	grantable, err := permission.GrantableSet(ctx, userID)
+	grantable, err := permission.GrantableSet(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -91,11 +71,7 @@ func (c *ControllerV1) RoleGrantable(ctx context.Context, req *v1.RoleGrantableR
 }
 
 func (c *ControllerV1) RoleAreaChildren(ctx context.Context, req *v1.RoleAreaChildrenReq) (*v1.RoleAreaChildrenRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	nodes, err := permission.RoleAreaChildren(ctx, userID, req.ParentId, req.Kind, req.RoleId)
+	nodes, err := permission.RoleAreaChildren(ctx, req.ParentId, req.Kind, req.RoleId)
 	if err != nil {
 		return nil, err
 	}

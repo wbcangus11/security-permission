@@ -1,0 +1,2096 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>基于角色的权限设计 - 演示</title>
+<style>
+  /* ============ Element UI 风格设计系统 ============ */
+  :root{
+    --brand:#58a6ff; --brand-d:#388bfd; --brand-soft:rgba(56,139,253,.15); --brand-line:rgba(88,166,255,.38);
+    --ink:#e6edf3; --ink2:#b6c2d2; --ink3:#7f8da3; --ink4:#536176;
+    --bg:#080d16; --line:#2a374b; --line2:#1d2939; --card:#101824;
+    --surface2:#141f2e; --surface3:#192638; --input:#0b121e;
+    --nav:#0d1521; --nav-d:#09101a; --nav-hover:rgba(56,139,253,.10); --nav-txt:#aebbd0;
+    --ok:#45d19a; --ok-soft:rgba(69,209,154,.12); --warn:#f5bd4f; --warn-soft:rgba(245,189,79,.12); --warn-line:rgba(245,189,79,.34);
+    --danger:#ff7188; --danger-soft:rgba(255,113,136,.12); --danger-line:rgba(255,113,136,.36);
+    --r:7px; --r-lg:11px;
+    --sh:0 10px 30px rgba(0,0,0,.24);
+    --sh-h:0 18px 44px rgba(0,0,0,.36);
+  }
+  html { color-scheme:dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif; font-size:14px; color:var(--ink); background:radial-gradient(circle at 18% -15%,rgba(56,139,253,.16),transparent 32%),radial-gradient(circle at 92% 8%,rgba(45,212,191,.07),transparent 24%),var(--bg); -webkit-font-smoothing:antialiased; }
+  ::selection { background:rgba(88,166,255,.34); color:#fff; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:#2b3a50; border:2px solid var(--bg); border-radius:8px; }
+  ::-webkit-scrollbar-thumb:hover { background:#3a4d68; }
+  input::placeholder { color:var(--ink4); }
+  input[type="checkbox"] { accent-color:var(--brand); }
+  h2,h3{ color:var(--ink); }
+  /* 通用图标 */
+  .ico{ width:1.05em; height:1.05em; vertical-align:-.18em; flex:none; }
+  .crumb { background:rgba(13,21,33,.82); padding:11px 22px; color:var(--ink3); font-size:13px; border-bottom:1px solid var(--line2); }
+  .crumb b{ color:var(--ink2); font-weight:600; }
+  .layout { display:flex; gap:14px; padding:14px; align-items:flex-start; }
+  .panel { background:linear-gradient(145deg,rgba(20,31,46,.96),rgba(14,22,34,.98)); border-radius:var(--r-lg); box-shadow:var(--sh); border:1px solid var(--line2); }
+  .role-list { width:210px; flex:none; padding:12px; }
+  .role-list h3 { margin:4px 0 12px; font-size:15px; }
+  .role-item { padding:9px 12px; border-radius:var(--r); cursor:pointer; margin-bottom:4px; transition:.12s; border:1px solid transparent; display:flex; align-items:center; gap:8px; }
+  .role-item:hover { background:var(--surface2); }
+  .role-item.active { background:var(--brand-soft); color:var(--brand); border-color:var(--brand-line); font-weight:600; }
+  .role-item small { color:var(--ink3); display:block; font-size:12px; font-weight:400; margin-top:2px; }
+  .role-item .role-nm { flex:1; min-width:0; }
+  .role-del { flex:none; color:var(--ink4); display:inline-flex; padding:3px; border-radius:4px; opacity:0; transition:.12s; }
+  .role-item:hover .role-del { opacity:1; }
+  .role-del:hover { color:var(--brand); background:var(--surface3); }
+  .res-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .res-row:last-child { border-bottom:none; }
+  .res-row .rr-name { flex:1; min-width:0; }
+  .res-row .rr-ops { flex:none; display:flex; gap:6px; }
+  .btn { border:none; border-radius:var(--r); padding:8px 16px; cursor:pointer; font-size:13px; transition:.12s; display:inline-flex; align-items:center; gap:5px; }
+  .btn-primary { background:linear-gradient(135deg,var(--brand-d),var(--brand)); color:#fff; box-shadow:0 6px 16px rgba(56,139,253,.20); }
+  .btn-primary:hover { background:linear-gradient(135deg,#2f81f7,#6cb1ff); transform:translateY(-1px); }
+  .btn-default { background:var(--surface2); border:1px solid var(--line); color:var(--ink2); }
+  .btn-default:hover { color:var(--brand); border-color:var(--brand-line); }
+  .btn-mini { padding:5px 11px; font-size:12px; }
+  .editor { flex:1; min-width:560px; padding:20px 24px; }
+  .editor h2 { font-size:15px; margin:0 0 14px; padding-left:9px; border-left:3px solid var(--brand); line-height:1.1; }
+  .form-row { margin-bottom:14px; }
+  .form-row label { display:inline-block; width:80px; color:var(--ink2); }
+  .form-row input:not([type="checkbox"]), .form-row select, .inline-input, .inline-select, .dialog-input { height:34px; padding:7px 11px; border:1px solid var(--line); border-radius:var(--r); background:var(--input); color:var(--ink); font-size:13px; transition:.12s; }
+  .form-row input:not([type="checkbox"]), .form-row select { width:320px; }
+  .inline-input { width:220px; }
+  .inline-select { min-width:120px; }
+  .form-row input:not([type="checkbox"]):focus,.form-row select:focus,.inline-input:focus,.inline-select:focus,.dialog-input:focus,.tester select:focus,.tester input:focus{ outline:none; border-color:var(--brand); box-shadow:0 0 0 2px var(--brand-soft); }
+  .tabs { display:flex; border-bottom:1px solid var(--line); margin-bottom:0; }
+  .tab { padding:11px 20px; cursor:pointer; color:var(--ink2); border-bottom:2px solid transparent; font-size:14px; transition:.12s; }
+  .tab:hover{ color:var(--brand); }
+  .tab.active { color:var(--brand); border-bottom-color:var(--brand); font-weight:600; }
+  .perm-body { display:flex; border:1px solid var(--line); border-top:none; min-height:320px; border-radius:0 0 var(--r) var(--r); overflow:hidden; }
+  .sub-tabs { width:158px; flex:none; background:rgba(8,13,22,.46); border-right:1px solid var(--line); padding:10px 0; }
+  .sub-tab { padding:11px 16px; cursor:pointer; color:var(--ink2); border-left:3px solid transparent; font-size:13px; transition:.12s; }
+  .sub-tab:hover{ color:var(--brand); background:var(--brand-soft); }
+  .sub-tab.active { color:var(--brand); border-left-color:var(--brand); background:var(--brand-soft); font-weight:600; }
+  .sub-content { flex:1; padding:16px 20px; }
+  .tip { background:var(--warn-soft); color:var(--warn); border-radius:var(--r); padding:9px 13px; font-size:12px; margin-bottom:14px; line-height:1.7; border:1px solid var(--warn-line); }
+  .tree-node { padding:3px 0; }
+  .tree-children { margin-left:22px; }
+  .tree-node label { cursor:pointer; user-select:none; }
+  .toggler { display:inline-block; width:14px; text-align:center; cursor:pointer; color:var(--ink3); }
+  table.res { border-collapse:collapse; width:100%; border-radius:var(--r); overflow:hidden; }
+  table.res th, table.res td { border:1px solid var(--line); padding:8px; text-align:center; font-size:13px; }
+  table.res th { background:var(--surface2); color:var(--ink2); font-weight:600; }
+  table.res td.name { text-align:left; }
+  .badge { font-size:11px; padding:2px 8px; border-radius:10px; background:var(--surface3); color:var(--ink3); border:1px solid var(--line2); display:inline-flex; align-items:center; gap:3px; }
+  .footer-bar { padding:14px 24px; border-top:1px solid var(--line2); text-align:right; }
+  .footer-bar .btn { margin-left:8px; }
+  .muted { color:var(--ink3); font-size:12px; }
+  .tree-node label.disabled { color:var(--ink4); }
+  .tree-node label.disabled::after { content:" (超出当前用户可授权范围)"; font-size:11px; color:var(--danger); }
+  /* ===== 顶栏(Element 白底导航) ===== */
+  .topbar { background:rgba(8,14,23,.92); color:var(--ink); padding:0 20px; display:flex; align-items:center; height:54px; box-shadow:0 8px 26px rgba(0,0,0,.24); border-bottom:1px solid var(--line2); position:sticky; top:0; z-index:50; backdrop-filter:blur(14px); }
+  .topbar .brand { display:flex; align-items:center; font-size:16px; font-weight:700; margin-right:30px; letter-spacing:.5px; white-space:nowrap; }
+  .topbar .brand .logo{ width:30px; height:30px; color:var(--brand); margin-right:9px; filter:drop-shadow(0 0 8px rgba(88,166,255,.34)); }
+  .topbar .brand .sub{ color:var(--ink3); font-weight:400; font-size:12px; margin-left:8px; padding-left:9px; border-left:1px solid var(--line); }
+  .topbar .login { margin-left:auto; font-size:13px; color:var(--ink2); display:flex; align-items:center; gap:10px; }
+  .login-label{ color:var(--ink3); font-size:12px; white-space:nowrap; }
+  .user-switch{ position:relative; min-width:238px; height:38px; border-radius:var(--r); background:var(--input); border:1px solid var(--line); display:flex; align-items:center; gap:10px; padding:5px 34px 5px 6px; transition:.12s; }
+  .user-switch:hover{ border-color:var(--brand-line); background:var(--surface2); }
+  .user-switch .avatar{ width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,var(--brand),#79bbff); color:#fff; display:flex; align-items:center; justify-content:center; flex:none; }
+  .user-switch .avatar .ico{ width:16px; height:16px; }
+  .user-switch .uinfo{ min-width:0; flex:1; display:flex; flex-direction:column; line-height:1.15; }
+  .user-switch .uname{ color:var(--ink); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .user-switch .utag{ color:var(--ink3); font-size:11px; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .user-switch .chev{ position:absolute; right:10px; color:var(--ink3); font-size:14px; pointer-events:none; }
+  .user-switch select{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .user-switch select option{ color:var(--ink); background:var(--card); font-weight:400; }
+  .main-tabs { display:flex; height:100%; }
+  .main-tab { padding:0 22px; line-height:54px; cursor:pointer; color:var(--ink2); border-bottom:3px solid transparent; font-size:14px; transition:.12s; display:flex; align-items:center; gap:7px; }
+  .main-tab .ico{ width:16px; height:16px; }
+  .main-tab:hover { color:var(--brand); background:var(--brand-soft); }
+  .main-tab.active { color:var(--brand); border-bottom-color:var(--brand); background:var(--brand-soft); }
+  /* ===== 后台:Element 左侧菜单 ===== */
+  .sys-layout { display:flex; align-items:stretch; min-height:calc(100vh - 54px); }
+  .sys-nav { width:212px; flex:none; background:linear-gradient(180deg,var(--nav),var(--nav-d)); padding:10px 0; border-right:1px solid var(--line2); }
+  .sys-nav .nav-title { color:var(--ink3); font-size:11px; letter-spacing:1px; padding:10px 18px 8px; text-transform:uppercase; }
+  .sys-nav .nav-item { color:var(--nav-txt); padding:11px 18px; cursor:pointer; border-left:3px solid transparent; font-size:13px; display:flex; align-items:center; gap:10px; transition:.12s; }
+  .sys-nav .nav-item .ico{ width:17px; height:17px; color:var(--ink3); flex:none; }
+  .sys-nav .nav-item.child{ padding-left:40px; font-size:12.5px; }
+  .sys-nav .nav-item.parent{ padding-right:12px; }
+  .sys-nav .nav-item span:not(.nav-chev){ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sys-nav .nav-chev{ margin-left:auto; color:var(--ink3); font-size:12px; line-height:1; transition:.12s; }
+  .sys-nav .nav-group.collapsed .nav-children{ display:none; }
+  .sys-nav .nav-group.collapsed .nav-chev{ transform:rotate(-90deg); }
+  .sys-nav .nav-item:hover { color:var(--brand); background:var(--nav-hover); }
+  .sys-nav .nav-item:hover .ico{ color:var(--brand); }
+  .sys-nav .nav-item.on { color:var(--brand); background:var(--brand-soft); border-left-color:var(--brand); }
+  .sys-nav .nav-item.on .ico{ color:var(--brand); }
+  .sys-nav .nav-empty { color:var(--ink3); padding:14px 18px; font-size:12px; line-height:1.6; }
+  .sys-content { flex:1; min-width:0; }
+  .sec-accent { border-left:3px solid var(--brand); padding-left:9px; font-size:15px; }
+  .main-view { display:none; }
+  .main-view.active { display:block; }
+  /* ===== 应用端 ===== */
+  .app-layout { display:flex; gap:14px; padding:14px; align-items:flex-start; }
+  .app-tree { width:250px; flex:none; padding:14px; }
+  .app-tree h3, .app-main h3 { margin:4px 0 12px; font-size:15px; }
+  .area-node { padding:7px 9px; border-radius:var(--r); cursor:pointer; display:flex; align-items:center; gap:7px; transition:.1s; }
+  .area-node .ico{ width:15px; height:15px; color:var(--ink3); flex:none; }
+  .area-node:hover { background:var(--surface2); }
+  .area-node.active { background:var(--brand-soft); color:var(--brand); font-weight:600; }
+  .area-node.active .ico{ color:var(--brand); }
+  .area-node.structural { color:var(--ink4); }
+  .area-node.structural .ico{ color:var(--ink4); }
+  .app-main { flex:1; min-width:480px; padding:18px 22px; min-height:360px; }
+  .res-card { border:1px solid var(--line); border-radius:var(--r-lg); padding:14px 16px; margin-bottom:12px; background:var(--surface2); transition:.12s; }
+  .res-card:hover{ border-color:var(--brand-line); box-shadow:var(--sh); transform:translateY(-1px); }
+  .res-card .rc-title { font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:7px; color:var(--ink); }
+  .res-card .rc-title .ico{ width:18px; height:18px; color:var(--brand); }
+  .op-btn { border:1px solid var(--brand-line); color:var(--brand); background:rgba(56,139,253,.06); border-radius:var(--r); padding:6px 14px; margin:0 8px 8px 0; cursor:pointer; font-size:13px; transition:.12s; display:inline-flex; align-items:center; gap:5px; }
+  .op-btn .ico{ width:14px; height:14px; }
+  .op-btn:hover:not(:disabled){ background:var(--brand-soft); border-color:var(--brand); }
+  .op-btn:disabled { border-color:var(--line2); color:var(--ink4); cursor:not-allowed; background:rgba(255,255,255,.02); }
+  .no-perm { text-align:center; color:var(--ink3); padding:64px 0; }
+  .no-perm .big { color:var(--ink4); margin-bottom:10px; }
+  .no-perm .big .ico{ width:54px; height:54px; }
+  .app-menus { padding:8px 20px; background:rgba(13,21,33,.74); border-bottom:1px solid var(--line2); }
+  .app-menus .mtag { display:inline-block; background:var(--brand-soft); color:var(--brand); border-radius:var(--r); padding:3px 10px; margin-right:8px; font-size:12px; }
+  /* ===== 前台卡片首页 ===== */
+  .card-section { padding:0 24px; }
+  .card-section h3 { font-size:20px; margin:24px 0 6px; font-weight:700; }
+  .card-section .desc { color:var(--ink3); font-size:13px; margin-bottom:18px; }
+  .card-grid { display:flex; flex-wrap:wrap; gap:28px 34px; }
+  .app-card { position:relative; width:126px; min-height:150px; border:none; border-radius:0; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; transition:.16s; overflow:visible; box-shadow:none; }
+  .app-card::before{ content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--brand),#79bbff); transform:scaleX(0); transform-origin:left; transition:.2s; }
+  .app-card:hover { transform:translateY(-3px); }
+  .app-card:hover::before{ transform:scaleX(0); }
+  .app-card .ic { width:120px; height:120px; border-radius:22px; background:linear-gradient(145deg,rgba(56,139,253,.24),rgba(56,139,253,.07)); color:var(--brand); border:1px solid rgba(88,166,255,.24); display:flex; align-items:center; justify-content:center; margin-bottom:12px; transition:.16s; box-shadow:0 12px 28px rgba(0,0,0,.24); }
+  .app-card .ic .ico{ width:54px; height:54px; }
+  .app-card:hover .ic{ border-color:var(--brand-line); box-shadow:0 16px 34px rgba(0,0,0,.34),0 0 24px rgba(56,139,253,.10); }
+  .app-card .nm { font-size:15px; color:var(--ink); font-weight:600; text-align:center; line-height:1.35; }
+  .app-card[data-code*="mapmonitor"] .ic{ background:linear-gradient(145deg,rgba(139,124,246,.25),rgba(139,124,246,.07)); color:#a99bff; border-color:rgba(169,155,255,.24); }
+  .app-card[data-code*="smartsearch"] .ic{ background:linear-gradient(145deg,rgba(245,189,79,.24),rgba(245,189,79,.06)); color:#f5c65f; border-color:rgba(245,198,95,.24); }
+  .app-card[data-code*="broadcast"] .ic{ background:linear-gradient(145deg,rgba(99,102,241,.24),rgba(99,102,241,.06)); color:#9198ff; border-color:rgba(145,152,255,.24); }
+  .app-card[data-code*="live"] .ic{ background:linear-gradient(145deg,rgba(56,139,253,.25),rgba(56,139,253,.07)); color:var(--brand); }
+  .app-card[data-code*="playback"] .ic{ background:linear-gradient(145deg,rgba(34,211,238,.23),rgba(34,211,238,.06)); color:#55d7ed; border-color:rgba(85,215,237,.24); }
+  .app-card[data-code*="picture"] .ic{ background:linear-gradient(145deg,rgba(45,212,191,.23),rgba(45,212,191,.06)); color:#51dbc5; border-color:rgba(81,219,197,.24); }
+  .app-card[data-code*="network"] .ic{ background:linear-gradient(145deg,rgba(14,165,233,.24),rgba(14,165,233,.06)); color:#48bff2; border-color:rgba(72,191,242,.24); }
+  /* ===== 用户管理 ===== */
+  .user-mgmt { padding:18px 22px; }
+  .user-mgmt h3{ display:flex; align-items:center; gap:6px; }
+  .account-layout{ display:grid; grid-template-columns:minmax(280px,360px) minmax(420px,1fr); gap:14px; align-items:start; }
+  .account-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin:12px 0; }
+  .account-list{ border:1px solid var(--line2); border-radius:var(--r); overflow:hidden; background:var(--input); }
+  .user-row { display:flex; align-items:center; gap:10px; padding:11px 12px; border-bottom:1px solid var(--line2); cursor:pointer; transition:.12s; min-height:46px; }
+  .user-row:last-child{ border-bottom:none; }
+  .user-row:hover{ background:var(--surface2); }
+  .user-row.active{ background:var(--brand-soft); box-shadow:inset 3px 0 0 var(--brand); }
+  .user-row .uname { display:flex; align-items:center; gap:8px; min-width:0; flex:1; }
+  .user-row .uname b{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .user-row .u-meta{ display:block; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:250px; }
+  .user-row .uava{ width:28px; height:28px; border-radius:50%; background:var(--brand-soft); color:var(--brand); display:flex; align-items:center; justify-content:center; flex:none; }
+  .user-row .uava .ico{ width:16px; height:16px; }
+  .account-editor{ border:1px solid var(--line2); border-radius:var(--r); background:var(--input); padding:16px; min-height:360px; }
+  .account-editor h4{ margin:0 0 12px; display:flex; align-items:center; gap:6px; font-size:15px; }
+  .account-editor .inline-check{ display:inline-flex; align-items:center; gap:6px; color:var(--ink2); }
+  .account-editor .inline-check input{ width:auto; }
+  .account-actions{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:16px; border-top:1px solid var(--line2); padding-top:14px; }
+  .account-role-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; max-height:220px; overflow:auto; padding:8px; border:1px solid var(--line2); border-radius:var(--r); background:rgba(255,255,255,.018); }
+  .rolechk { display:flex!important; align-items:center; gap:6px; min-width:0; width:auto!important; font-size:13px; color:var(--ink2); }
+  .rolechk input{ width:auto!important; flex:none; }
+  .rolechk span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .danger-link{ border-color:var(--danger-line)!important; color:var(--danger)!important; }
+  @media (max-width: 960px){ .account-layout{ grid-template-columns:1fr; } }
+  .modal-mask{ position:fixed; inset:0; z-index:2500; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(2,6,12,.72); backdrop-filter:blur(5px); }
+  .modal-card{ width:min(430px,100%); background:linear-gradient(145deg,var(--surface2),var(--card)); border-radius:10px; box-shadow:0 24px 70px rgba(0,0,0,.58); border:1px solid var(--line); overflow:hidden; }
+  .modal-head{ display:flex; align-items:center; gap:9px; padding:16px 18px 10px; font-weight:700; color:var(--ink); }
+  .modal-head .modal-ico{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--brand-soft); color:var(--brand); }
+  .modal-head .modal-ico .ico{ width:17px; height:17px; }
+  .modal-body{ padding:4px 18px 18px 57px; color:var(--ink2); line-height:1.7; white-space:normal; word-break:break-word; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; padding:12px 18px; border-top:1px solid var(--line2); background:rgba(8,13,22,.42); }
+  .modal-actions .btn{ min-width:74px; justify-content:center; }
+  .dialog-input{ width:100%; margin-top:10px; }
+  .toast { position:fixed; top:74px; left:50%; transform:translateX(-50%); background:var(--surface2); color:var(--ink2); padding:11px 20px; border-radius:var(--r); border:1px solid var(--line); box-shadow:var(--sh-h); display:none; align-items:center; gap:8px; z-index:99; font-size:13px; }
+  .toast .ico{ width:17px; height:17px; color:var(--brand); }
+  /* ===== 独立前端接口配置 ===== */
+  .api-config-btn{ white-space:nowrap; height:34px; padding:6px 12px; }
+  .api-config-btn.needs-config{ color:var(--warn); border-color:var(--warn-line); background:var(--warn-soft); }
+  .api-config-card{ width:min(960px,100%); max-height:calc(100vh - 48px); display:flex; flex-direction:column; }
+  .api-config-card .modal-head{ padding:15px 18px; border-bottom:1px solid var(--line2); }
+  .api-config-close{ margin-left:auto; width:30px; height:30px; padding:0; justify-content:center; }
+  .api-config-form{ min-height:0; display:flex; flex-direction:column; }
+  .api-config-body{ padding:16px 18px; overflow:auto; }
+  .api-config-grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) 180px; gap:12px; }
+  .api-config-field{ min-width:0; }
+  .api-config-field label{ display:block; color:var(--ink2); font-size:12px; margin-bottom:6px; }
+  .api-config-input,.api-config-select{ width:100%; height:36px; padding:7px 10px; border:1px solid var(--line); border-radius:var(--r); background:var(--input); color:var(--ink); font-size:13px; }
+  .api-config-input:focus,.api-config-select:focus{ outline:none; border-color:var(--brand); box-shadow:0 0 0 2px var(--brand-soft); }
+  .api-config-tip{ margin:12px 0; padding:10px 12px; border:1px solid var(--brand-line); border-radius:var(--r); background:var(--brand-soft); color:var(--ink2); font-size:12px; line-height:1.65; }
+  .api-config-section-title{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0 8px; color:var(--ink); font-weight:700; }
+  .api-config-section-title small{ color:var(--ink3); font-weight:400; }
+  .api-path-head,.api-path-row{ display:grid; grid-template-columns:minmax(220px,35%) minmax(300px,1fr); gap:10px; align-items:center; }
+  .api-path-head{ padding:7px 10px; color:var(--ink3); font-size:12px; background:var(--surface2); border:1px solid var(--line2); border-bottom:none; border-radius:var(--r) var(--r) 0 0; }
+  .api-path-list{ max-height:330px; overflow:auto; border:1px solid var(--line2); border-radius:0 0 var(--r) var(--r); background:rgba(8,13,22,.32); }
+  .api-path-row{ padding:7px 10px; border-bottom:1px solid var(--line2); }
+  .api-path-row:last-child{ border-bottom:none; }
+  .api-path-logical{ color:var(--ink2); font-family:Consolas,"Courier New",monospace; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .api-path-row .api-config-input{ height:32px; font-family:Consolas,"Courier New",monospace; font-size:12px; }
+  .api-config-preview{ margin-top:12px; padding:9px 11px; border-radius:var(--r); background:var(--input); border:1px solid var(--line2); color:var(--ink3); font-size:12px; word-break:break-all; }
+  .api-config-preview code{ color:var(--brand); }
+  .api-config-error{ display:none; margin-top:10px; padding:8px 10px; border:1px solid var(--danger-line); border-radius:var(--r); background:var(--danger-soft); color:var(--danger); font-size:12px; }
+  .api-config-actions{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 18px; border-top:1px solid var(--line2); background:rgba(8,13,22,.42); }
+  .api-config-actions-right{ display:flex; gap:8px; }
+  @media (max-width: 860px){
+    .api-config-grid{ grid-template-columns:1fr; }
+    .api-path-head,.api-path-row{ grid-template-columns:1fr; gap:5px; }
+    .api-path-head span:first-child{ display:none; }
+    .api-path-logical{ white-space:normal; }
+    .api-config-label{ display:none; }
+    .api-config-btn{ padding:6px 9px; }
+  }
+</style>
+</head>
+<body>
+<!-- 线性图标集(海康风:细线/圆角,stroke=currentColor 跟随文字色) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6l7-3z" fill="currentColor" stroke="none"/><path d="M9 12l2 2 4-4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/><circle cx="9" cy="12" r="2.2"/></symbol>
+    <symbol id="i-live" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-playback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></symbol>
+    <symbol id="i-picture" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5-7 7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.8 10A7 7 0 0 0 6.4 6.4L4 8.8"/><path d="M5.2 14a7 7 0 0 0 12.4 3.6L20 15.2"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></symbol>
+    <symbol id="i-broadcast" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l6 4V5L8 9H4z"/><path d="M17 8a5 5 0 0 1 0 8"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2v4M12 11.2L6 16M12 11.2L18 16"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-area" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-org" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2M12 12v2"/></symbol>
+    <symbol id="i-role" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6l7-3z"/><circle cx="12" cy="10" r="2"/><path d="M8.5 15.5a3.5 3.5 0 0 1 7 0"/></symbol>
+    <symbol id="i-account" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M18 13l-6 6-6-6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-8h12l3 8v6H3v-6z"/><path d="M3 13h5l1 2h6l1-2h5"/></symbol>
+  </defs>
+</svg>
+<div class="toast" id="toast"></div>
+
+<div class="topbar">
+  <span class="brand">
+    <svg class="logo ico" style="width:30px;height:30px"><use href="#i-shield"></use></svg>
+    综合安防管理平台<span class="sub">权限管理</span>
+  </span>
+  <div class="main-tabs">
+    <div class="main-tab active" data-view="app" onclick="switchView('app')"><svg class="ico"><use href="#i-grid"></use></svg>应用端</div>
+    <div class="main-tab" data-view="sys" onclick="switchView('sys')"><svg class="ico"><use href="#i-account"></use></svg>系统管理</div>
+  </div>
+  <div class="login">
+    <button class="btn btn-default btn-mini api-config-btn" id="apiConfigButton" type="button" onclick="openApiConfig()" title="配置接口服务器和请求路径">
+      <svg class="ico"><use href="#i-edit"></use></svg><span class="api-config-label">接口配置</span>
+    </button>
+    <span class="login-label">当前登录</span>
+    <div class="user-switch">
+      <span class="avatar"><svg class="ico"><use href="#i-user"></use></svg></span>
+      <span class="uinfo"><span class="uname" id="loginUserName">-</span><span class="utag" id="loginUserTag">选择账号</span></span>
+      <span class="chev">▾</span>
+      <select id="loginUser" onchange="onLoginChange()"></select>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="apiConfigMask" onclick="if(event.target===this) closeApiConfig()">
+  <div class="modal-card api-config-card" role="dialog" aria-modal="true" aria-labelledby="apiConfigTitle">
+    <div class="modal-head">
+      <span class="modal-ico"><svg class="ico"><use href="#i-edit"></use></svg></span>
+      <span id="apiConfigTitle">接口配置</span>
+      <button class="btn btn-default api-config-close" type="button" onclick="closeApiConfig()" aria-label="关闭">×</button>
+    </div>
+    <form class="api-config-form" id="apiConfigForm" onsubmit="saveApiConfig(event)">
+      <div class="api-config-body">
+        <div class="api-config-grid">
+          <div class="api-config-field">
+            <label for="apiBaseUrl">接口服务器地址</label>
+            <input class="api-config-input" id="apiBaseUrl" placeholder="例如：http://192.168.1.100:8001" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="api-config-field">
+            <label for="apiPathPrefix">统一路径前缀（可留空）</label>
+            <input class="api-config-input" id="apiPathPrefix" placeholder="例如：/permission-service" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="api-config-field">
+            <label for="apiCredentials">跨域凭据</label>
+            <select class="api-config-select" id="apiCredentials">
+              <option value="same-origin">同源携带</option>
+              <option value="include">始终携带</option>
+              <option value="omit">不携带</option>
+            </select>
+          </div>
+        </div>
+        <div class="api-config-tip">
+          配置只保存在当前浏览器中。页面仍使用原来的请求参数、请求体和响应结构，仅改变请求服务器及路径。
+          直接双击打开本文件时，请填写完整的 http(s) 服务器地址，并确保后端允许跨域。
+        </div>
+        <div class="api-config-section-title">
+          <span>接口路径</span>
+          <small>左侧是页面逻辑接口，只修改右侧实际请求路径</small>
+        </div>
+        <div class="api-path-head"><span>页面逻辑接口</span><span>实际请求路径或完整 URL</span></div>
+        <div class="api-path-list" id="apiPathList"></div>
+        <div class="api-config-preview">请求示例：<code id="apiConfigPreview">-</code></div>
+        <div class="api-config-error" id="apiConfigError" role="alert"></div>
+      </div>
+      <div class="api-config-actions">
+        <button class="btn btn-default" type="button" onclick="resetApiConfig()">恢复默认</button>
+        <span class="api-config-actions-right">
+          <button class="btn btn-default" type="button" onclick="closeApiConfig()">取消</button>
+          <button class="btn btn-primary" type="submit">保存并重新连接</button>
+        </span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ 应用端(体验) ============ -->
+<div id="view-app" class="main-view active">
+  <!-- 首页:卡片(按应用菜单分组) -->
+  <div id="appHome">
+    <div id="appCards"></div>
+  </div>
+  <!-- 视频监控模块:区域 + 资源浏览 -->
+  <div id="appBrowse" style="display:none">
+    <div style="padding:12px 16px 0"><button class="btn btn-default btn-mini" onclick="showAppHome()"><svg class="ico"><use href="#i-back"></use></svg> 返回首页</button></div>
+    <div class="app-layout">
+      <div class="panel app-tree">
+        <h3 class="sec-accent">区域</h3>
+        <div class="muted" style="margin-bottom:8px">灰色=仅可见无权限,点击提示暂无操作权限</div>
+        <div id="appAreaTree"></div>
+      </div>
+      <div class="panel app-main" id="appMain">
+        <div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 后台管理(体验) ============ -->
+<div id="view-sys" class="main-view">
+  <div class="sys-layout">
+    <!-- Element 左侧:系统管理菜单(功能权限),点击切换右侧配置界面 -->
+    <div class="sys-nav">
+      <div class="nav-title">系统管理菜单(功能权限)</div>
+      <div id="sysMenus"></div>
+    </div>
+    <div class="sys-content">
+
+      <!-- 人员信息:组织机构(左树右详情) -->
+      <div id="sc-person" class="sys-panel" style="display:none">
+        <div style="display:flex;gap:12px;padding:12px;align-items:flex-start">
+          <div class="panel app-tree" style="width:280px">
+            <h3 class="sec-accent">组织机构</h3>
+            <div class="muted" style="margin-bottom:6px">人员归属的组织树;灰色=仅可见无管理权</div>
+            <div id="manageOrgTree"></div>
+          </div>
+          <div class="panel app-main" id="sysMainOrg" style="flex:1">
+            <div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 安保区域管理(左树右详情) -->
+      <div id="sc-area" class="sys-panel">
+        <div style="display:flex;gap:12px;padding:12px;align-items:flex-start">
+          <div class="panel app-tree" style="width:280px">
+            <h3 class="sec-accent">安保区域管理</h3>
+            <div class="muted" style="margin-bottom:6px">灰色=仅可见无管理权</div>
+            <div id="manageAreaTree"></div>
+          </div>
+          <div class="panel app-main" id="sysMainArea" style="flex:1">
+            <div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 角色管理 -->
+      <div id="sc-role" class="sys-panel" style="display:none">
+<div class="layout">
+  <!-- 角色列表 -->
+  <div class="panel role-list">
+    <h3>角色</h3>
+    <div id="roleList"></div>
+    <button class="btn btn-default btn-mini" style="width:100%;margin-top:8px" onclick="newRole()">+ 新建角色</button>
+  </div>
+
+  <!-- 角色编辑器 -->
+  <div class="panel editor">
+    <div class="form-row" style="background:var(--brand-soft);padding:10px;border-radius:4px;display:block">
+      <label style="width:auto;margin-right:6px">当前用户</label>
+      <b id="currentUserName"></b>
+      <span class="muted" style="margin-left:8px">当前登录用户决定可见、可编辑、可删除的角色；实际项目中该用户应从 token 解析。</span>
+      <span class="muted" id="currentUserHint" style="margin-left:8px"></span>
+    </div>
+    <h2>基本信息</h2>
+    <div class="form-row"><label>角色名称</label><input id="roleName" placeholder="请输入角色名称"></div>
+    <div class="form-row"><label>描述</label><input id="roleDesc" placeholder="请输入角色描述"></div>
+
+    <h2>权限配置</h2>
+    <div class="tabs">
+      <div class="tab active" data-tab="sys" onclick="switchTab('sys')">系统管理权限</div>
+      <div class="tab" data-tab="app" onclick="switchTab('app')">应用权限</div>
+    </div>
+
+    <!-- 系统管理权限 -->
+    <div class="perm-body" data-pane="sys">
+      <div class="sub-tabs">
+        <div class="sub-tab active" data-sub="sysmenu" onclick="switchSub('sys','sysmenu')">系统管理菜单权限</div>
+        <div class="sub-tab" data-sub="area" onclick="switchSub('sys','area')">安保区域管理权限</div>
+        <div class="sub-tab" data-sub="org" onclick="switchSub('sys','org')">组织管理权限</div>
+      </div>
+      <div class="sub-content">
+        <div data-subpane="sysmenu">
+          <div class="tip">配置该角色在系统管理中的菜单访问权限。若需二次授权，需勾选「角色管理 / 账号管理」菜单，可授出范围不超过此处。</div>
+          <div id="tree-sysmenu"></div>
+        </div>
+        <div data-subpane="area" style="display:none">
+          <div class="tip">配置该角色对安保区域及区域下资源的管理权限（查看/添加/修改/删除）。直接勾选某节点时按可授权范围授予该节点或其子树；单独勾选子节点不会带动父节点，父级权限只由用户直接操作。区域较多时点一层查一层（惰性加载）。</div>
+          <div id="tree-area"></div>
+        </div>
+        <div data-subpane="org" style="display:none">
+          <div class="tip">配置该角色对组织（人员/车辆归属）的管理权限。勾选父节点含整棵子树；若只勾父节点、取消其下子节点,则只授予该父节点本身（不含子树）。</div>
+          <div id="tree-org"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 应用权限 -->
+    <div class="perm-body" data-pane="app" style="display:none">
+      <div class="sub-tabs">
+        <div class="sub-tab active" data-sub="appmenu" onclick="switchSub('app','appmenu')">应用菜单权限</div>
+        <div class="sub-tab" data-sub="resrange" onclick="switchSub('app','resrange')">资源范围</div>
+      </div>
+      <div class="sub-content">
+        <div data-subpane="appmenu">
+          <div class="tip">配置该角色在应用端的菜单访问权限。</div>
+          <div id="tree-appmenu"></div>
+        </div>
+        <div data-subpane="resrange" style="display:none">
+          <div class="tip">配置业务资源范围：按区域勾定可见摄像头范围，新增资源自动继承。范围内资源默认拥有全部操作项。</div>
+          <div id="tree-resarea" style="margin:8px 0 16px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <button class="btn btn-primary" id="btnSaveRole" onclick="saveRole()">保存</button>
+      <button class="btn btn-default" onclick="loadRole(currentRoleId)">重置</button>
+    </div>
+  </div>
+
+</div>
+      </div><!-- 角色配置结束 -->
+
+      <!-- 账号管理 -->
+      <div id="sc-user" class="sys-panel" style="display:none">
+  <div class="panel user-mgmt" style="margin:12px">
+    <h3><svg class="ico" style="color:var(--brand)"><use href="#i-account"></use></svg> 账号管理 <span class="muted">— 用户增删改查、组织归属与角色绑定</span></h3>
+    <div class="account-toolbar">
+      <span class="muted" id="userManageHint">写操作按当前登录用户鉴权:账号管理菜单 + 组织范围 + 自建角色范围。</span>
+      <span style="display:flex;gap:8px">
+        <button class="btn btn-default btn-mini" onclick="reloadUsers()"><svg class="ico"><use href="#i-refresh"></use></svg> 刷新</button>
+        <button class="btn btn-primary btn-mini" onclick="newUserForm()"><svg class="ico"><use href="#i-plus"></use></svg> 新建账号</button>
+      </span>
+    </div>
+    <div class="account-layout">
+      <div class="account-list" id="userList"></div>
+      <div class="account-editor">
+        <h4><svg class="ico" style="color:var(--brand)"><use href="#i-user"></use></svg><span id="userFormTitle">新建账号</span></h4>
+        <input type="hidden" id="editUserId" value="">
+        <div class="form-row"><label>用户名</label><input id="editUserName" placeholder="如:王五"></div>
+        <div class="form-row"><label>所属组织</label><select id="editUserOrg"></select></div>
+        <div class="form-row"><label>超级管理员</label><span class="inline-check"><input type="checkbox" id="editUserSuper"> <span>绕过鉴权,拥有全部权限</span></span></div>
+        <div class="form-row" style="align-items:flex-start"><label>绑定角色</label><div id="editUserRoles" class="account-role-grid"></div></div>
+        <div class="account-actions">
+          <button class="btn btn-default danger-link" id="btnDeleteUser" onclick="deleteUser()" style="visibility:hidden"><svg class="ico"><use href="#i-trash"></use></svg> 删除账号</button>
+          <span style="display:flex;gap:8px">
+            <button class="btn btn-default" onclick="newUserForm()">清空</button>
+            <button class="btn btn-primary" onclick="saveUser()"><svg class="ico"><use href="#i-check"></use></svg> 保存账号</button>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+      </div><!-- 用户配置结束 -->
+
+      <!-- 其他系统菜单:演示占位 -->
+      <div id="sc-placeholder" class="sys-panel" style="display:none">
+        <div class="panel" style="margin:12px;padding:56px;text-align:center">
+          <svg class="ico" style="width:48px;height:48px;color:var(--ink4)"><use href="#i-grid"></use></svg>
+          <div id="phName" style="margin-top:10px;font-size:15px;color:var(--ink2)"></div>
+          <div class="muted" style="margin-top:6px">该模块为演示占位,未实现具体配置界面</div>
+        </div>
+      </div>
+
+    </div><!-- 系统管理内容结束 -->
+  </div><!-- 系统管理布局结束 -->
+</div><!-- 系统管理视图结束 -->
+
+<!-- ==================== 独立部署配置：只需修改此区域 ==================== -->
+<script>
+window.PERMISSION_FRONTEND_CONFIG = {
+  api: {
+    // 后端协议、IP 和端口。示例："http://10.10.20.15:8001"
+    // 留空表示请求 HTML 所在站点，适合使用 Nginx 反向代理。
+    baseUrl: "",
+
+    // 所有接口共用的路径前缀。示例："/permission-service"
+    pathPrefix: "",
+
+    // 键为页面原接口，值为实际请求路径；值也可以是完整的 http(s) 地址。
+    // 原请求的查询参数和请求体不会被修改。
+    paths: {
+      "/api/meta": "/api/meta",
+      "/api/app/menu": "/api/app/menu",
+      "/api/app/area-children": "/api/app/area-children",
+      "/api/app/area-search": "/api/app/area-search",
+      "/api/app/resource-list": "/api/app/resource-list",
+      "/api/manage/menu": "/api/manage/menu",
+      "/api/manage/area-children": "/api/manage/area-children",
+      "/api/manage/area-search": "/api/manage/area-search",
+      "/api/manage/area-detail": "/api/manage/area-detail",
+      "/api/manage/area-save": "/api/manage/area-save",
+      "/api/manage/area-reorder": "/api/manage/area-reorder",
+      "/api/manage/area-delete": "/api/manage/area-delete",
+      "/api/manage/org-tree": "/api/manage/org-tree",
+      "/api/manage/org-detail": "/api/manage/org-detail",
+      "/api/manage/org-save": "/api/manage/org-save",
+      "/api/manage/org-delete": "/api/manage/org-delete",
+      "/api/manage/resource-save": "/api/manage/resource-save",
+      "/api/manage/resource-delete": "/api/manage/resource-delete",
+      "/api/role/list": "/api/role/list",
+      "/api/role/detail": "/api/role/detail",
+      "/api/role/grantable": "/api/role/grantable",
+      "/api/role/area-children": "/api/role/area-children",
+      "/api/role/save": "/api/role/save",
+      "/api/role/delete": "/api/role/delete",
+      "/api/user/save": "/api/user/save",
+      "/api/user/delete": "/api/user/delete"
+    },
+
+    // 可选公共请求头。
+    headers: {},
+
+    // 可选值：omit、same-origin、include。
+    credentials: "same-origin"
+  }
+};
+</script>
+<!-- ==================== 独立部署配置结束 ==================== -->
+<script>
+let META = {};            // 区域、组织、菜单和用户元数据
+let currentRoleId = 0;
+let role = blankRole();   // 当前编辑中的角色
+let roleBaseline = blankRole(); // 打开角色时的数据库快照,用于生成明确的权限增删量
+let rolePermissionTouched = {area:false, org:false, resarea:false};
+const checked = {         // 菜单树按 code 勾选,区域/组织树按 id 勾选
+  sysmenu: {}, appmenu: {}, area: {}, org: {}, resarea: {}
+};
+// 菜单是随前端版本发布的固定功能目录，展示顺序也由前端明确维护。
+// 数据库只负责菜单字典和角色授权，不再通过 sort 字段影响界面顺序。
+// 新增但尚未写入此清单的菜单仍会显示，并按 code 排在同级已知菜单之后。
+const FIXED_MENU_ORDER = Object.freeze([
+  // 系统管理端
+  'sys.person',
+  'sys.person.info',
+  'sys.person.role',
+  'sys.person.account',
+  'sys.person.face',
+  'sys.business',
+  'sys.business.passenger',
+  'sys.vehicle',
+  'sys.area',
+  'sys.device',
+  'sys.device.encode',
+  'sys.device.broadcast',
+  'sys.device.alarm',
+  'sys.resource',
+  'sys.resource.point',
+  'sys.resource.terminal',
+  'sys.resource.io',
+  'sys.resource.zone',
+  'sys.videocfg',
+  'sys.videocfg.record',
+  'sys.videocfg.capture',
+  'sys.videocfg.defense',
+  'sys.videocfg.param',
+  'sys.servicecfg',
+  'sys.servicecfg.event',
+  'sys.servicecfg.map',
+  'sys.servicecfg.recognition',
+  'sys.network',
+  'sys.network.patrol',
+  'sys.advanced',
+  'sys.advanced.param',
+  'sys.advanced.platform-upgrade',
+  'sys.advanced.app-upgrade',
+  'sys.advanced.stream-upgrade',
+  'sys.advanced.sms',
+  'sys.advanced.email',
+  // 应用端
+  'app.integrated',
+  'app.integrated.eventsearch',
+  'app.integrated.mapmonitor',
+  'app.integrated.smartsearch',
+  'app.integrated.broadcast',
+  'app.video',
+  'app.video.live',
+  'app.video.playback',
+  'app.video.picture',
+  'app.network',
+  'app.network.monitor'
+]);
+const FIXED_MENU_ORDER_INDEX = new Map(FIXED_MENU_ORDER.map((code,index)=>[code,index]));
+function orderMenus(menus){
+  return [...(menus||[])].sort((left,right)=>{
+    const leftOrder=FIXED_MENU_ORDER_INDEX.get(left.code);
+    const rightOrder=FIXED_MENU_ORDER_INDEX.get(right.code);
+    const leftKnown=leftOrder!==undefined, rightKnown=rightOrder!==undefined;
+    if(leftKnown&&rightKnown) return leftOrder-rightOrder;
+    if(leftKnown!==rightKnown) return leftKnown?-1:1;
+    return String(left.code||'').localeCompare(String(right.code||''));
+  });
+}
+const treeFold = {        // 保存折叠树的手动展开/收起状态,避免勾选后重渲染丢失用户操作
+  org: {expanded:new Set(), collapsed:new Set()}
+};
+function resetTreeFold(kind){
+  const fold=treeFold[kind]; if(!fold) return;
+  // 切换角色/新建角色时恢复默认层级:只展示根节点和直接子节点。
+  fold.expanded.clear(); fold.collapsed.clear();
+}
+let GRANT = {unlimited:true}; // 当前用户可授出的上限,用于过滤编辑树
+// 角色管理一律以身份请求头解析出的当前用户运作。
+function currentUserId(){ return loginUserId(); }
+function isMenuKind(kind){ return kind==='sysmenu' || kind==='appmenu'; }
+function permKey(kind, node){ return isMenuKind(kind) ? node.code : node.id; }
+// 某菜单 code / 节点 id 在该树是否可授(超级管理员或在允许集合内)
+function grantAllows(kind, key){
+  if(GRANT.unlimited) return true;
+  const m={sysmenu:'menuConfigCodes',appmenu:'menuAppCodes',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
+  return (GRANT[m]||[]).includes(key);
+}
+function cloneRole(value){
+  const copy=value||blankRole();
+  return {
+    id:Number(copy.id||0), name:copy.name||'', description:copy.description||'', createdBy:copy.createdBy||'',
+    menuConfigCodes:[...(copy.menuConfigCodes||[])],
+    menuAppCodes:[...(copy.menuAppCodes||[])],
+    areaScopes:(copy.areaScopes||[]).map(s=>({nodeId:Number(s.nodeId),includeChild:s.includeChild!==false})),
+    orgScopes:(copy.orgScopes||[]).map(s=>({nodeId:Number(s.nodeId),includeChild:s.includeChild!==false})),
+    resourceAreaScopes:(copy.resourceAreaScopes||[]).map(s=>({nodeId:Number(s.nodeId),includeChild:s.includeChild!==false}))
+  };
+}
+function baselineScopes(kind){
+  if(kind==='org') return roleBaseline.orgScopes||[];
+  if(kind==='resarea') return roleBaseline.resourceAreaScopes||[];
+  return roleBaseline.areaScopes||[];
+}
+function grantScopeList(kind){
+  const field={area:'areaScopes',org:'orgScopes',resarea:'resAreaScopes'}[kind];
+  return field?(GRANT[field]||[]):[];
+}
+function treeNodePath(kind,id){
+  const list=kind==='org'?(META.orgs||[]):(META.areas||[]);
+  const node=list.find(n=>Number(n.id)===Number(id));
+  return node&&node.path||'';
+}
+// includeChild=true 只有在操作人拥有某个祖先的子树权限时才可继续授出。
+function grantCanSubtree(kind,id){
+  if(GRANT.unlimited) return true;
+  const targetPath=treeNodePath(kind,id); if(!targetPath) return false;
+  return grantScopeList(kind).some(scope=>{
+    if(scope.includeChild===false) return false;
+    const sourcePath=treeNodePath(kind,scope.nodeId);
+    return sourcePath && targetPath.startsWith(sourcePath);
+  });
+}
+// ---------- 角色配置:惰性分层区域树(级联勾选 + 推断 nodeType,对齐真实海康) ----------
+// 区域树按“用户直接操作的节点”保存状态，不用父级半选推断用户意图。
+//   - 直接勾节点：在可授权宽度内授予该节点或子树。
+//   - 单独勾子节点：父节点保持未勾选，也不会因为所有子节点已选而自动合并成父级子树。
+//   - 从已授子树中取消子节点：父级只保留自身，其他已勾选分支继续独立保存。
+// 状态:chk[id]=已授(级联);sub[id]=该节点整棵子树都授(子树标记)。path 取自 META.areas(全量,深层未加载也可判定)。
+let roleTree = {
+  area:    { chk:{}, sub:{}, index:{}, childrenOf:{}, expanded:new Set() }, // 管理域 AREA
+  resarea: { chk:{}, sub:{}, index:{}, childrenOf:{}, expanded:new Set() }, // 应用域 RES_AREA
+};
+function rtEl(kind){ return document.getElementById(kind==='area'?'tree-area':'tree-resarea'); }
+function rtEditable(){ return !document.getElementById('btnSaveRole').disabled; }
+function rtPath(id){ const a=META._areaById&&META._areaById[id]; return a?a.path:''; }
+function rtParent(kind,id){ const n=roleTree[kind].index[id]; return n?n.parentId:0; }
+// 勾选状态只反映节点自身是否被明确授予，不再用后代状态把祖先渲染成半选。
+function rtState(kind,id){ const st=roleTree[kind];
+  return st.chk[id]?'full':'none';
+}
+// scopes ⇄ 状态:subTree→chk+sub;singleNode→chk(sub=false)。
+function rtApplyScopes(kind, scopes){ const st=roleTree[kind]; st.chk={}; st.sub={};
+  // 详情接口已经按当前编辑人过滤，只回填其可授予范围内的显式权限。
+  (scopes||[]).forEach(sc=>{ const id=Number(sc.nodeId); st.chk[id]=true; st.sub[id]=sc.includeChild!==false; });
+}
+// 从状态导出 scopes:每个 chk 节点,若未被某「子树祖先」覆盖则记一条(子树标记→includeChild:true)。用 path,深层未展开也准。
+function rtScopes(kind){ const st=roleTree[kind]; const out=[];
+  for(const idS in st.chk){ if(!st.chk[idS]) continue; const id=Number(idS), p=rtPath(id); let covered=false;
+    for(const aS in st.sub){ if(!st.sub[aS]||!st.chk[aS]||aS===idS) continue; const ap=rtPath(Number(aS));
+      if(ap && p && p.length>ap.length && p.startsWith(ap)){ covered=true; break; } }
+    if(!covered) out.push({nodeId:id, includeChild: st.sub[id]===true});
+  }
+  return out;
+}
+// 应用域资源区域:某区域是否落在已授范围内(基于导出 scopes + path,深层未加载也准)。
+function resAreaCovers(areaId){ const sc=rtScopes('resarea'), p=rtPath(areaId);
+  for(const s of sc){ if(s.nodeId===areaId) return true;
+    if(s.includeChild){ const gp=rtPath(s.nodeId); if(gp && p && p.length>gp.length && p.startsWith(gp)) return true; } }
+  return false;
+}
+// 拉取某层(后端按当前用户可授范围过滤),写入 index/childrenOf;若父为子树授权则新子继承勾选(级联)。
+async function rtFetch(kind, parentId){
+  const list=(await api(`/api/role/area-children?parentId=${parentId}&kind=${kind}&roleId=${currentRoleId||0}`)).items||[];
+  const st=roleTree[kind]; const inheritSub = parentId!==0 && st.chk[parentId] && st.sub[parentId];
+  list.forEach(n=>{ st.index[n.id]=n; if(inheritSub){ st.chk[n.id]=true; st.sub[n.id]=true; } });
+  st.childrenOf[parentId]=list.map(n=>n.id);
+  return list;
+}
+async function rtOpenRootChildren(kind, roots){
+  const st=roleTree[kind];
+  // 初始态只自动展开根节点:首屏显示根和直接子区域,更深层级仍由用户点击后再加载。
+  for(const root of roots){
+    if(!root.hasChildren) continue;
+    st.expanded.add(root.id);
+    if(!st.childrenOf[root.id]) await rtFetch(kind, root.id);
+  }
+}
+// 重新加载并渲染整棵树(当前用户/角色切换:canCheck 随当前用户变,必须重拉根层)。chk/sub 保留。
+async function rtRender(kind){
+  const st=roleTree[kind]; st.index={}; st.childrenOf={}; st.expanded=new Set();
+  const el=rtEl(kind); if(!el) return;
+  el.innerHTML='<div class="muted" style="padding:4px 0">加载中…</div>';
+  let list; try{ list=await rtFetch(kind, 0); await rtOpenRootChildren(kind, list); }catch(e){ el.innerHTML='<div class="muted">加载失败</div>'; return; }
+  el.innerHTML='';
+  if(!list.length){ el.innerHTML='<div class="muted">无可授区域</div>'; return; }
+  el.appendChild(rtRenderNodes(kind, list));
+}
+function renderRoleAreaTrees(){ rtRender('area'); rtRender('resarea'); }
+// 整树重渲（只含已加载节点，按 expanded 还原展开状态）。
+function rtRefresh(kind){ const st=roleTree[kind], el=rtEl(kind);
+  if(!el || !st.childrenOf[0]) return;
+  el.innerHTML=''; el.appendChild(rtRenderNodes(kind, st.childrenOf[0].map(id=>st.index[id])));
+}
+function rtRenderNodes(kind, list){ const wrap=document.createElement('div');
+  list.forEach(n=>wrap.appendChild(rtRenderNode(kind, n))); return wrap; }
+function rtRenderNode(kind, n){
+  const st=roleTree[kind];
+  const node=document.createElement('div'); node.className='tree-node'; node.dataset.id=n.id;
+  const tog=document.createElement('span'); tog.className='toggler';
+  const lab=document.createElement('label');
+  if(n.canCheck){
+    const state=rtState(kind, n.id);
+    const cb=document.createElement('input'); cb.type='checkbox';
+    cb.checked = state==='full';
+    cb.disabled = !rtEditable();
+    cb.onchange=()=>rtToggleCheck(kind, n.id, cb.checked);
+    lab.append(cb, document.createTextNode(' '+n.name));
+  } else { lab.append(document.createTextNode(' '+n.name)); lab.style.color='var(--ink4)'; } // 不可授:仅结构展示
+  node.append(tog, lab);
+  if(n.hasChildren){
+    const open=st.expanded.has(n.id) && st.childrenOf[n.id];
+    tog.textContent = open?'▾':'▸';
+    const box=document.createElement('div'); box.className='tree-children'; box.style.display=open?'':'none'; node.appendChild(box);
+    if(open) box.appendChild(rtRenderNodes(kind, st.childrenOf[n.id].map(id=>st.index[id])));
+    tog.onclick=async()=>{
+      if(st.expanded.has(n.id)){ st.expanded.delete(n.id); rtRefresh(kind); return; }
+      st.expanded.add(n.id);
+      if(!st.childrenOf[n.id]){ box.style.display=''; tog.textContent='▾'; box.innerHTML='<div class="muted" style="padding:2px 0 2px 8px">加载中…</div>'; await rtFetch(kind, n.id); }
+      rtRefresh(kind);
+    };
+  } else { tog.textContent=''; }
+  return node;
+}
+// 勾选只修改当前分支；取消子节点时仅打破已有祖先子树，不自动选择或合并任何祖先。
+function rtToggleCheck(kind, id, checked){
+  rolePermissionTouched[kind]=true;
+  if(checked) rtCascade(kind, id, true); else rtCascade(kind, id, false);
+  if(!checked) rtBreakAncestorSubtrees(kind,id);
+  rtRefresh(kind);
+}
+function rtCascade(kind, id, on){ const st=roleTree[kind];
+  st.chk[id]=on;
+  st.sub[id]=on && grantCanSubtree(kind,id);
+  if(!on){ delete st.chk[id]; delete st.sub[id]; }
+  (st.childrenOf[id]||[]).forEach(c=>{
+    if(on && !grantAllows(kind,c)) return;
+    rtCascade(kind, c, on);
+  });
+}
+function rtBreakAncestorSubtrees(kind,id){ const st=roleTree[kind]; let cur=rtParent(kind,id);
+  while(cur){
+    if(st.chk[cur]&&st.sub[cur]) st.sub[cur]=false;
+    cur=rtParent(kind, cur);
+  }
+}
+
+function blankRole(){ return {
+  id:0,name:'',description:'',menuConfigCodes:[],menuAppCodes:[],
+  areaScopes:[],orgScopes:[],resourceAreaScopes:[]
+}; }
+
+// ---------- 通用请求 ----------
+const API_SETTINGS_STORAGE_KEY='security-permission.api-settings.v1';
+function readStoredApiSettings(){
+  try{
+    const raw=localStorage.getItem(API_SETTINGS_STORAGE_KEY);
+    if(!raw) return null;
+    const parsed=JSON.parse(raw);
+    return parsed&&typeof parsed==='object'?parsed:null;
+  }catch(_){ return null; }
+}
+function storedApiValue(stored,key,fallback){
+  return stored&&Object.prototype.hasOwnProperty.call(stored,key)?stored[key]:fallback;
+}
+function apiRuntimeConfig(){
+  const root=window.PERMISSION_FRONTEND_CONFIG||{}, configured=root.api||{};
+  const stored=readStoredApiSettings();
+  const configuredPaths=configured.paths&&typeof configured.paths==='object'?configured.paths:{};
+  const storedPaths=stored&&stored.paths&&typeof stored.paths==='object'?stored.paths:{};
+  const credentials=String(storedApiValue(stored,'credentials',configured.credentials||'same-origin'));
+  return {
+    baseUrl:String(storedApiValue(stored,'baseUrl',configured.baseUrl||'')||'').trim().replace(/\/+$/,''),
+    pathPrefix:String(storedApiValue(stored,'pathPrefix',configured.pathPrefix||'')||'').trim(),
+    paths:{...configuredPaths,...storedPaths},
+    headers:configured.headers&&typeof configured.headers==='object'?configured.headers:{},
+    credentials:['omit','same-origin','include'].includes(credentials)?credentials:'same-origin'
+  };
+}
+const API_RUNTIME=apiRuntimeConfig();
+function splitApiRequestPath(requestPath){
+  const raw=String(requestPath||'');
+  const queryAt=raw.indexOf('?');
+  const hashAt=raw.indexOf('#');
+  let end=raw.length;
+  if(queryAt>=0) end=Math.min(end,queryAt);
+  if(hashAt>=0) end=Math.min(end,hashAt);
+  return {pathname:raw.slice(0,end),suffix:raw.slice(end)};
+}
+function joinApiUrl(baseUrl,pathPrefix,requestPath){
+  if(/^(?:https?:)?\/\//i.test(requestPath)) return requestPath;
+  const base=String(baseUrl||'').replace(/\/+$/,'');
+  const parts=[pathPrefix,requestPath].filter(Boolean).map((part,index)=>{
+    const value=String(part);
+    return index===0&&base===''?value.replace(/\/+$/,''):value.replace(/^\/+|\/+$/g,'');
+  }).filter(Boolean);
+  if(base) return base+(parts.length?'/'+parts.join('/'):'');
+  const joined=parts.join('/');
+  return joined.startsWith('/')?joined:'/'+joined;
+}
+function appendApiSuffix(url,suffix){
+  if(!suffix) return url;
+  if(suffix[0]==='?'&&url.includes('?')) return url+'&'+suffix.slice(1);
+  return url+suffix;
+}
+function resolveApiUrl(requestPath){
+  const parsed=splitApiRequestPath(requestPath);
+  const mapped=Object.prototype.hasOwnProperty.call(API_RUNTIME.paths,parsed.pathname)
+    ?String(API_RUNTIME.paths[parsed.pathname])
+    :parsed.pathname;
+  return appendApiSuffix(joinApiUrl(API_RUNTIME.baseUrl,API_RUNTIME.pathPrefix,mapped),parsed.suffix);
+}
+function unwrapRes(j){
+  if(!j || j.code!==0) throw new Error((j&&j.message) || '请求失败');
+  return j.data;
+}
+async function api(path, opts){
+  const options={...(opts||{})}, headers=new Headers(API_RUNTIME.headers||{});
+  new Headers(options.headers||{}).forEach((value,key)=>headers.set(key,value));
+  const userId=loginUserId();
+  if(userId && userId!=='0') headers.set('X-User-Id', userId);
+  options.cache='no-store';
+  options.headers=headers;
+  if(options.credentials===undefined) options.credentials=API_RUNTIME.credentials;
+  const r = await fetch(resolveApiUrl(path), options); return unwrapRes(await r.json());
+}
+
+// ---------- 可视化接口配置 ----------
+function apiConfigPathKeys(){
+  const defaults=(((window.PERMISSION_FRONTEND_CONFIG||{}).api||{}).paths)||{};
+  return [...new Set([...Object.keys(defaults),...Object.keys(API_RUNTIME.paths||{})])];
+}
+function renderApiConfigPaths(){
+  const list=document.getElementById('apiPathList'); list.innerHTML='';
+  apiConfigPathKeys().forEach(logicalPath=>{
+    const row=document.createElement('div'); row.className='api-path-row';
+    const logical=document.createElement('code'); logical.className='api-path-logical'; logical.textContent=logicalPath; logical.title=logicalPath;
+    const input=document.createElement('input'); input.className='api-config-input'; input.type='text';
+    input.dataset.apiPath=logicalPath; input.value=String(API_RUNTIME.paths[logicalPath]||logicalPath);
+    input.autocomplete='off'; input.spellcheck=false; input.addEventListener('input',updateApiConfigPreview);
+    row.append(logical,input); list.appendChild(row);
+  });
+}
+function showApiConfigError(message){
+  const box=document.getElementById('apiConfigError');
+  box.textContent=message||''; box.style.display=message?'block':'none';
+}
+function normalizeApiPrefix(value){
+  const trimmed=String(value||'').trim();
+  if(!trimmed) return '';
+  return '/'+trimmed.replace(/^\/+|\/+$/g,'');
+}
+function apiConfigFormPaths(){
+  const paths={};
+  document.querySelectorAll('#apiPathList [data-api-path]').forEach(input=>{
+    const logical=input.dataset.apiPath;
+    let value=input.value.trim()||logical;
+    if(!/^(?:https?:)?\/\//i.test(value)) value='/'+value.replace(/^\/+/,'');
+    paths[logical]=value;
+  });
+  return paths;
+}
+function updateApiConfigPreview(){
+  const base=document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/,'');
+  const prefix=normalizeApiPrefix(document.getElementById('apiPathPrefix').value);
+  const metaInput=document.querySelector('#apiPathList [data-api-path="/api/meta"]');
+  const mapped=metaInput?(metaInput.value.trim()||'/api/meta'):'/api/meta';
+  document.getElementById('apiConfigPreview').textContent=joinApiUrl(base,prefix,mapped);
+}
+function openApiConfig(){
+  document.getElementById('apiBaseUrl').value=API_RUNTIME.baseUrl;
+  document.getElementById('apiPathPrefix').value=API_RUNTIME.pathPrefix;
+  document.getElementById('apiCredentials').value=API_RUNTIME.credentials;
+  renderApiConfigPaths(); showApiConfigError(''); updateApiConfigPreview();
+  const mask=document.getElementById('apiConfigMask'); mask.style.display='flex';
+  if(!window._apiConfigEscBound){
+    window._apiConfigEscBound=true;
+    document.addEventListener('keydown',event=>{
+      const current=document.getElementById('apiConfigMask');
+      if(event.key==='Escape'&&current&&current.style.display==='flex') closeApiConfig();
+    });
+  }
+  setTimeout(()=>document.getElementById('apiBaseUrl').focus(),0);
+}
+function closeApiConfig(){ document.getElementById('apiConfigMask').style.display='none'; }
+function saveApiConfig(event){
+  event.preventDefault(); showApiConfigError('');
+  const baseUrl=document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/,'');
+  if(baseUrl&&!/^https?:\/\//i.test(baseUrl)){
+    showApiConfigError('服务器地址必须以 http:// 或 https:// 开头，例如：http://192.168.1.100:8001');
+    document.getElementById('apiBaseUrl').focus(); return;
+  }
+  const pathPrefix=normalizeApiPrefix(document.getElementById('apiPathPrefix').value);
+  const paths=apiConfigFormPaths();
+  if(location.protocol==='file:'&&!baseUrl&&Object.values(paths).some(path=>!/^(?:https?:)?\/\//i.test(path))){
+    showApiConfigError('当前是直接打开 HTML 文件，请填写完整的接口服务器地址，或为每个接口填写完整 URL。');
+    document.getElementById('apiBaseUrl').focus(); return;
+  }
+  try{
+    localStorage.setItem(API_SETTINGS_STORAGE_KEY,JSON.stringify({
+      baseUrl,
+      pathPrefix,
+      paths,
+      credentials:document.getElementById('apiCredentials').value
+    }));
+  }catch(e){ showApiConfigError('浏览器无法保存配置：'+(e&&e.message?e.message:e)); return; }
+  location.reload();
+}
+function resetApiConfig(){
+  if(!window.confirm('确认清除当前浏览器保存的接口配置？')) return;
+  try{ localStorage.removeItem(API_SETTINGS_STORAGE_KEY); }catch(_){}
+  location.reload();
+}
+function apiConfigNeedsSetup(){
+  if(location.protocol!=='file:'||API_RUNTIME.baseUrl) return false;
+  return Object.values(API_RUNTIME.paths||{}).some(path=>!/^(?:https?:)?\/\//i.test(String(path||'')));
+}
+function syncApiConfigButton(){
+  const button=document.getElementById('apiConfigButton'); if(!button) return;
+  const needsSetup=apiConfigNeedsSetup();
+  button.classList.toggle('needs-config',needsSetup);
+  button.title=needsSetup?'请先填写接口服务器地址':'当前接口：'+(API_RUNTIME.baseUrl||location.origin);
+}
+
+// ---------- 树工具 ----------
+function buildTree(nodes){ // 业务树使用 id/parentId，菜单树使用 code/parentCode。
+  // 菜单树先套用前端固定顺序；区域、组织等业务树保持接口返回顺序。
+  if(nodes.some(n=>n.code)) nodes=orderMenus(nodes);
+  const keyOf=n=>n.code||n.id, parentOf=n=>n.parentCode||n.parentId;
+  const map={}, roots=[]; nodes.forEach(n=>map[keyOf(n)]={...n,children:[]});
+  nodes.forEach(n=>{ const key=keyOf(n), parent=parentOf(n); if(parent&&map[parent]) map[parent].children.push(map[key]); else roots.push(map[key]); });
+  return roots;
+}
+function descendants(node){ let r=[]; (node.children||[]).forEach(c=>{ r.push(c); r=r.concat(descendants(c)); }); return r; }
+
+// 渲染带勾选框的树。kind 用于按当前用户可授权范围置灰。
+function renderTree(elId, roots, store, kind, opts={}){
+  const el=document.getElementById(elId); el.innerHTML='';
+  el.appendChild(renderNodes(roots, store, kind, opts, 0));
+}
+// 整棵子树是否有任何可授节点;否则整体隐藏(对齐海康:看不到当前用户无权的部分)
+function anyGrantInSubtree(kind,n){
+  if(GRANT.unlimited||grantAllows(kind,permKey(kind,n))) return true;
+  return (n.children||[]).some(c=>anyGrantInSubtree(kind,c));
+}
+function renderNodes(nodes, store, kind, opts={}, depth=0){
+  const wrap=document.createElement('div');
+  nodes.forEach(n=>{
+    if(!anyGrantInSubtree(kind,n)) return; // 超出当前用户可授权范围 -> 隐藏
+    const node=document.createElement('div'); node.className='tree-node';
+    const hasChild=(n.children&&n.children.length);
+    const key=permKey(kind,n);
+    const fold=opts.fold;
+    const foldKey=String(key);
+    // 组织权限树默认只展开根节点:显示根和直接子组织,孙级以后等用户手动展开。
+    const defaultOpen=!opts.rootChildrenOnly || depth===0;
+    const forcedOpen=!!(fold && fold.expanded.has(foldKey));
+    const forcedClosed=!!(fold && fold.collapsed.has(foldKey));
+    const opened=hasChild && !forcedClosed && (defaultOpen || forcedOpen);
+    const tog=document.createElement('span'); tog.className='toggler'; tog.textContent=hasChild?(opened?'▾':'▸'):'';
+    const selfAllowed=GRANT.unlimited||grantAllows(kind,key);
+    const lab=document.createElement('label');
+    if(selfAllowed){
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!store[key];
+      cb.onchange=()=>{ toggleNode(n,store,cb.checked,kind); };
+      lab.append(cb, document.createTextNode(' '+ (n.name||n.code)));
+    } else {
+      // 自身不可授,但有可授子孙:仅作结构展示(无勾选框)
+      lab.append(document.createTextNode(' '+ (n.name||n.code))); lab.style.color='var(--ink4)';
+    }
+    node.append(tog, lab);
+    let childBox=null;
+    if(hasChild){ childBox=document.createElement('div'); childBox.className='tree-children'; childBox.style.display=opened?'':'none'; childBox.appendChild(renderNodes(n.children,store,kind,opts,depth+1)); node.appendChild(childBox);
+      tog.onclick=()=>{ const show=childBox.style.display!=='none';
+        // 记录用户手动折叠/展开,后续勾选触发 rerenderAll 时保持当前展开层级。
+        if(fold){ if(show){ fold.collapsed.add(foldKey); fold.expanded.delete(foldKey); } else { fold.expanded.add(foldKey); fold.collapsed.delete(foldKey); } }
+        childBox.style.display=show?'none':''; tog.textContent=show?'▸':'▾'; }; }
+    wrap.appendChild(node);
+  });
+  return wrap;
+}
+// 勾选级联:选父则选中所有后代;取消父则取消后代
+function toggleNode(n,store,val,kind){
+  const keyOf=x=>kind?permKey(kind,x):x.id;
+  store[keyOf(n)]=val;
+  descendants(n).forEach(d=>{
+    const key=keyOf(d);
+    // 取消时清理整棵已选分支；勾选时不能顺带增加当前不可授的权限。
+    if(!val || grantAllows(kind,key)) store[key]=val;
+  });
+  if(kind==='org') rolePermissionTouched.org=true;
+  // 重新渲染对应树以刷新 UI
+  rerenderAll();
+}
+
+// 整棵子树(含自身)是否都被勾选 —— 决定授权根记 includeChild:true 还是 false
+function fullyChecked(n, store){
+  if(!store[n.id]) return false;
+  return (n.children||[]).every(c=>fullyChecked(c, store));
+}
+// 从勾选状态提取授权范围。一个被勾选的节点:
+//   - 整棵子树都被勾选 -> {includeChild:true} 作为子树根,不再下钻(新增子节点自动继承);
+//   - 否则(仅自身/部分子孙被勾) -> {includeChild:false} 只授本节点,再递归把被勾的子孙各自记录。
+// 关键:只勾「园区A」不勾其子节点 => {园区A, includeChild:false}(只给园区A自身),而非整棵子树。
+function extractScopes(roots, store, kind){
+  const out=[];
+  function walk(nodes){
+    nodes.forEach(n=>{
+      if(!store[n.id]){ walk(n.children||[]); return; }   // 自身未勾:跳过,继续找被勾的子孙
+      if(fullyChecked(n, store) && grantCanSubtree(kind,n.id)){
+        out.push({nodeId:n.id, includeChild:true});        // 整棵子树 -> 子树根,不再下钻
+      } else {
+        out.push({nodeId:n.id, includeChild:false});       // 仅本节点
+        walk(n.children||[]);                              // 被勾的子孙各自单独记录
+      }
+    });
+  }
+  walk(roots); return out;
+}
+// 把 scopes 展开回勾选状态(含子树)
+function applyScopes(roots, scopes, store){
+  for(const k in store) delete store[k];
+  const byId={}; function index(ns){ns.forEach(n=>{byId[n.id]=n; index(n.children||[]);});} index(roots);
+  scopes.forEach(sc=>{ const n=byId[sc.nodeId]; if(!n) return; store[sc.nodeId]=true; if(sc.includeChild) descendants(n).forEach(d=>store[d.id]=true); });
+}
+
+// ---------- 初始化 ----------
+const loginUserStorageKey = 'security-permission.user-id';
+function storedLoginUserId(){
+  try{ return localStorage.getItem(loginUserStorageKey) || ''; }catch(_){ return ''; }
+}
+function persistLoginUserId(id){
+  try{
+    if(id && id!=='0') localStorage.setItem(loginUserStorageKey, id);
+    else localStorage.removeItem(loginUserStorageKey);
+  }catch(_){}
+}
+async function init(){
+  const select=document.getElementById('loginUser');
+  select.disabled=true;
+  try{
+    await reloadMeta();
+    await refreshRolePanel();   // 以当前登录用户身份初始化角色面板(grantable+列表+树+编辑门禁)
+    await loadAppView();   // 默认进应用端
+    await loadSysView();
+  }finally{
+    select.disabled=false;
+  }
+}
+// 重新拉取元数据并刷新所有用户/角色下拉
+async function reloadMeta(){
+  // 重建用户选项前先记住当前身份；首次加载则恢复上次选择，避免刷新后回到第一位用户。
+  const loginSelect = document.getElementById('loginUser');
+  const previousUserId = loginSelect.value || storedLoginUserId();
+  META = await api('/api/meta');
+  META._areaById = {}; (META.areas||[]).forEach(a=>META._areaById[a.id]=a); // path 查询(惰性区域树的覆盖/继承判断用)
+  const userOpts = META.users.map(u=>`<option value="${u.id}">${u.name}${u.isSuperuser?' ★超管':''}</option>`).join('');
+  loginSelect.innerHTML = userOpts;
+  if((META.users||[]).some(u=>String(u.id)===previousUserId)) loginSelect.value = previousUserId;
+  persistLoginUserId(loginSelect.value);
+  syncLoginDisplay();
+  META._roles = (await api('/api/role/list')).items||[];
+  renderAccountPanel();
+}
+function loginUserId(){ return document.getElementById('loginUser').value || '0'; }
+function syncLoginDisplay(){
+  const u=(META.users||[]).find(x=>String(x.id)===loginUserId());
+  const name=document.getElementById('loginUserName'), tag=document.getElementById('loginUserTag');
+  if(!name||!tag) return;
+  name.textContent = u ? u.name : '未选择账号';
+  tag.textContent = u ? (u.isSuperuser ? '超级管理员 / 全部权限' : '普通账号 / 按角色授权') : '请选择';
+}
+
+// ---------- 应用端(体验) ----------
+function switchView(v){
+  document.querySelectorAll('.main-tab').forEach(e=>e.classList.toggle('active',e.dataset.view===v));
+  document.querySelectorAll('.main-view').forEach(e=>e.classList.toggle('active',e.id==='view-'+v));
+}
+async function onLoginChange(){
+  const select=document.getElementById('loginUser');
+  select.disabled=true; // 等本次身份相关视图全部刷新完成，避免连续切换产生响应覆盖。
+  persistLoginUserId(loginUserId()); syncLoginDisplay();
+  try{
+    await loadAppView();
+    await loadSysView();
+    await refreshRolePanel();
+  }finally{
+    select.disabled=false;
+  }
+}
+async function loadAppView(){
+  // 应用菜单(功能权限)→ 卡片
+  const menus=(await api('/api/app/menu')).items||[];
+  renderAppCards(menus);
+  // 应用首页不预加载区域树；进入具体视频应用时再按 RES_AREA 实时查询。
+  document.getElementById('appAreaTree').innerHTML='';
+  document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>';
+  showAppHome();
+}
+// 内联 SVG 图标辅助:svgIco('i-video') -> <svg class="ico"><use .../></svg>
+function svgIco(id, cls){ return `<svg class="ico ${cls||''}"><use href="#${id}"></use></svg>`; }
+function h(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// 应用卡片图标:按菜单 code 关键字映射到线性图标 id
+function menuIcon(code){
+  if(code.includes('video')||code==='app.video') return 'i-video';
+  if(code.includes('live')) return 'i-live';
+  if(code.includes('playback')) return 'i-playback';
+  if(code.includes('picture')) return 'i-picture';
+  if(code.includes('event')||code.includes('search')) return 'i-search';
+  if(code.includes('map')) return 'i-map';
+  if(code.includes('broadcast')) return 'i-broadcast';
+  if(code.includes('network')) return 'i-network';
+  if(code.includes('integrated')) return 'i-compass';
+  return 'i-grid';
+}
+// 系统管理菜单图标:按 code
+function sysIcon(code){
+  if(code==='sys.area') return 'i-area';
+  if(code==='sys.person.info') return 'i-org';
+  if(code==='sys.person.role') return 'i-role';
+  if(code==='sys.person.account') return 'i-account';
+  if(code.startsWith('sys.business')) return 'i-grid';
+  if(code.startsWith('sys.vehicle')) return 'i-inbox';
+  if(code==='sys.device.broadcast') return 'i-broadcast';
+  if(code.startsWith('sys.device')) return 'i-video';
+  if(code==='sys.resource.point') return 'i-video';
+  if(code.startsWith('sys.resource')) return 'i-grid';
+  if(code.startsWith('sys.videocfg')) return 'i-video';
+  if(code==='sys.servicecfg.map') return 'i-map';
+  if(code.startsWith('sys.servicecfg')) return 'i-compass';
+  if(code.startsWith('sys.network')) return 'i-network';
+  if(code.startsWith('sys.advanced')) return 'i-lock';
+  if(code.includes('person')) return 'i-user';
+  return 'i-grid';
+}
+// 视频监控相关卡片 → 进入区域/资源浏览;其余 → 占位提示
+function isVideoCard(code){ return code.startsWith('app.video'); }
+function appSectionDesc(code){
+  if(code==='app.integrated') return '利用卡片、人脸识别信息等媒介，实现人员身份核验、出入管控等智能应用';
+  if(code==='app.video') return '利用视频类设备进行实时预览和录像回放查看等操作，辅助用户进行重要区域管理';
+  if(code==='app.network') return '通过智能分析设备，实现智能分析功能';
+  return '';
+}
+function renderAppCards(menus){
+  const box=document.getElementById('appCards');
+  if(!menus.length){ box.innerHTML='<div class="card-section"><span class="muted">该用户无任何应用菜单权限</span></div>'; return; }
+  menus=orderMenus(menus);
+  // 按顶级父菜单分组
+  const tops=menus.filter(m=>!m.parentCode);
+  const childrenOf=parentCode=>menus.filter(m=>m.parentCode===parentCode);
+  let html='';
+  const sections = tops.length ? tops : [{name:'应用',code:''}];
+  sections.forEach(top=>{
+    const kids = top.code ? childrenOf(top.code) : menus;
+    const cards = (kids.length?kids:[top]); // 没有子项就把父本身作为卡片
+    const desc=appSectionDesc(top.code);
+    html+=`<div class="card-section"><h3>${h(top.name)}</h3>${desc?`<div class="desc">${h(desc)}</div>`:''}<div class="card-grid">`;
+    cards.forEach(c=>{
+      html+=`<div class="app-card" data-code="${h(c.code)}" onclick="openCard('${h(c.code)}','${h(c.name)}')"><div class="ic">${svgIco(menuIcon(c.code))}</div><div class="nm">${h(c.name)}</div></div>`;
+    });
+    html+=`</div></div>`;
+  });
+  box.innerHTML=html;
+}
+async function openCard(code,name){
+  if(!isVideoCard(code)){ toast('「'+name+'」为演示占位','i-grid'); return; }
+  showAppBrowse();
+  document.getElementById('appMain').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看监控资源</div>';
+  try{
+    await loadAppAreaRoot(); // 每次进入都按当前用户的 APP 菜单 + RES_AREA 重新查询。
+  }catch(e){
+    await modalError('刷新应用区域权限失败', e);
+  }
+}
+function showAppHome(){ document.getElementById('appHome').style.display='block'; document.getElementById('appBrowse').style.display='none'; }
+function showAppBrowse(){ document.getElementById('appHome').style.display='none'; document.getElementById('appBrowse').style.display='block'; }
+// 区域树:按层懒加载 + 每层分页(100/页),权限过滤后端下推。
+// 应用端浏览树 / 后台管理树 / 移动选择器 共用 lazyTreeLevel + lazyTreeNode 一套;差异由 opts 注入。
+//   参数格式：{ url(parentId,page,size)->string, rootParent, emptyText, icon, activeSel, onClick(node,rowEl) }
+const TREE_PAGE=100, RES_PAGE=100;
+async function lazyTreeLevel(container, parentId, page, reset, opts){
+  const d=await api(opts.url(parentId, page, TREE_PAGE));
+  if(reset) container.innerHTML='';
+  const oldMore=container.querySelector(':scope > .area-more'); if(oldMore) oldMore.remove();
+  if(page===1 && (!d.items||!d.items.length)){
+    if(parentId===opts.rootParent) container.innerHTML='<div class="muted">'+(opts.emptyText||'无可见节点')+'</div>';
+    return;
+  }
+  const added=[];
+  (d.items||[]).forEach(n=>{ const node=lazyTreeNode(n, opts); added.push(node); container.appendChild(node); });
+  const shown=page*TREE_PAGE;
+  if(d.total>shown){
+    const more=document.createElement('div'); more.className='area-more';
+    more.style.cssText='cursor:pointer;color:var(--brand);padding:4px 0 4px 18px;font-size:13px';
+    more.textContent=`加载更多(${shown}/${d.total})`;
+    more.onclick=()=>lazyTreeLevel(container, parentId, page+1, false, opts);
+    container.appendChild(more);
+  }
+  if(reset && page===1 && opts.defaultExpandRoot && parentId===opts.rootParent){
+    for(const node of added){ if(node.openChildren) await node.openChildren(); }
+  }
+}
+function lazyTreeNode(n, opts){
+  const node=document.createElement('div');
+  const row=document.createElement('div'); row.className='area-node'+(n.accessible?'':' structural');
+  const tog=document.createElement('span'); tog.className='area-tog';
+  tog.style.cssText='display:inline-block;width:14px;cursor:pointer;color:var(--ink4);user-select:none';
+  tog.textContent=n.hasChildren?'▸':'';
+  row.appendChild(tog);
+  const ic=document.createElement('span'); ic.innerHTML=svgIco(opts.icon||'i-area'); row.appendChild(ic);
+  const lab=document.createElement('span'); lab.innerHTML=' '+n.name+(n.accessible?'':' <small style="color:var(--ink4)">(仅可见)</small>'); row.appendChild(lab);
+  row.onclick=(e)=>{ e.stopPropagation(); if(opts.activeSel){ document.querySelectorAll(opts.activeSel).forEach(x=>x.classList.remove('active')); row.classList.add('active'); } opts.onClick(n, row); };
+  node.appendChild(row);
+  if(n.hasChildren){
+    const childBox=document.createElement('div'); childBox.style.cssText='margin-left:16px;display:none'; node.appendChild(childBox);
+    let loaded=false;
+    node.openChildren=async()=>{
+      const open=childBox.style.display!=='none';
+      if(open) return;
+      childBox.style.display=''; tog.textContent='▾';
+      if(!loaded){ loaded=true; childBox.innerHTML='<div class="muted" style="padding:4px 0">加载中…</div>'; await lazyTreeLevel(childBox, n.id, 1, true, opts); }
+    };
+    tog.onclick=async(e)=>{
+      e.stopPropagation();
+      const open=childBox.style.display!=='none';
+      if(open){ childBox.style.display='none'; tog.textContent='▸'; return; }
+      await node.openChildren();
+    };
+  }
+  return node;
+}
+// 应用端浏览树(RES_AREA 数据权限)
+function appTreeOpts(){ return { url:(p,pg,s)=>`/api/app/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'该用户无任何可见区域', icon:'i-area', activeSel:'#appAreaTree .area-node', onClick:(n)=>openArea(n.id), defaultExpandRoot:true }; }
+async function loadAppAreaRoot(){
+  mountTreeSearch('appAreaTree','app', appTreeOpts, renderAppTreeRoot);
+  // 每次重新进入视频应用都清空上一次搜索条件，确保展示的是本次实时获取的完整权限树。
+  const tree=document.getElementById('appAreaTree');
+  const input=tree&&tree.parentNode.querySelector(':scope > .tree-search input'); if(input) input.value='';
+  await renderAppTreeRoot();
+}
+async function renderAppTreeRoot(){ const el=document.getElementById('appAreaTree'); el.innerHTML='<div class="muted">加载中…</div>'; await lazyTreeLevel(el, 0, 1, true, appTreeOpts()); }
+// 树搜索框:挂到树容器上方;输入即搜(全树扫描 + 权限过滤,后端下推),清空恢复懒加载树
+function mountTreeSearch(treeElId, scope, optsFn, restoreFn){
+  const tree=document.getElementById(treeElId); if(!tree) return;
+  if(tree.parentNode.querySelector(':scope > .tree-search')) return; // 已挂载
+  const box=document.createElement('div'); box.className='tree-search'; box.style.cssText='position:relative;margin-bottom:8px';
+  box.innerHTML=`<input type="text" placeholder="搜索区域名称" style="width:100%;box-sizing:border-box;padding:7px 30px 7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;outline:none;background:var(--input);color:var(--ink)"><span style="position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--ink4);pointer-events:none">${svgIco('i-search')}</span>`;
+  const input=box.querySelector('input'); let timer=null;
+  input.oninput=()=>{ clearTimeout(timer); const q=input.value.trim(); timer=setTimeout(()=>{ if(q) searchTreeInto(treeElId, q, scope, optsFn()); else restoreFn(); }, 300); };
+  tree.parentNode.insertBefore(box, tree);
+}
+// 搜索:对齐真实海康——结果按「局部树」展示(命中分支的祖先作上下文,匹配项高亮),最多前 500 条,超出给提示。
+async function searchTreeInto(treeElId, q, scope, opts){
+  const el=document.getElementById(treeElId);
+  const searchUrl=scope==='manage'?'/api/manage/area-search':'/api/app/area-search';
+  const d=await api(`${searchUrl}?q=${encodeURIComponent(q)}`);
+  el.innerHTML='';
+  const items=d.items||[];
+  // 截断提示(对齐海康原文:搜索结果过多,仅展示前 500 条,建议缩小搜索范围。)
+  if(d.total>items.length){
+    const w=document.createElement('div');
+    w.style.cssText='background:var(--warn-soft);border:1px solid var(--warn-line);color:var(--warn);border-radius:6px;padding:7px 10px;font-size:12px;line-height:1.5;margin-bottom:8px';
+    w.textContent=`搜索结果过多,仅展示前 ${items.length} 条,建议缩小搜索范围。`;
+    el.appendChild(w);
+  }
+  if(!items.length){ el.insertAdjacentHTML('beforeend','<div class="muted" style="padding:6px 2px">无匹配区域</div>'); return; }
+  // 用各匹配项的祖先链拼出"局部树"(只含命中分支):节点既可能是匹配项、也可能只是上下文祖先
+  const nodes={};
+  const ensure=(id,name,parentId)=>{ if(!nodes[id]) nodes[id]={id,name,parentId,children:[],match:false,accessible:false}; return nodes[id]; };
+  items.forEach(m=>{ let pid=0; (m.ancestors||[]).forEach(a=>{ ensure(a.id,a.name,pid); pid=a.id; }); const self=ensure(m.id,m.name,pid); self.match=true; self.accessible=m.accessible; });
+  Object.values(nodes).forEach(n=>{ const p=nodes[n.parentId]; if(p&&!p.children.includes(n)) p.children.push(n); });
+  const roots=Object.values(nodes).filter(n=>!nodes[n.parentId]);
+  el.appendChild(renderSearchTree(roots, q, opts));
+}
+// 渲染搜索局部树(始终展开,无折叠箭头):匹配项可点 + 高亮;纯祖先作上下文(淡显、不可点)。
+function renderSearchTree(list, q, opts){
+  const wrap=document.createElement('div');
+  list.sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh')).forEach(n=>{
+    const node=document.createElement('div');
+    const row=document.createElement('div'); row.className='area-node'+((n.match&&!n.accessible)?' structural':'');
+    row.innerHTML='<span style="display:inline-block;width:14px"></span>'+svgIco(opts.icon||'i-area')+' '+hlMatch(n.name,q)+((n.match&&!n.accessible)?' <small style="color:var(--ink4)">(仅可见)</small>':'');
+    if(n.match){ row.onclick=(e)=>{ e.stopPropagation(); if(opts.activeSel){ document.querySelectorAll(opts.activeSel).forEach(x=>x.classList.remove('active')); row.classList.add('active'); } opts.onClick(n,row); }; }
+    else { row.style.opacity='.65'; row.style.cursor='default'; } // 纯祖先=上下文,不可点
+    node.appendChild(row);
+    if(n.children&&n.children.length){ const cb=document.createElement('div'); cb.style.marginLeft='16px'; cb.appendChild(renderSearchTree(n.children,q,opts)); node.appendChild(cb); }
+    wrap.appendChild(node);
+  });
+  return wrap;
+}
+// 把名称里命中 q 的片段高亮(跟随主题色);先转义 HTML 防注入。
+function hlMatch(name,q){
+  const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  if(!q) return esc(name);
+  const i=(name||'').toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return esc(name);
+  return esc(name.slice(0,i))+'<span style="color:var(--brand);font-weight:600">'+esc(name.slice(i,i+q.length))+'</span>'+esc(name.slice(i+q.length));
+}
+// 点击区域:分页拉取其子树内、用户有权的资源(权限下推 SQL)。
+async function openArea(areaId){
+  const d=await api(`/api/app/resource-list?areaId=${areaId}&page=1&size=${RES_PAGE}`);
+  const main=document.getElementById('appMain');
+  if(!d.accessible){
+    main.innerHTML=`<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-lock"></use></svg></div>暂无操作权限<div class="muted" style="margin-top:8px">「${d.areaName}」仅用于导航,你没有该区域资源的权限</div></div>`;
+    return;
+  }
+  if(!d.total){ main.innerHTML=`<h3>${d.areaName}</h3><div class="muted">该区域下暂无监控资源</div>`; return; }
+  main.innerHTML=`<h3>${d.areaName} — 监控资源 <span class="muted" style="font-size:13px;font-weight:400">(共 ${d.total} 个)</span></h3><div id="resList"></div><div id="resMore"></div>`;
+  appendResCards(d.resources); renderResMore(d, areaId);
+}
+function appResCardHtml(r){ return `<div class="res-card">
+      <div class="rc-title">${svgIco('i-video')} ${r.name} <span class="badge">${r.area}</span></div>
+      <div>${r.actions.map(a=>`<button class="op-btn" ${a.allowed?'':'disabled'} onclick="doOp('${r.name}','${a.name}',${a.allowed})">${a.name}</button>`).join('')}</div>
+    </div>`; }
+function appendResCards(list){ document.getElementById('resList').insertAdjacentHTML('beforeend',(list||[]).map(appResCardHtml).join('')); }
+function renderResMore(d, areaId){
+  const box=document.getElementById('resMore'); box.innerHTML='';
+  const shown=d.page*d.size;
+  if(d.total>shown){
+    const btn=document.createElement('div'); btn.className='area-more';
+    btn.style.cssText='cursor:pointer;color:var(--brand);padding:8px 0;font-size:13px';
+    btn.textContent=`加载更多(${shown}/${d.total})`;
+    btn.onclick=async()=>{ const nd=await api(`/api/app/resource-list?areaId=${areaId}&page=${d.page+1}&size=${d.size}`); appendResCards(nd.resources); renderResMore(nd, areaId); };
+    box.appendChild(btn);
+  }
+}
+function doOp(res,act,allowed){ if(!allowed){ toast('无「'+act+'」操作权限','i-x'); return; } toast('执行:'+act+' @ '+res,'i-live'); }
+
+// ---------- 后台管理(体验) ----------
+// 菜单 code -> 右侧配置界面
+const SYS_ROUTE = { 'sys.area':'area', 'sys.person.info':'person', 'sys.person.role':'role', 'sys.person.account':'user' };
+async function onSysMenu(code, name, el){
+  document.querySelectorAll('#sysMenus .nav-item').forEach(x=>x.classList.remove('on'));
+  if(el) el.classList.add('on');
+  const panel=SYS_ROUTE[code] || 'placeholder';
+  showSysPanel(panel, name);
+  try{
+    if(panel==='area'){
+      curManage.area=0; curAreaNode=null; CUR_RES_ITEMS=[];
+      document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
+      await loadManageAreaRoot(); // 每次进入都按当前登录用户重新查询 AREA 权限树。
+    }else if(panel==='person'){
+      curManage.org=0;
+      document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
+      MANAGE_ORGS=(await api('/api/manage/org-tree')).items||[];
+      renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
+    }
+  }catch(e){
+    await modalError('刷新权限数据失败', e);
+  }
+}
+function toggleSysGroup(el){
+  const group=el.closest('.nav-group');
+  if(group) group.classList.toggle('collapsed');
+}
+function renderSysNav(navEl, menus){
+  if(!menus.length){
+    navEl.innerHTML='<div class="nav-empty">该用户无任何系统管理菜单权限<br>(应用域有权 ≠ 管理域有权)</div>';
+    return;
+  }
+  menus=orderMenus(menus);
+  const byCode=new Map(menus.map(m=>[m.code,m]));
+  const children=new Map();
+  menus.forEach(m=>{
+    const parentCode=byCode.has(m.parentCode)?m.parentCode:'';
+    if(!children.has(parentCode)) children.set(parentCode,[]);
+    children.get(parentCode).push(m);
+  });
+  function sysGroupDefaultOpen(m){
+    // 仅人员管理是系统管理的高频入口,首屏默认展开;其他分组保持折叠,减少左侧菜单占用。
+    return m.code==='sys.person';
+  }
+  const renderNode=(m, level)=>{
+    const kids=children.get(m.code)||[];
+    const cls='nav-item '+(level>0?'child':'parent');
+    if(kids.length){
+      const folded=sysGroupDefaultOpen(m)?'':' collapsed';
+      return `<div class="nav-group${folded}" data-code="${h(m.code)}">
+        <div class="${cls}" data-code="${h(m.code)}" onclick="toggleSysGroup(this)">${svgIco(sysIcon(m.code))}<span>${h(m.name)}</span><span class="nav-chev">▾</span></div>
+        <div class="nav-children">${kids.map(k=>renderNode(k, level+1)).join('')}</div>
+      </div>`;
+    }
+    return `<div class="${cls}" data-code="${h(m.code)}" onclick="onSysMenu('${h(m.code)}','${h(m.name)}',this)">${svgIco(sysIcon(m.code))}<span>${h(m.name)}</span></div>`;
+  };
+  navEl.innerHTML=(children.get('')||[]).map(m=>renderNode(m,0)).join('');
+}
+function showSysPanel(panel, name){
+  ['person','area','role','user','placeholder'].forEach(p=>{ const d=document.getElementById('sc-'+p); if(d) d.style.display=(p===panel)?'block':'none'; });
+  if(panel==='placeholder'){ document.getElementById('phName').textContent=name||''; }
+}
+async function loadSysView(){
+  const menus=orderMenus((await api('/api/manage/menu')).items||[]);
+  const navEl=document.getElementById('sysMenus');
+  renderSysNav(navEl, menus);
+  // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
+  const hasChild=code=>menus.some(m=>m.parentCode===code);
+  let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus.find(m=>!hasChild(m.code)) || menus[0];
+  if(def){ const el=navEl.querySelector(`.nav-item[data-code="${def.code}"]`); await onSysMenu(def.code, def.name, el); }
+  else { showSysPanel('none'); }
+}
+function renderManageTree(elId, flat, kind){
+  const el=document.getElementById(elId);
+  if(!flat.length){ el.innerHTML='<div class="muted">无可见'+(kind==='area'?'区域':'组织')+'</div>'; return; }
+  el.innerHTML=''; el.appendChild(renderManageNodes(buildTree(flat), kind, {rootChildrenOnly:true}, 0));
+}
+function renderManageNodes(nodes, kind, opts={}, depth=0){
+  const wrap=document.createElement('div');
+  nodes.forEach(n=>{
+    const node=document.createElement('div');
+    const row=document.createElement('div'); row.className='area-node'+(n.accessible?'':' structural');
+    const hasChild=!!(n.children&&n.children.length);
+    // 管理端组织树只默认展开根节点,让首屏保持“根 + 直接子组织”的阅读范围。
+    const opened=hasChild && (!opts.rootChildrenOnly || depth===0);
+    const tog=document.createElement('span'); tog.className='area-tog';
+    tog.style.cssText='display:inline-block;width:14px;cursor:pointer;color:var(--ink4);user-select:none';
+    tog.textContent=hasChild?(opened?'▾':'▸'):'';
+    row.appendChild(tog);
+    row.insertAdjacentHTML('beforeend', svgIco(kind==='area'?'i-area':'i-org')+'<span>'+n.name+(n.accessible?'':' <small style="color:var(--ink4)">(仅可见)</small>')+'</span>');
+    row.onclick=(e)=>{ e.stopPropagation(); document.querySelectorAll('#view-sys .area-node').forEach(x=>x.classList.remove('active')); row.classList.add('active'); openManageNode(kind, n.id); };
+    node.appendChild(row);
+    if(hasChild){
+      const box=document.createElement('div'); box.style.marginLeft='16px'; box.style.display=opened?'':'none';
+      box.appendChild(renderManageNodes(n.children, kind, opts, depth+1)); node.appendChild(box);
+      tog.onclick=(e)=>{ e.stopPropagation(); const show=box.style.display!=='none'; box.style.display=show?'none':''; tog.textContent=show?'▸':'▾'; };
+    }
+    wrap.appendChild(node);
+  });
+  return wrap;
+}
+let curManage={area:0,org:0};   // 左树当前选中节点
+let curAreaNode=null;           // 当前打开的管理区域节点 {id,name,parentId}(懒加载下替代全量 MANAGE_AREAS)
+let MANAGE_ORGS=[];             // 当前登录用户可见的管理组织(flat,组织树仍全量;供移动候选/取名)
+let CUR_RES_ITEMS=[];          // 当前打开区域的资源条目(带 id/type,供资源增删改)
+let resEditId=0, resMoveTarget=0; // 资源编辑/移动的目标 id
+async function openManageNode(kind, id){
+  curManage[kind]=id;
+  const url = kind==='area' ? `/api/manage/area-detail?areaId=${id}` : `/api/manage/org-detail?orgId=${id}`;
+  const d=await api(url);
+  const main=document.getElementById(kind==='area'?'sysMainArea':'sysMainOrg');
+  const label = kind==='area' ? '区域' : '组织';
+  if(!d.accessible){
+    main.innerHTML=`<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-lock"></use></svg></div>暂无管理权限<div class="muted" style="margin-top:8px">「${d.name}」仅用于导航,你没有该${label}的管理权限</div></div>`;
+    return;
+  }
+  let html=`<h3>${d.name} — 管理权限</h3>`;
+  if(kind==='area'){
+    curAreaNode={id, name:d.name, parentId:d.parentId}; // 缓存当前节点(CRUD 取名/父用,替代全量 MANAGE_AREAS)
+    // 真实落库的区域操作(后端写时再校验一遍权限);移动改用懒加载树选择器(弹框)
+    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-area')} 区域操作 <span class="muted" style="font-weight:400">(真实落库,写时校验权限)</span></div>
+      <button class="op-btn" onclick="areaAdd()">${svgIco('i-plus')} 新增子区域</button>
+      <button class="op-btn" onclick="areaRename()">${svgIco('i-edit')} 重命名</button>
+      <button class="op-btn" onclick="areaMoveUI()">${svgIco('i-move')} 移动到…</button>
+      <button class="op-btn" onclick="areaReorder('up')">${svgIco('i-up')} 上移</button>
+      <button class="op-btn" onclick="areaReorder('down')">${svgIco('i-down')} 下移</button>
+      <button class="op-btn" onclick="areaDelete()">${svgIco('i-trash')} 删除</button>
+    </div>`;
+  }else{
+    // 真实落库的组织操作(后端写时再校验一遍权限)
+    html+=`<div class="res-card"><div class="rc-title">${svgIco('i-org')} 组织操作 <span class="muted" style="font-weight:400">(真实落库,写时校验权限)</span></div>
+      <button class="op-btn" onclick="orgAdd()">${svgIco('i-plus')} 新增子组织</button>
+      <button class="op-btn" onclick="orgRename()">${svgIco('i-edit')} 重命名</button>
+      <button class="op-btn" onclick="orgMoveUI()">${svgIco('i-move')} 移动到…</button>
+      <button class="op-btn" onclick="orgDelete()">${svgIco('i-trash')} 删除</button>
+      <div id="orgMoveBox" style="display:none;margin-top:10px">
+        移动「${d.name}」到:<select id="orgMoveSel" class="inline-select"></select>
+        <button class="op-btn" onclick="orgMoveDo()">${svgIco('i-check')} 确认移动</button>
+      </div>
+    </div>`;
+  }
+  if(kind==='area'){
+    html+=`<div class="res-card"><div class="rc-title">子区域(${d.childCount||0})</div><span class="muted">子区域请在左侧树展开查看(懒加载)</span></div>`;
+  }else{
+    html+=`<div class="res-card"><div class="rc-title">子${label}(${d.children.length})</div>${d.children.length?d.children.map(c=>`<span class="badge" style="margin-right:6px">${c}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+  }
+  if(kind==='area'){
+    CUR_RES_ITEMS = d.resourceItems||[];
+    html+=resCardHtml(d);
+  }
+  main.innerHTML=html;
+}
+
+// ---------- 资源(摄像头)增删改(真实落库:功能关 sys.resource + 区域数据权限) ----------
+const RES_TYPES=[['camera','摄像机'],['dome','球机'],['gun','枪机'],['ptz','云台']];
+function resTypeName(t){ const f=RES_TYPES.find(x=>x[0]===t); return f?f[1]:(t||'摄像机'); }
+function resCardHtml(d){
+  const items=d.resourceItems||[];
+  const rows = items.length ? items.map(r=>`
+    <div class="res-row">
+      <span class="rr-name">${svgIco('i-video')} ${r.name} <span class="badge">${resTypeName(r.type)}</span></span>
+      <span class="rr-ops">
+        <button class="op-btn" onclick="resEditUI(${r.id})">${svgIco('i-edit')} 编辑</button>
+        <button class="op-btn" onclick="resMoveUI(${r.id})">${svgIco('i-move')} 移动</button>
+        <button class="op-btn" onclick="resDelete(${r.id})">${svgIco('i-trash')} 删除</button>
+      </span>
+    </div>`).join('') : '<span class="muted">无</span>';
+  const typeOpts = RES_TYPES.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+  return `<div class="res-card">
+    <div class="rc-title">${svgIco('i-video')} 本区域资源(${items.length})
+      <button class="op-btn" style="float:right" onclick="resAddUI()">${svgIco('i-plus')} 新增摄像头</button>
+    </div>
+    <div id="resFormBox" style="display:none;margin:8px 0;padding:10px;background:var(--surface2);border:1px solid var(--line2);border-radius:6px">
+      <span id="resFormTitle" style="font-weight:600;margin-right:8px">新增摄像头</span>
+      名称 <input id="resFormName" class="inline-input" placeholder="如 3号楼-东门球机">
+      类型 <select id="resFormType" class="inline-select">${typeOpts}</select>
+      <button class="op-btn" onclick="resFormDo()">${svgIco('i-check')} 确认</button>
+    </div>
+    <div class="res-rows">${rows}</div>
+  </div>`;
+}
+function resAddUI(){ resEditId=0; document.getElementById('resFormTitle').textContent='新增摄像头';
+  document.getElementById('resFormName').value=''; document.getElementById('resFormType').value='camera';
+  document.getElementById('resFormBox').style.display='block'; }
+function resEditUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return; resEditId=id;
+  document.getElementById('resFormTitle').textContent='编辑摄像头';
+  document.getElementById('resFormName').value=r.name; document.getElementById('resFormType').value=r.type||'camera';
+  document.getElementById('resFormBox').style.display='block'; }
+async function resFormDo(){
+  const name=document.getElementById('resFormName').value.trim(); if(!name){ await modalAlert('请输入资源名称','提示','i-x'); return; }
+  const type=document.getElementById('resFormType').value;
+  const body = resEditId>0
+    ? {id:resEditId, name, type, areaId:(CUR_RES_ITEMS.find(x=>x.id===resEditId)||{}).areaId}  // 同区域=改名/类型
+    : {areaId:curManage.area, name, type};
+  try{
+    await api('/api/manage/resource-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast((resEditId>0?'已保存:':'已新增:')+name,'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('保存失败', e); }
+}
+function resMoveUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return; resMoveTarget=id;
+  openMovePicker('移动资源「'+(r.name||'')+'」到区域…', areaPickerOpts(), resMoveDo); }
+async function resMoveDo(target){
+  const r=CUR_RES_ITEMS.find(x=>x.id===resMoveTarget)||{};
+  try{
+    await api('/api/manage/resource-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resMoveTarget,areaId:target.id,name:r.name,type:r.type})});
+    closeMovePicker(); toast('已移动:'+(r.name||''),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('移动失败', e); }
+}
+async function resDelete(id){
+  const r=CUR_RES_ITEMS.find(x=>x.id===id)||{}; const name=r.name||('#'+id);
+  if(!(await modalConfirm('确认删除资源「'+name+'」?\n删除后应用端资源列表将不再显示该资源。'))) return;
+  try{
+    await api('/api/manage/resource-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('删除失败', e); }
+}
+
+// ---------- 区域增删改(真实落库) ----------
+function manageAreaName(id){ return (curAreaNode&&curAreaNode.id===id)?curAreaNode.name:('#'+id); }
+// 后台管理树(AREA 数据权限):按层懒加载 + 分页,复用 lazyTree
+function manageAreaTreeOpts(){ return { url:(p,pg,s)=>`/api/manage/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可见区域', icon:'i-area', activeSel:'#manageAreaTree .area-node', onClick:(n)=>openManageNode('area', n.id), defaultExpandRoot:true }; }
+async function loadManageAreaRoot(){ mountTreeSearch('manageAreaTree','manage', manageAreaTreeOpts, renderManageTreeRoot); await renderManageTreeRoot(); }
+async function renderManageTreeRoot(){ const el=document.getElementById('manageAreaTree'); el.innerHTML=''; await lazyTreeLevel(el, 0, 1, true, manageAreaTreeOpts()); }
+// 操作成功后:重渲染懒加载树 + 刷新元数据(角色编辑器/应用端的区域树),并重新打开 focusId 详情
+async function refreshAreaMgmt(focusId){
+  await loadManageAreaRoot();
+  await reloadMeta();
+  await loadAppView();
+  if(focusId){ await openManageNode('area', focusId); }
+  else document.getElementById('sysMainArea').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧区域查看管理权限</div>';
+}
+async function areaAdd(){
+  const name=await modalPrompt('新子区域名称:'); if(!name||!name.trim()) return;
+  try{
+    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.area,name:name.trim()})});
+    toast('已新增子区域:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('新增失败', e); }
+}
+async function areaRename(){
+  const cur=manageAreaName(curManage.area);
+  const name=await modalPrompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
+  try{
+    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,name:name.trim()})});
+    toast('已重命名为:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('重命名失败', e); }
+}
+// 移动:弹出懒加载树选择器,导航到目标点选(只能选 accessible 节点);写时后端再校验防环/权限/重名
+function areaPickerOpts(){ return { url:(p,pg,s)=>`/api/manage/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
+function areaMoveUI(){ if(!curManage.area) return; openMovePicker('移动「'+manageAreaName(curManage.area)+'」到…', areaPickerOpts(), areaMoveDo); }
+async function areaMoveDo(target){
+  try{
+    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target.id,name:manageAreaName(curManage.area)})});
+    closeMovePicker(); toast('已移动到:'+target.name,'i-check'); await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('移动失败', e); }
+}
+async function areaReorder(direction){
+  if(!curManage.area) return;
+  const cur=(META.areas||[]).find(a=>a.id===curManage.area);
+  if(!cur || !cur.parentId){ toast('根区域不能调整顺序','i-x'); return; }
+  const siblings=(META.areas||[]).filter(a=>a.parentId===cur.parentId).sort((a,b)=>(a.sort===b.sort?a.id-b.id:a.sort-b.sort));
+  const idx=siblings.findIndex(a=>a.id===cur.id);
+  const target=siblings[direction==='up'?idx-1:idx+1];
+  if(!target){ toast(direction==='up'?'已经是第一个':'已经是最后一个','i-check'); return; }
+  try{
+    await api('/api/manage/area-reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({areaId:curManage.area,toAreaId:target.id})});
+    toast(direction==='up'?'已上移':'已下移','i-check');
+    await refreshAreaMgmt(curManage.area);
+  }catch(e){ await modalError('排序失败', e); }
+}
+// ---------- 移动目标选择器(懒加载树弹框,后端区域/组织可共用) ----------
+let movePicked=null, movePickerOnConfirm=null;
+function ensureMovePicker(){
+  let m=document.getElementById('movePicker'); if(m) return m;
+  m=document.createElement('div'); m.id='movePicker';
+  m.style.cssText='display:none;position:fixed;inset:0;background:rgba(2,6,12,.72);backdrop-filter:blur(5px);z-index:2000';
+  m.innerHTML=`<div style="position:absolute;top:8%;left:50%;transform:translateX(-50%);width:440px;max-height:74vh;background:linear-gradient(145deg,var(--surface2),var(--card));border:1px solid var(--line);border-radius:10px;box-shadow:0 24px 70px rgba(0,0,0,.58);display:flex;flex-direction:column">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600" id="movePickerTitle">移动到…</div>
+    <div style="padding:8px 16px;font-size:13px;color:var(--ink3)">已选目标:<b id="movePickedName" style="color:var(--brand)">未选择</b><span class="muted" style="margin-left:8px">(灰色=仅可见,不能选)</span></div>
+    <div id="movePickerTree" style="flex:1;overflow:auto;padding:8px 16px;min-height:120px"></div>
+    <div style="padding:12px 16px;border-top:1px solid var(--line);text-align:right">
+      <button class="op-btn" onclick="closeMovePicker()">取消</button>
+      <button class="op-btn" style="border-color:var(--brand);color:var(--brand)" onclick="movePickerConfirm()">${svgIco('i-check')} 确认移动</button>
+    </div></div>`;
+  document.body.appendChild(m); return m;
+}
+function openMovePicker(title, treeOpts, onConfirm){
+  const m=ensureMovePicker(); movePicked=null; movePickerOnConfirm=onConfirm;
+  m.querySelector('#movePickerTitle').textContent=title;
+  m.querySelector('#movePickedName').textContent='未选择';
+  m.style.display='block';
+  const el=m.querySelector('#movePickerTree'); el.innerHTML='';
+  lazyTreeLevel(el, 0, 1, true, treeOpts);
+}
+function closeMovePicker(){ const m=document.getElementById('movePicker'); if(m) m.style.display='none'; }
+function movePickerConfirm(){ if(!movePicked){ toast('请先选择一个目标','i-x'); return; } if(movePickerOnConfirm) movePickerOnConfirm(movePicked); }
+async function areaDelete(){
+  const name=manageAreaName(curManage.area);
+  if(!(await modalConfirm('确认删除区域「'+name+'」?\n(仅允许删除无子区域、无资源的区域;对该区域的授权记录将一并清理)'))) return;
+  const pid=(curAreaNode&&curAreaNode.parentId)||0;
+  try{
+    await api('/api/manage/area-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area})});
+    toast('已删除:'+name,'i-trash'); await refreshAreaMgmt(pid);
+  }catch(e){ await modalError('删除失败', e); }
+}
+// ---------- 组织增删改(真实落库) ----------
+function manageOrgName(id){ const o=MANAGE_ORGS.find(x=>x.id===id); return o?o.name:('#'+id); }
+// 操作成功后:刷新左树 + 元数据(角色编辑器的组织树 / 用户管理的所属组织下拉),并重新打开 focusId
+async function refreshOrgMgmt(focusId){
+  MANAGE_ORGS = (await api('/api/manage/org-tree')).items||[];
+  renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
+  await reloadMeta();
+  if(focusId && MANAGE_ORGS.some(x=>x.id===focusId)) await openManageNode('org', focusId);
+  else document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
+}
+async function orgAdd(){
+  const name=await modalPrompt('新子组织名称:'); if(!name||!name.trim()) return;
+  try{
+    await api('/api/manage/org-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parentId:curManage.org,name:name.trim()})});
+    toast('已新增子组织:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
+  }catch(e){ await modalError('新增失败', e); }
+}
+async function orgRename(){
+  const cur=manageOrgName(curManage.org);
+  const name=await modalPrompt('新名称:',cur); if(!name||!name.trim()||name.trim()===cur) return;
+  try{
+    await api('/api/manage/org-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,name:name.trim()})});
+    toast('已重命名为:'+name.trim(),'i-check'); await refreshOrgMgmt(curManage.org);
+  }catch(e){ await modalError('重命名失败', e); }
+}
+function orgMoveUI(){
+  const box=document.getElementById('orgMoveBox');
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  // 候选 = 可管理(accessible)且不是:自己 / 自己的子孙 / 当前父(原地移动无意义)
+  const kids=new Set();
+  const collect=id=>MANAGE_ORGS.forEach(n=>{ if(n.parentId===id&&!kids.has(n.id)){ kids.add(n.id); collect(n.id); } });
+  collect(curManage.org);
+  const me=MANAGE_ORGS.find(x=>x.id===curManage.org)||{};
+  const cands=MANAGE_ORGS.filter(n=>n.accessible&&n.id!==curManage.org&&!kids.has(n.id)&&n.id!==me.parentId);
+  if(!cands.length){ toast('没有可移动到的目标组织'); return; }
+  document.getElementById('orgMoveSel').innerHTML=cands.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  box.style.display='block';
+}
+async function orgMoveDo(){
+  const target=Number(document.getElementById('orgMoveSel').value||0); if(!target) return;
+  try{
+    await api('/api/manage/org-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org,parentId:target,name:manageOrgName(curManage.org)})});
+    toast('已移动到:'+manageOrgName(target),'i-check'); await refreshOrgMgmt(curManage.org);
+  }catch(e){ await modalError('移动失败', e); }
+}
+async function orgDelete(){
+  const name=manageOrgName(curManage.org);
+  if(!(await modalConfirm('确认删除组织「'+name+'」?\n(仅允许删除无子组织、无下属用户的组织;对该组织的授权记录将一并清理)'))) return;
+  const pid=(MANAGE_ORGS.find(x=>x.id===curManage.org)||{}).parentId||0;
+  try{
+    await api('/api/manage/org-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.org})});
+    toast('已删除:'+name,'i-trash'); await refreshOrgMgmt(pid);
+  }catch(e){ await modalError('删除失败', e); }
+}
+function toast(msg, icon){ const t=document.getElementById('toast'); t.innerHTML=(icon?svgIco(icon):'')+'<span>'+h(msg)+'</span>'; t.style.display='flex'; clearTimeout(window._tt); window._tt=setTimeout(()=>t.style.display='none',1800); }
+let dialogResolve=null;
+function ensureDialog(){
+  let m=document.getElementById('appDialog'); if(m) return m;
+  m=document.createElement('div'); m.id='appDialog'; m.className='modal-mask';
+  m.innerHTML=`<div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head"><span class="modal-ico" id="dialogIcon"></span><span id="dialogTitle">提示</span></div>
+    <div class="modal-body" id="dialogBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-default" id="dialogCancel" type="button">取消</button>
+      <button class="btn btn-primary" id="dialogOk" type="button">确定</button>
+    </div>
+  </div>`;
+  m.addEventListener('click', e=>{ if(e.target===m) closeDialog(null); });
+  document.body.appendChild(m);
+  if(!window._dialogEscBound){
+    window._dialogEscBound=true;
+    document.addEventListener('keydown', e=>{ const d=document.getElementById('appDialog'); if(e.key==='Escape'&&d&&d.style.display==='flex') closeDialog(null); });
+  }
+  return m;
+}
+function closeDialog(result){
+  const m=document.getElementById('appDialog'); if(m) m.style.display='none';
+  if(dialogResolve){ const fn=dialogResolve; dialogResolve=null; fn(result); }
+}
+function openDialog(opts){
+  const m=ensureDialog();
+  const mode=opts.mode||'alert';
+  m.querySelector('#dialogTitle').textContent=opts.title||'提示';
+  m.querySelector('#dialogIcon').innerHTML=svgIco(opts.icon||'i-check');
+  m.querySelector('#dialogBody').innerHTML=`<div>${h(opts.message||'').replace(/\n/g,'<br>')}</div>`+(mode==='prompt'?`<input id="dialogInput" class="dialog-input" value="${h(opts.value||'')}">`:'');
+  const cancel=m.querySelector('#dialogCancel'), ok=m.querySelector('#dialogOk');
+  cancel.style.display=mode==='alert'?'none':'inline-flex';
+  cancel.textContent=opts.cancelText||'取消';
+  ok.textContent=opts.okText||'确定';
+  cancel.onclick=()=>closeDialog(null);
+  ok.onclick=()=>closeDialog(mode==='prompt'?m.querySelector('#dialogInput').value:true);
+  m.style.display='flex';
+  return new Promise(resolve=>{
+    dialogResolve=resolve;
+    setTimeout(()=>{
+      const input=m.querySelector('#dialogInput');
+      if(input){ input.focus(); input.select(); input.onkeydown=e=>{ if(e.key==='Enter') closeDialog(input.value); }; }
+      else ok.focus();
+    },0);
+  });
+}
+function modalAlert(message, title='提示', icon='i-check'){ return openDialog({mode:'alert', title, message, icon}).then(()=>true); }
+function modalConfirm(message, title='确认操作'){ return openDialog({mode:'confirm', title, message, icon:'i-x', okText:'确认'}).then(Boolean); }
+function modalPrompt(message, value='', title='输入名称'){ return openDialog({mode:'prompt', title, message, value, icon:'i-edit', okText:'确定'}); }
+function modalError(prefix, e){ return modalAlert(prefix+':'+(e&&e.message?e.message:e), '操作失败', 'i-x'); }
+
+// ---------- 用户管理 ----------
+let EDIT_USER_ID = '';
+
+function orgName(id){ const o=(META.orgs||[]).find(x=>x.id===Number(id)); return o?o.name:('#'+id); }
+function roleName(id){ const r=(META._roles||[]).find(x=>x.id===Number(id)); return r?r.name:('#'+id); }
+function renderAccountPanel(){
+  renderUserList();
+  renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
+}
+function renderUserList(){
+  const box=document.getElementById('userList'); if(!box) return;
+  const users=META.users||[];
+  box.innerHTML = users.map(u=>{
+    const rs=(u.roleIds||[]).map(roleName).join('、')||'无角色';
+    const sup=u.isSuperuser?'<span class="badge" style="background:var(--brand-soft);color:var(--brand);margin-left:6px">'+svgIco('i-shield')+'超管</span>':'';
+    return `<div class="user-row ${String(u.id)===EDIT_USER_ID?'active':''}" onclick="editUser('${h(u.id)}')">
+      <span class="uava">${svgIco(u.isSuperuser?'i-shield':'i-user')}</span>
+      <span class="uname"><span style="min-width:0"><b>${h(u.name)}</b>${sup}<small class="muted u-meta">组织:${h(orgName(u.orgId))} / 角色:${h(u.isSuperuser?'超级管理员':rs)}</small></span></span>
+    </div>`;
+  }).join('') || '<div class="empty">暂无用户</div>';
+}
+function renderUserForm(u){
+  const title=document.getElementById('userFormTitle'); if(!title) return;
+  const isEdit=!!u;
+  EDIT_USER_ID = isEdit ? String(u.id) : '';
+  title.textContent = isEdit ? '编辑账号 #' + u.id : '新建账号';
+  document.getElementById('editUserId').value = isEdit ? u.id : '';
+  document.getElementById('editUserName').value = isEdit ? u.name : '';
+  document.getElementById('editUserOrg').innerHTML = (META.orgs||[]).map(o=>`<option value="${o.id}">${h(o.name)}</option>`).join('');
+  document.getElementById('editUserOrg').value = isEdit ? u.orgId : ((META.orgs||[])[0]?.id || 0);
+  const sup=document.getElementById('editUserSuper');
+  sup.checked = !!(isEdit && u.isSuperuser);
+  sup.disabled = !((META.users||[]).find(x=>String(x.id)===loginUserId())||{}).isSuperuser;
+  renderRoleChecks(isEdit ? (u.roleIds||[]) : []);
+  document.getElementById('btnDeleteUser').style.visibility = isEdit ? 'visible' : 'hidden';
+  renderUserList();
+}
+function renderRoleChecks(selectedIds){
+  const el=document.getElementById('editUserRoles'); if(!el) return;
+  const selected=new Set((selectedIds||[]).map(Number));
+  const roles=META._roles||[];
+  el.innerHTML=roles.map(r=>{
+    const checked=selected.has(r.id);
+    return `<label class="rolechk"><input type="checkbox" value="${r.id}" ${checked?'checked':''}> <span>${h(r.name)}</span></label>`;
+  }).join('') || '<span class="muted">暂无角色</span>';
+}
+function newUserForm(){ renderUserForm(null); }
+function editUser(id){ const u=(META.users||[]).find(x=>String(x.id)===String(id)); if(u) renderUserForm(u); }
+async function reloadUsers(){ await reloadMeta(); await fetchGrantable(); renderAccountPanel(); toast('账号列表已刷新','i-check'); }
+async function saveUser(){
+  const id=document.getElementById('editUserId').value || '';
+  const name=document.getElementById('editUserName').value.trim();
+  if(!name){ await modalAlert('请输入用户名','提示','i-x'); return; }
+  const orgId=Number(document.getElementById('editUserOrg').value||0);
+  const roleIds=[...document.querySelectorAll('#editUserRoles input:checked')].map(c=>Number(c.value));
+  const isSuperuser=document.getElementById('editUserSuper').checked;
+  try{
+    const saved=await api('/api/user/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name,orgId,roleIds,isSuperuser})});
+    EDIT_USER_ID=String(saved.id);
+    await reloadMeta();
+    await loadSysView();
+    renderUserForm((META.users||[]).find(u=>String(u.id)===String(saved.id)));
+    toast((id?'已保存账号:':'已创建账号:')+name,'i-check');
+  }catch(e){ await modalError('保存失败', e); }
+}
+async function deleteUser(){
+  const id=document.getElementById('editUserId').value || '';
+  const u=(META.users||[]).find(x=>String(x.id)===id);
+  if(!u) return;
+  if(!(await modalConfirm('确认删除账号「'+u.name+'」?\n用户与角色绑定将一并清理。'))) return;
+  try{
+    await api('/api/user/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    EDIT_USER_ID='';
+    await reloadMeta();
+    await loadSysView();
+    newUserForm();
+    toast('已删除账号:'+u.name,'i-trash');
+  }catch(e){ await modalError('删除失败', e); }
+}
+async function fetchGrantable(){
+  GRANT = await api('/api/role/grantable');
+  const nm=(META.users||[]).find(u=>String(u.id)===currentUserId());
+  const an=document.getElementById('currentUserName'); if(an) an.textContent=nm?nm.name+(nm.isSuperuser?' ★超管':''):('#'+currentUserId());
+  const ah=document.getElementById('currentUserHint'); if(ah) ah.textContent = GRANT.unlimited ? '(超管可见并可管理全部角色)' : '';
+}
+// 角色面板随「当前登录」用户刷新:grantable + 列表 + 树 + 编辑门禁。
+async function refreshRolePanel(){
+  await fetchGrantable(); rerenderAll(); await refreshRoles();
+  renderAccountPanel();
+  renderRoleAreaTrees(); // 登录用户变 → canCheck/可编辑性变,惰性区域树重拉(放最后,读到最新 editable)
+}
+
+async function refreshRoles(){
+  const roles = (await api('/api/role/list')).items||[];
+  META._roles = roles;            // 供用户管理用
+  if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
+  const el=document.getElementById('roleList');
+  // 列表只显示「可见」角色:普通用户仅自建,超管全部。
+  const visible = roles;
+  el.innerHTML = visible.map(r=>{
+    const del = `<span class="role-del" title="删除角色" onclick="event.stopPropagation();delRole(${r.id})">${svgIco('i-trash')}</span>`;
+    return `<div class="role-item ${r.id===currentRoleId?'active':''}" data-id="${r.id}" onclick="loadRole(${r.id})"><span class="role-nm">${r.name}<small>${r.description||''}</small></span>${del}</div>`;
+  }).join('');
+  const visIds=new Set(visible.map(r=>r.id));
+  if(currentRoleId && !visIds.has(currentRoleId)) currentRoleId=0; // 当前角色对该登录用户不可见 → 取消选中
+  if(!currentRoleId && visible.length){ loadRole(visible[0].id); }
+  else if(!visible.length){ newRole(); el.innerHTML='<div class="muted" style="padding:8px">无可见角色:你只能看到自己创建的角色。可点下方「新建角色」创建(归你所有)。</div>'; }
+}
+
+// 删除角色:绑用户也直接删(后端级联清 user_role),用户失去该角色权限。
+async function delRole(id){
+  const r=(META._roles||[]).find(x=>x.id===id)||{}; const name=r.name||('#'+id);
+  if(!(await modalConfirm(`确认删除角色「${name}」?\n\n绑定该角色的用户将失去这部分权限(若不再有其他角色,登录后将无任何权限)。\n此操作不可撤销。`))) return;
+  try{
+    await api('/api/role/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    if(currentRoleId===id) currentRoleId=0;
+    toast('已删除角色:'+name,'i-trash');
+    await reloadMeta();   // user_role 绑定可能变化 → 刷新用户列表/角色下拉
+    await fetchGrantable(); // 与新建/编辑对称:角色变更后刷新可分配角色范围
+    await refreshRoles();
+  }catch(e){ await modalError('删除失败', e); }
+}
+
+// 同步更新左侧角色列表的选中高亮(用显式 id,不依赖异步重渲染)
+function highlightRole(id){
+  document.querySelectorAll('#roleList .role-item').forEach(el=>el.classList.toggle('active', Number(el.dataset.id)===Number(id)));
+}
+
+async function loadRole(id){
+  if(!id){ return; }
+  currentRoleId=id; highlightRole(id); // 立即高亮,不等异步重渲染
+  resetTreeFold('org');
+  role = await api('/api/role/detail?id='+id);
+  roleBaseline=cloneRole(role);
+  rolePermissionTouched={area:false,org:false,resarea:false};
+  document.getElementById('roleName').value=role.name||'';
+  document.getElementById('roleDesc').value=role.description||'';
+  // 菜单勾选
+  checked.sysmenu={}; checked.appmenu={};
+  (role.menuConfigCodes||[]).forEach(code=>checked.sysmenu[code]=true);
+  (role.menuAppCodes||[]).forEach(code=>checked.appmenu[code]=true);
+  // 树范围:区域(管理域 AREA + 应用域 RES_AREA)用惰性树的显式授权状态;组织仍 eager
+  rtApplyScopes('area', role.areaScopes||[]);
+  applyScopes(buildTree(META.orgs), role.orgScopes||[], checked.org);
+  rtApplyScopes('resarea', role.resourceAreaScopes||[]);
+  // 编辑门禁(对齐海康 canEdit):非自己创建的角色 → 只读,禁用保存
+  document.getElementById('btnSaveRole').disabled = false;
+  rerenderAll(); renderRoleAreaTrees(); // 切换角色不必重拉/重建列表,高亮已在开头同步更新;区域树惰性重渲
+}
+
+function newRole(){ currentRoleId=0; role=blankRole(); roleBaseline=blankRole();
+  rolePermissionTouched={area:false,org:false,resarea:false};
+  document.getElementById('roleName').value=''; document.getElementById('roleDesc').value='';
+  ['sysmenu','appmenu','area','org','resarea'].forEach(k=>checked[k]={});
+  resetTreeFold('org');
+  rtApplyScopes('area', []); rtApplyScopes('resarea', []); // 惰性区域树:清空显式授权
+  // 新建:当前用户即创建人,始终可保存
+  document.getElementById('btnSaveRole').disabled = false;
+  // 注意:不要在此调用 refreshRoles()——它结尾的 `if(!currentRoleId)...loadRole(roles[0])`
+  // 会因 currentRoleId 刚被置 0 而立刻把第一个角色回填进表单,导致「新建」表单被覆盖。
+  // 新建态下角色列表无需重拉,只需取消列表选中高亮。
+  rerenderAll(); renderRoleAreaTrees(); highlightRole(0);
+}
+
+function rerenderAll(){
+  renderTree('tree-sysmenu', buildTree(META.menus.filter(m=>m.domain==='SYS')), checked.sysmenu, 'sysmenu');
+  renderTree('tree-appmenu', buildTree(META.menus.filter(m=>m.domain==='APP')), checked.appmenu, 'appmenu');
+  renderTree('tree-org', buildTree(META.orgs), checked.org, 'org', {rootChildrenOnly:true, fold:treeFold.org});
+  // 区域树(tree-area / tree-resarea)改为惰性分层,由 renderRoleAreaTrees()/内部增量更新维护,不在此整树重渲(避免折叠)
+}
+
+// ---------- 标签页切换 ----------
+function switchTab(t){ document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.tab===t));
+  document.querySelectorAll('[data-pane]').forEach(e=>e.style.display=e.dataset.pane===t?'flex':'none'); }
+function switchSub(pane,sub){ const root=document.querySelector(`[data-pane="${pane}"]`);
+  root.querySelectorAll('.sub-tab').forEach(e=>e.classList.toggle('active',e.dataset.sub===sub));
+  root.querySelectorAll('[data-subpane]').forEach(e=>e.style.display=e.dataset.subpane===sub?'block':'none'); }
+
+// ---------- 保存 ----------
+function selectedMenuCodes(kind){
+  return Object.keys(checked[kind]||{}).filter(code=>checked[kind][code]);
+}
+function sameCodes(left,right){
+  const a=[...new Set(left||[])].sort(), b=[...new Set(right||[])].sort();
+  return a.length===b.length && a.every((value,index)=>value===b[index]);
+}
+function scopeChanges(original,current){
+  const oldMap=new Map((original||[]).map(s=>[Number(s.nodeId),s.includeChild!==false]));
+  const newMap=new Map((current||[]).map(s=>[Number(s.nodeId),s.includeChild!==false]));
+  const adds=[], dels=[];
+  oldMap.forEach((includeChild,nodeId)=>{
+    if(!newMap.has(nodeId)||newMap.get(nodeId)!==includeChild) dels.push({nodeId,includeChild});
+  });
+  newMap.forEach((includeChild,nodeId)=>{
+    if(!oldMap.has(nodeId)||oldMap.get(nodeId)!==includeChild) adds.push({nodeId,includeChild});
+  });
+  adds.sort((a,b)=>a.nodeId-b.nodeId); dels.sort((a,b)=>a.nodeId-b.nodeId);
+  return {adds,dels};
+}
+function noScopeChanges(changes){ return !changes.adds.length&&!changes.dels.length; }
+function buildPermissionChanges(){
+  const menuConfigCodes=selectedMenuCodes('sysmenu');
+  const menuAppCodes=selectedMenuCodes('appmenu');
+  const area=rolePermissionTouched.area?scopeChanges(roleBaseline.areaScopes,rtScopes('area')):{adds:[],dels:[]};
+  const orgCurrent=rolePermissionTouched.org?extractScopes(buildTree(META.orgs),checked.org,'org'):[];
+  const org=rolePermissionTouched.org?scopeChanges(roleBaseline.orgScopes,orgCurrent):{adds:[],dels:[]};
+  const resourceArea=rolePermissionTouched.resarea?scopeChanges(roleBaseline.resourceAreaScopes,rtScopes('resarea')):{adds:[],dels:[]};
+  const permissions={};
+  if(!sameCodes(menuConfigCodes,roleBaseline.menuConfigCodes)) permissions.menuConfig={replace:menuConfigCodes};
+  if(!sameCodes(menuAppCodes,roleBaseline.menuAppCodes)) permissions.menuApp={replace:menuAppCodes};
+  if(!noScopeChanges(area)) permissions.area=area;
+  if(!noScopeChanges(org)) permissions.org=org;
+  if(!noScopeChanges(resourceArea)) permissions.resourceArea=resourceArea;
+  return Object.keys(permissions).length?permissions:null;
+}
+async function saveRole(){
+  const name=document.getElementById('roleName').value.trim();
+  const description=document.getElementById('roleDesc').value.trim();
+  if(!name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
+
+  const creating=!currentRoleId;
+  const infoChanged=creating||name!==roleBaseline.name||description!==roleBaseline.description;
+  const permissions=buildPermissionChanges();
+  if(!infoChanged&&!permissions){ await modalAlert('没有需要保存的修改','提示','i-check'); return; }
+
+  try{
+    // 基本信息与可选权限变化只发送一次，并由后端在同一个事务中提交。
+    const body={id:currentRoleId,name,description};
+    if(permissions) body.permissions=permissions;
+    const saved=await api('/api/role/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    currentRoleId=saved.id; role=saved; roleBaseline=cloneRole(saved);
+    rolePermissionTouched={area:false,org:false,resarea:false};
+  }catch(e){
+    await modalError('保存失败；角色基本信息和权限均未改变',e);
+    return;
+  }
+
+  // 写入成功后重新加载数据库结果，建立下一次编辑的新基线。
+  try{
+    await fetchGrantable();
+    await refreshRoles();
+    await loadRole(currentRoleId);
+  }catch(e){
+    await modalError('角色已经保存，但页面刷新失败；重新进入角色管理即可恢复',e);
+    return;
+  }
+  await modalAlert('已保存:'+roleBaseline.name,'保存成功','i-check');
+}
+
+syncApiConfigButton();
+if(apiConfigNeedsSetup()) openApiConfig();
+else init();
+</script>
+</body>
+</html>

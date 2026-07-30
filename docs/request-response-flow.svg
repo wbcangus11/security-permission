@@ -223,8 +223,8 @@
 
   <g class="step" style="--i:3">
     <line class="message" x1="910" y1="426" x2="1170" y2="426"/>
-    <text class="message-label" x="1040" y="418">④ 先读取用户权限缓存</text>
-    <text class="message-note" x="1040" y="444">ForUser / loadPermissionSnapshot</text>
+    <text class="message-label" x="1040" y="418">④ 从 ctx 取 userID 后查缓存</text>
+    <text class="message-note" x="1040" y="444">GetUserId(ctx) → loadPermissionSnapshot</text>
   </g>
 
   <g class="step" style="--i:4">

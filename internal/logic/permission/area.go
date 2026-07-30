@@ -15,11 +15,11 @@ import (
 	"security-permission/internal/model/entity"
 )
 
-func SaveArea(ctx context.Context, userID string, input *model.AreaSaveInput) (*model.Area, error) {
+func SaveArea(ctx context.Context, input *model.AreaSaveInput) (*model.Area, error) {
 	if input == nil {
 		return nil, gerror.New("区域保存参数不能为空")
 	}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAreaManage)
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAreaManage)
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +40,8 @@ func SaveArea(ctx context.Context, userID string, input *model.AreaSaveInput) (*
 	return saved, nil
 }
 
-func DeleteArea(ctx context.Context, userID string, areaID int) error {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAreaManage)
+func DeleteArea(ctx context.Context, areaID int) error {
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAreaManage)
 	if err != nil {
 		return err
 	}
@@ -85,11 +85,11 @@ func DeleteArea(ctx context.Context, userID string, areaID int) error {
 	return nil
 }
 
-func ReorderArea(ctx context.Context, userID string, input *model.AreaReorderInput) error {
+func ReorderArea(ctx context.Context, input *model.AreaReorderInput) error {
 	if input == nil {
 		return gerror.New("区域排序参数不能为空")
 	}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAreaManage)
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuAreaManage)
 	if err != nil {
 		return err
 	}

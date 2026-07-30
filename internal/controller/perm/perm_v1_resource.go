@@ -9,11 +9,7 @@ import (
 )
 
 func (c *ControllerV1) AppResourceList(ctx context.Context, req *v1.AppResourceListReq) (*v1.AppResourceListRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	page, err := permission.AreaResourcesPaged(ctx, userID, req.AreaId, req.Page, req.Size)
+	page, err := permission.AreaResourcesPaged(ctx, req.AreaId, req.Page, req.Size)
 	if err != nil {
 		return nil, err
 	}
@@ -36,11 +32,7 @@ func (c *ControllerV1) AppResourceList(ctx context.Context, req *v1.AppResourceL
 }
 
 func (c *ControllerV1) ManageResourceSave(ctx context.Context, req *v1.ManageResourceSaveReq) (*v1.ManageResourceSaveRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resource, err := permission.SaveResource(ctx, userID, &model.ResourceSaveInput{
+	resource, err := permission.SaveResource(ctx, &model.ResourceSaveInput{
 		Id: req.Id, AreaId: req.AreaId, Name: req.Name, Type: req.Type,
 	})
 	if err != nil {
@@ -52,11 +44,7 @@ func (c *ControllerV1) ManageResourceSave(ctx context.Context, req *v1.ManageRes
 }
 
 func (c *ControllerV1) ManageResourceDelete(ctx context.Context, req *v1.ManageResourceDeleteReq) (*v1.ManageResourceDeleteRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = permission.DeleteResource(ctx, userID, req.Id); err != nil {
+	if err := permission.DeleteResource(ctx, req.Id); err != nil {
 		return nil, err
 	}
 	return &v1.ManageResourceDeleteRes{Success: true}, nil

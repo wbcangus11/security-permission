@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gogf/gf/v2/errors/gerror"
-	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 
 	"security-permission/internal/consts"
@@ -31,21 +29,14 @@ func setPermissionResponseHeaders(header http.Header) {
 	header.Set("Vary", userHeader)
 }
 
-// UserId 只负责从请求里取身份，不在中间件里查业务表。
-// 账号是否还存在由 service 加载权限快照时统一检查，这样一次请求只查一次用户。
-func UserId(ctx context.Context) (string, error) {
-	r := g.RequestFromCtx(ctx)
-	if r == nil {
-		return "", gerror.New("请求上下文不存在")
+// GetUserId 只从 ctx 里读取中间件已经放好的用户 ID。
+// 实际项目替换这里的 context key 就行，Controller 和 Service 都不用再改。
+func GetUserId(ctx context.Context) (userId string) {
+	if ctx == nil {
+		return ""
 	}
-	userID := strings.TrimSpace(r.GetCtxVar(consts.ContextKeyUserId).String())
-	if userID == "" {
-		return "", gerror.New("未选择当前用户")
-	}
-	if userID == "0" {
-		return "", gerror.New("系统内置身份不能登录")
-	}
-	return userID, nil
+	userId, _ = ctx.Value(consts.ContextKeyUserId).(string)
+	return strings.TrimSpace(userId)
 }
 
 func identityHeaderValue(header http.Header, name string) string {

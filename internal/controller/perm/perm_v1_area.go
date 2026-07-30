@@ -9,11 +9,7 @@ import (
 )
 
 func (c *ControllerV1) AppAreaChildren(ctx context.Context, req *v1.AppAreaChildrenReq) (*v1.AppAreaChildrenRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	page, err := permission.AreaChildren(ctx, userID, req.ParentId, req.Page, req.Size)
+	page, err := permission.AreaChildren(ctx, req.ParentId, req.Page, req.Size)
 	if err != nil {
 		return nil, err
 	}
@@ -23,11 +19,7 @@ func (c *ControllerV1) AppAreaChildren(ctx context.Context, req *v1.AppAreaChild
 }
 
 func (c *ControllerV1) AppAreaSearch(ctx context.Context, req *v1.AppAreaSearchReq) (*v1.AppAreaSearchRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	page, err := permission.SearchAppAreas(ctx, userID, req.Q)
+	page, err := permission.SearchAppAreas(ctx, req.Q)
 	if err != nil {
 		return nil, err
 	}
@@ -37,11 +29,7 @@ func (c *ControllerV1) AppAreaSearch(ctx context.Context, req *v1.AppAreaSearchR
 }
 
 func (c *ControllerV1) ManageAreaSearch(ctx context.Context, req *v1.ManageAreaSearchReq) (*v1.ManageAreaSearchRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	page, err := permission.SearchManageAreas(ctx, userID, req.Q)
+	page, err := permission.SearchManageAreas(ctx, req.Q)
 	if err != nil {
 		return nil, err
 	}
@@ -51,11 +39,7 @@ func (c *ControllerV1) ManageAreaSearch(ctx context.Context, req *v1.ManageAreaS
 }
 
 func (c *ControllerV1) ManageAreaChildren(ctx context.Context, req *v1.ManageAreaChildrenReq) (*v1.ManageAreaChildrenRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	page, err := permission.ManageAreaChildren(ctx, userID, req.ParentId, req.Page, req.Size)
+	page, err := permission.ManageAreaChildren(ctx, req.ParentId, req.Page, req.Size)
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +49,7 @@ func (c *ControllerV1) ManageAreaChildren(ctx context.Context, req *v1.ManageAre
 }
 
 func (c *ControllerV1) ManageAreaDetail(ctx context.Context, req *v1.ManageAreaDetailReq) (*v1.ManageAreaDetailRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	detail, err := permission.ManageAreaDetail(ctx, userID, req.AreaId)
+	detail, err := permission.ManageAreaDetail(ctx, req.AreaId)
 	if err != nil {
 		return nil, err
 	}
@@ -87,11 +67,7 @@ func (c *ControllerV1) ManageAreaDetail(ctx context.Context, req *v1.ManageAreaD
 }
 
 func (c *ControllerV1) ManageAreaSave(ctx context.Context, req *v1.ManageAreaSaveReq) (*v1.ManageAreaSaveRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	area, err := permission.SaveArea(ctx, userID, &model.AreaSaveInput{
+	area, err := permission.SaveArea(ctx, &model.AreaSaveInput{
 		Id: req.Id, ParentId: req.ParentId, Name: req.Name,
 	})
 	if err != nil {
@@ -103,11 +79,7 @@ func (c *ControllerV1) ManageAreaSave(ctx context.Context, req *v1.ManageAreaSav
 }
 
 func (c *ControllerV1) ManageAreaReorder(ctx context.Context, req *v1.ManageAreaReorderReq) (*v1.ManageAreaReorderRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = permission.ReorderArea(ctx, userID, &model.AreaReorderInput{
+	if err := permission.ReorderArea(ctx, &model.AreaReorderInput{
 		AreaId: req.AreaId, ToAreaId: req.ToAreaId,
 	}); err != nil {
 		return nil, err
@@ -116,11 +88,7 @@ func (c *ControllerV1) ManageAreaReorder(ctx context.Context, req *v1.ManageArea
 }
 
 func (c *ControllerV1) ManageAreaDelete(ctx context.Context, req *v1.ManageAreaDeleteReq) (*v1.ManageAreaDeleteRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = permission.DeleteArea(ctx, userID, req.Id); err != nil {
+	if err := permission.DeleteArea(ctx, req.Id); err != nil {
 		return nil, err
 	}
 	return &v1.ManageAreaDeleteRes{Success: true}, nil

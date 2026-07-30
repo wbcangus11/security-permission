@@ -8,11 +8,7 @@ import (
 )
 
 func (c *ControllerV1) AppMenu(ctx context.Context, req *v1.AppMenuReq) (*v1.AppMenuRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	menus, err := permission.AppMenus(ctx, userID)
+	menus, err := permission.AppMenus(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -28,11 +24,7 @@ func (c *ControllerV1) AppMenu(ctx context.Context, req *v1.AppMenuReq) (*v1.App
 }
 
 func (c *ControllerV1) ManageMenu(ctx context.Context, req *v1.ManageMenuReq) (*v1.ManageMenuRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	menus, err := permission.SysMenus(ctx, userID)
+	menus, err := permission.SysMenus(ctx)
 	if err != nil {
 		return nil, err
 	}

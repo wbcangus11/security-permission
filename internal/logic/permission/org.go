@@ -13,11 +13,11 @@ import (
 	"security-permission/internal/model/do"
 )
 
-func SaveOrg(ctx context.Context, userID string, input *model.OrgSaveInput) (*model.Org, error) {
+func SaveOrg(ctx context.Context, input *model.OrgSaveInput) (*model.Org, error) {
 	if input == nil {
 		return nil, gerror.New("组织保存参数不能为空")
 	}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuOrgManage)
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuOrgManage)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +38,8 @@ func SaveOrg(ctx context.Context, userID string, input *model.OrgSaveInput) (*mo
 	return saved, nil
 }
 
-func DeleteOrg(ctx context.Context, userID string, orgID int) error {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuOrgManage)
+func DeleteOrg(ctx context.Context, orgID int) error {
+	snapshot, err := loadAuthorizedSnapshot(ctx, menuOrgManage)
 	if err != nil {
 		return err
 	}

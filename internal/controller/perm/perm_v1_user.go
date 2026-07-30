@@ -9,11 +9,7 @@ import (
 )
 
 func (c *ControllerV1) UserList(ctx context.Context, req *v1.UserListReq) (*v1.UserListRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	users, err := permission.ListUsers(ctx, userID)
+	users, err := permission.ListUsers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -27,11 +23,7 @@ func (c *ControllerV1) UserList(ctx context.Context, req *v1.UserListReq) (*v1.U
 }
 
 func (c *ControllerV1) UserDetail(ctx context.Context, req *v1.UserDetailReq) (*v1.UserDetailRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	user, err := permission.GetUser(ctx, userID, req.Id)
+	user, err := permission.GetUser(ctx, req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -41,11 +33,7 @@ func (c *ControllerV1) UserDetail(ctx context.Context, req *v1.UserDetailReq) (*
 }
 
 func (c *ControllerV1) UserSave(ctx context.Context, req *v1.UserSaveReq) (*v1.UserSaveRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	user, err := permission.SaveUser(ctx, userID, userFromReq(req))
+	user, err := permission.SaveUser(ctx, userFromReq(req))
 	if err != nil {
 		return nil, err
 	}
@@ -55,11 +43,7 @@ func (c *ControllerV1) UserSave(ctx context.Context, req *v1.UserSaveReq) (*v1.U
 }
 
 func (c *ControllerV1) UserDelete(ctx context.Context, req *v1.UserDeleteReq) (*v1.UserDeleteRes, error) {
-	userID, err := requestUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err = permission.DeleteUser(ctx, userID, req.Id); err != nil {
+	if err := permission.DeleteUser(ctx, req.Id); err != nil {
 		return nil, err
 	}
 	return &v1.UserDeleteRes{Success: true}, nil

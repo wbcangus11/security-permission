@@ -39,6 +39,7 @@ func TestWritePermissionCacheInvalidationIntegration(t *testing.T) {
 	if superID == "" {
 		t.Fatal("数据库里没有超级管理员")
 	}
+	superCtx := testUserContext(ctx, superID)
 
 	suffix := time.Now().UnixNano()
 	roleName := fmt.Sprintf("cache-role-%d", suffix)
@@ -47,7 +48,7 @@ func TestWritePermissionCacheInvalidationIntegration(t *testing.T) {
 		OrgId: meta.Orgs[0].Id,
 	}
 
-	role, err := SaveRole(ctx, superID, &model.RoleSaveInput{
+	role, err := SaveRole(superCtx, &model.RoleSaveInput{
 		Name:        roleName,
 		Description: "cache invalidation integration test",
 		Permissions: &model.RolePermissionChanges{
@@ -68,22 +69,23 @@ func TestWritePermissionCacheInvalidationIntegration(t *testing.T) {
 	}()
 
 	userInput.RoleIds = []int{role.Id}
-	savedUser, err := SaveUser(ctx, superID, userInput)
+	savedUser, err := SaveUser(superCtx, userInput)
 	if err != nil {
 		t.Fatalf("创建测试用户失败：%+v", err)
 	}
 	if savedUser == nil {
 		t.Fatal("创建用户成功后没有返回用户")
 	}
+	userCtx := testUserContext(ctx, savedUser.Id)
 
-	if _, err = ListRoles(ctx, savedUser.Id); err != nil {
+	if _, err = ListRoles(userCtx); err != nil {
 		t.Fatalf("测试用户第一次读取角色失败：%+v", err)
 	}
-	if _, err = ListRoles(ctx, savedUser.Id); err != nil {
+	if _, err = ListRoles(userCtx); err != nil {
 		t.Fatalf("测试用户命中缓存后读取角色失败：%+v", err)
 	}
 
-	_, err = SaveRole(ctx, superID, &model.RoleSaveInput{
+	_, err = SaveRole(superCtx, &model.RoleSaveInput{
 		RoleId:      role.Id,
 		Name:        role.Name,
 		Description: role.Description,
@@ -94,7 +96,7 @@ func TestWritePermissionCacheInvalidationIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("移除测试角色权限失败：%+v", err)
 	}
-	if _, err = ListRoles(ctx, savedUser.Id); err == nil {
+	if _, err = ListRoles(userCtx); err == nil {
 		t.Fatal("角色权限修改后仍然读到了旧缓存")
 	}
 }

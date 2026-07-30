@@ -182,18 +182,18 @@ func areaAncestors(ctx context.Context, path string) ([]model.AncestorRef, error
 	return out, nil
 }
 
-func AreaChildren(ctx context.Context, userID string, parentID, page, size int) (*model.PagedAreas, error) {
-	return areaChildrenBy(ctx, userID, parentID, page, size, treeKindResArea)
+func AreaChildren(ctx context.Context, parentID, page, size int) (*model.PagedAreas, error) {
+	return areaChildrenBy(ctx, parentID, page, size, treeKindResArea)
 }
 
-func ManageAreaChildren(ctx context.Context, userID string, parentID, page, size int) (*model.PagedAreas, error) {
-	return areaChildrenBy(ctx, userID, parentID, page, size, treeKindArea)
+func ManageAreaChildren(ctx context.Context, parentID, page, size int) (*model.PagedAreas, error) {
+	return areaChildrenBy(ctx, parentID, page, size, treeKindArea)
 }
 
-func areaChildrenBy(ctx context.Context, userID string, parentID, page, size int, kind string) (*model.PagedAreas, error) {
+func areaChildrenBy(ctx context.Context, parentID, page, size int, kind string) (*model.PagedAreas, error) {
 	page, size = normPage(page, size)
 	out := &model.PagedAreas{Items: []model.AreaNode{}, Page: page, Size: size}
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return out, err
 	}
@@ -271,18 +271,18 @@ func areaChildParents(ctx context.Context, ids []int) (map[int]bool, error) {
 	return out, nil
 }
 
-func SearchAppAreas(ctx context.Context, userID, text string) (*model.PagedAreas, error) {
-	return searchAreasBy(ctx, userID, text, treeKindResArea)
+func SearchAppAreas(ctx context.Context, text string) (*model.PagedAreas, error) {
+	return searchAreasBy(ctx, text, treeKindResArea)
 }
 
-func SearchManageAreas(ctx context.Context, userID, text string) (*model.PagedAreas, error) {
-	return searchAreasBy(ctx, userID, text, treeKindArea)
+func SearchManageAreas(ctx context.Context, text string) (*model.PagedAreas, error) {
+	return searchAreasBy(ctx, text, treeKindArea)
 }
 
-func searchAreasBy(ctx context.Context, userID, text, kind string) (*model.PagedAreas, error) {
+func searchAreasBy(ctx context.Context, text, kind string) (*model.PagedAreas, error) {
 	out := &model.PagedAreas{Items: []model.AreaNode{}, Page: 1, Size: searchLimit}
 	text = strings.TrimSpace(text)
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return out, err
 	}
@@ -335,12 +335,12 @@ func searchAreasBy(ctx context.Context, userID, text, kind string) (*model.Paged
 	return out, nil
 }
 
-func RoleAreaChildren(ctx context.Context, userID string, parentID int, kind string, roleID int) ([]model.RoleTreeNode, error) {
+func RoleAreaChildren(ctx context.Context, parentID int, kind string, roleID int) ([]model.RoleTreeNode, error) {
 	out := []model.RoleTreeNode{}
 	if kind != treeKindArea && kind != treeKindResArea {
 		return out, nil
 	}
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return out, err
 	}
@@ -386,10 +386,10 @@ func RoleAreaChildren(ctx context.Context, userID string, parentID int, kind str
 	return out, nil
 }
 
-func AreaResourcesPaged(ctx context.Context, userID string, areaID, page, size int) (*model.AreaResourcesPage, error) {
+func AreaResourcesPaged(ctx context.Context, areaID, page, size int) (*model.AreaResourcesPage, error) {
 	page, size = normPage(page, size)
 	out := &model.AreaResourcesPage{Resources: []model.ResourceView{}, Page: page, Size: size}
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return out, err
 	}

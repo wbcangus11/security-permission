@@ -7,6 +7,7 @@ import (
 	"github.com/gogf/gf/v2/errors/gcode"
 	"github.com/gogf/gf/v2/errors/gerror"
 
+	"security-permission/internal/middleware"
 	"security-permission/internal/model"
 )
 
@@ -28,7 +29,15 @@ type permissionSnapshot struct {
 	scopePaths map[string]map[int]string
 }
 
-func loadPermissionSnapshot(ctx context.Context, userID string) (*permissionSnapshot, error) {
+func loadPermissionSnapshot(ctx context.Context) (*permissionSnapshot, error) {
+	userID := middleware.GetUserId(ctx)
+	if userID == "" {
+		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "未获取到当前用户")
+	}
+	if userID == "0" {
+		return nil, gerror.NewCode(gcode.CodeNotAuthorized, "系统内置身份不能登录")
+	}
+
 	for {
 		snapshot, token, ok := permissionSnapshots.get(userID)
 		if ok {
@@ -106,10 +115,9 @@ func newPermissionSnapshot(facts *permissionFacts) *permissionSnapshot {
 
 func loadAuthorizedSnapshot(
 	ctx context.Context,
-	userID string,
 	menuCodes ...string,
 ) (*permissionSnapshot, error) {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}

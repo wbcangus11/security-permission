@@ -102,8 +102,8 @@ func Meta(ctx context.Context) (*model.MetaData, error) {
 	return fullMeta(ctx)
 }
 
-func ManageOrgs(ctx context.Context, userID string) ([]model.VisibleArea, error) {
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, manageOrgReadMenus...)
+func ManageOrgs(ctx context.Context) ([]model.VisibleArea, error) {
+	snapshot, err := loadAuthorizedSnapshot(ctx, manageOrgReadMenus...)
 	if err != nil {
 		return []model.VisibleArea{}, err
 	}
@@ -122,9 +122,9 @@ func ManageOrgs(ctx context.Context, userID string) ([]model.VisibleArea, error)
 	return out, nil
 }
 
-func ManageAreaDetail(ctx context.Context, userID string, areaID int) (*model.ManageDetail, error) {
+func ManageAreaDetail(ctx context.Context, areaID int) (*model.ManageDetail, error) {
 	out := &model.ManageDetail{Children: []string{}, ResourceItems: []model.ResourceBrief{}}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, manageAreaReadMenus...)
+	snapshot, err := loadAuthorizedSnapshot(ctx, manageAreaReadMenus...)
 	if err != nil {
 		return out, err
 	}
@@ -152,9 +152,9 @@ func ManageAreaDetail(ctx context.Context, userID string, areaID int) (*model.Ma
 	return out, nil
 }
 
-func ManageOrgDetail(ctx context.Context, userID string, orgID int) (*model.ManageDetail, error) {
+func ManageOrgDetail(ctx context.Context, orgID int) (*model.ManageDetail, error) {
 	out := &model.ManageDetail{Children: []string{}, ResourceItems: []model.ResourceBrief{}}
-	snapshot, err := loadAuthorizedSnapshot(ctx, userID, manageOrgReadMenus...)
+	snapshot, err := loadAuthorizedSnapshot(ctx, manageOrgReadMenus...)
 	if err != nil {
 		return out, err
 	}
@@ -183,16 +183,16 @@ func ManageOrgDetail(ctx context.Context, userID string, orgID int) (*model.Mana
 	return out, nil
 }
 
-func SysMenus(ctx context.Context, userID string) ([]*model.Menu, error) {
-	return visibleMenus(ctx, userID, model.MenuDomainSys)
+func SysMenus(ctx context.Context) ([]*model.Menu, error) {
+	return visibleMenus(ctx, model.MenuDomainSys)
 }
 
-func AppMenus(ctx context.Context, userID string) ([]*model.Menu, error) {
-	return visibleMenus(ctx, userID, model.MenuDomainApp)
+func AppMenus(ctx context.Context) ([]*model.Menu, error) {
+	return visibleMenus(ctx, model.MenuDomainApp)
 }
 
-func visibleMenus(ctx context.Context, userID, domain string) ([]*model.Menu, error) {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+func visibleMenus(ctx context.Context, domain string) ([]*model.Menu, error) {
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return []*model.Menu{}, err
 	}

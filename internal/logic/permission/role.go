@@ -45,7 +45,7 @@ func guardManageRole(ctx context.Context, snapshot *permissionSnapshot, roleID i
 
 // SaveRole 只保存请求里明确带来的改动。
 // 没传 permissions 就只改名称和说明，没提交的权限域也原样保留。
-func SaveRole(ctx context.Context, userID string, input *model.RoleSaveInput) (*model.Role, error) {
+func SaveRole(ctx context.Context, input *model.RoleSaveInput) (*model.Role, error) {
 	if input == nil || input.RoleId < 0 {
 		return nil, fmt.Errorf("角色保存参数无效")
 	}
@@ -54,7 +54,7 @@ func SaveRole(ctx context.Context, userID string, input *model.RoleSaveInput) (*
 		return nil, err
 	}
 
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func SaveRole(ctx context.Context, userID string, input *model.RoleSaveInput) (*
 	InvalidateUsers(affectedUserIDs...)
 
 	// 如果改的是自己正在使用的角色，保存后权限可能已经变了，所以响应按新快照过滤。
-	resultSnapshot, err := loadPermissionSnapshot(ctx, userID)
+	resultSnapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +105,8 @@ func SaveRole(ctx context.Context, userID string, input *model.RoleSaveInput) (*
 }
 
 // ListRoles 只返回列表真正要展示的字段，不在这里加载菜单和数据范围。
-func ListRoles(ctx context.Context, userID string) ([]*model.RoleSummary, error) {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+func ListRoles(ctx context.Context) ([]*model.RoleSummary, error) {
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func ListRoles(ctx context.Context, userID string) ([]*model.RoleSummary, error)
 		dao.Role.Columns().CreatedBy,
 	).Order(dao.Role.Columns().Id)
 	if !snapshot.isSuper() {
-		query = query.Where(dao.Role.Columns().CreatedBy, userID)
+		query = query.Where(dao.Role.Columns().CreatedBy, snapshot.user.Id)
 	}
 	if err := query.Scan(&out); err != nil {
 		return nil, err
@@ -180,8 +180,8 @@ func roleDetailForEditor(
 	return out, nil
 }
 
-func GetRole(ctx context.Context, userID string, roleID int) (*model.Role, error) {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+func GetRole(ctx context.Context, roleID int) (*model.Role, error) {
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -192,8 +192,8 @@ func GetRole(ctx context.Context, userID string, roleID int) (*model.Role, error
 	return roleDetailForEditor(ctx, snapshot, role)
 }
 
-func DeleteRole(ctx context.Context, userID string, roleID int) error {
-	snapshot, err := loadPermissionSnapshot(ctx, userID)
+func DeleteRole(ctx context.Context, roleID int) error {
+	snapshot, err := loadPermissionSnapshot(ctx)
 	if err != nil {
 		return err
 	}
