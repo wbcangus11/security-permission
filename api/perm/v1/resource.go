@@ -2,6 +2,26 @@ package v1
 
 import "github.com/gogf/gf/v2/frame/g"
 
+type ResourceItem struct {
+	Id     int    `json:"id"`
+	AreaId int    `json:"areaId"`
+	Type   string `json:"type"`
+	Name   string `json:"name"`
+}
+
+type ActionAllowItem struct {
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Allowed bool   `json:"allowed"`
+}
+
+type ResourceViewItem struct {
+	Id      int               `json:"id"`
+	Name    string            `json:"name"`
+	Area    string            `json:"area"`
+	Actions []ActionAllowItem `json:"actions"`
+}
+
 // AppResourceListReq 查询某区域子树下应用端可见资源。
 // 返回每个资源对实时预览、远程回放、图片查询等操作是否可用。
 type AppResourceListReq struct {
@@ -9,6 +29,15 @@ type AppResourceListReq struct {
 	AreaId int `json:"areaId" dc:"区域 ID,返回该区域子树下用户可见资源"`
 	Page   int `json:"page" dc:"页码,从 1 开始"`
 	Size   int `json:"size" dc:"每页数量,为空或超限时使用默认值"`
+}
+
+type AppResourceListRes struct {
+	Accessible bool               `json:"accessible"`
+	AreaName   string             `json:"areaName"`
+	Resources  []ResourceViewItem `json:"resources"`
+	Total      int                `json:"total"`
+	Page       int                `json:"page"`
+	Size       int                `json:"size"`
 }
 
 // ManageResourceSaveReq 新增、重命名、改类型或移动业务资源。
@@ -21,9 +50,15 @@ type ManageResourceSaveReq struct {
 	Type   string `json:"type" dc:"资源类型,如 gun=枪机,dome=球机"`
 }
 
+type ManageResourceSaveRes ResourceItem
+
 // ManageResourceDeleteReq 删除业务资源。
 // 当前资源权限只来自资源区域范围,删除资源不需要清理额外授权表。
 type ManageResourceDeleteReq struct {
 	g.Meta `path:"/manage/resource-delete" method:"post" tags:"权限/后台管理" summary:"删除资源"`
 	Id     int `json:"id" dc:"要删除的资源 ID"`
+}
+
+type ManageResourceDeleteRes struct {
+	Success bool `json:"success"`
 }

@@ -8,35 +8,69 @@ import (
 	"security-permission/internal/model"
 )
 
-func (c *ControllerV1) ManageOrgTree(ctx context.Context, req *v1.ManageOrgTreeReq) ([]model.VisibleArea, error) {
+func (c *ControllerV1) ManageOrgTree(ctx context.Context, req *v1.ManageOrgTreeReq) (*v1.ManageOrgTreeRes, error) {
 	userID, err := requestUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return permission.ManageOrgs(ctx, userID)
+	orgs, err := permission.ManageOrgs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	res := &v1.ManageOrgTreeRes{Items: make([]v1.VisibleOrgItem, 0, len(orgs))}
+	for _, org := range orgs {
+		res.Items = append(res.Items, v1.VisibleOrgItem{
+			Id: org.Id, ParentId: org.ParentId, Name: org.Name, Accessible: org.Accessible,
+		})
+	}
+	return res, nil
 }
 
-func (c *ControllerV1) ManageOrgDetail(ctx context.Context, req *v1.ManageOrgDetailReq) (*model.ManageDetail, error) {
+func (c *ControllerV1) ManageOrgDetail(ctx context.Context, req *v1.ManageOrgDetailReq) (*v1.ManageOrgDetailRes, error) {
 	userID, err := requestUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return permission.ManageOrgDetail(ctx, userID, req.OrgId)
+	detail, err := permission.ManageOrgDetail(ctx, userID, req.OrgId)
+	if err != nil {
+		return nil, err
+	}
+	resources := make([]v1.ResourceBrief, 0, len(detail.ResourceItems))
+	for _, resource := range detail.ResourceItems {
+		resources = append(resources, v1.ResourceBrief{
+			Id: resource.Id, Name: resource.Name, Type: resource.Type, AreaId: resource.AreaId,
+		})
+	}
+	return &v1.ManageOrgDetailRes{
+		Accessible: detail.Accessible, Name: detail.Name, ParentId: detail.ParentId,
+		ChildCount: detail.ChildCount, Children: append([]string{}, detail.Children...),
+		ResourceItems: resources,
+	}, nil
 }
 
-func (c *ControllerV1) ManageOrgSave(ctx context.Context, req *v1.ManageOrgSaveReq) (*model.Org, error) {
+func (c *ControllerV1) ManageOrgSave(ctx context.Context, req *v1.ManageOrgSaveReq) (*v1.ManageOrgSaveRes, error) {
 	userID, err := requestUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return permission.SaveOrg(ctx, userID, &model.OrgSaveInput{Id: req.Id, ParentId: req.ParentId, Name: req.Name})
+	org, err := permission.SaveOrg(ctx, userID, &model.OrgSaveInput{
+		Id: req.Id, ParentId: req.ParentId, Name: req.Name,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &v1.ManageOrgSaveRes{
+		Id: org.Id, ParentId: org.ParentId, Name: org.Name, Path: org.Path,
+	}, nil
 }
 
-func (c *ControllerV1) ManageOrgDelete(ctx context.Context, req *v1.ManageOrgDeleteReq) (bool, error) {
+func (c *ControllerV1) ManageOrgDelete(ctx context.Context, req *v1.ManageOrgDeleteReq) (*v1.ManageOrgDeleteRes, error) {
 	userID, err := requestUser(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	err = permission.DeleteOrg(ctx, userID, req.Id)
-	return err == nil, err
+	if err = permission.DeleteOrg(ctx, userID, req.Id); err != nil {
+		return nil, err
+	}
+	return &v1.ManageOrgDeleteRes{Success: true}, nil
 }

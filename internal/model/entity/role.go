@@ -4,7 +4,7 @@
 
 package entity
 
-// Role is the golang structure for table role.
+// Role 是 role 表对应的数据结构。
 type Role struct {
 	Id          int64  `json:"id"          orm:"id"          ` // 角色ID
 	Name        string `json:"name"        orm:"name"        ` // 角色名称

@@ -3,7 +3,7 @@
 -- 基于角色的「功能权限 + 数据权限」(仿海康安防平台)
 --
 -- 设计要点(与 internal/model/permission.go 一一对应):
---   1. 功能权限:menu 存菜单/权限点字典,role_menu 存角色与菜单 ID 关系;前后端用 code 交互。
+--   1. 功能权限：menu 存菜单/权限点字典，父子关系和 role_menu 关系全部使用稳定 code。
 --   2. 数据权限:role_data_scope 统一承载「安保区域 / 组织 / 业务资源范围」三种树范围,
 --      用 scope_type 区分;存「节点 + 是否含子树」,不展开子节点。
 --   3. 业务资源数据范围只看 RES_AREA;具体操作还必须拥有对应应用菜单。
@@ -56,20 +56,17 @@ CREATE TABLE `resource` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='业务资源';
 
 -- 菜单/功能权限点。
--- code 是稳定业务标识,前后端和后端鉴权都用它;id 只作为数据库关系主键。
+-- code 是菜单唯一标识，前后端、父子关系、角色关系和后端鉴权统一使用它。
 CREATE TABLE `menu` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '菜单ID',
-  `parent_id`   BIGINT       NOT NULL DEFAULT 0       COMMENT '父菜单ID,0表示一级',
   `code`        VARCHAR(100) NOT NULL                 COMMENT '权限码,如 app.video.live',
+  `parent_code` VARCHAR(100) NOT NULL DEFAULT ''      COMMENT '父菜单权限码,空字符串表示一级',
   `name`        VARCHAR(100) NOT NULL DEFAULT ''      COMMENT '显示名称',
   `domain`      ENUM('SYS','APP') NOT NULL            COMMENT '权限域',
-  `sort`        INT          NOT NULL DEFAULT 0       COMMENT '同级排序',
-  `enabled`     TINYINT(1)   NOT NULL DEFAULT 1       COMMENT '是否启用',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_menu_code` (`code`),
-  KEY `idx_menu_parent` (`parent_id`),
-  KEY `idx_menu_domain` (`domain`),
-  KEY `idx_menu_sort` (`parent_id`,`sort`,`id`)
+  KEY `idx_menu_parent` (`parent_code`),
+  KEY `idx_menu_domain` (`domain`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='菜单与功能权限点';
 
 -- 角色
@@ -85,14 +82,14 @@ CREATE TABLE `role` (
 
 -- 角色-菜单(功能权限)
 CREATE TABLE `role_menu` (
-  `id`      BIGINT NOT NULL AUTO_INCREMENT COMMENT '角色菜单关系ID',
-  `role_id` BIGINT NOT NULL COMMENT '角色ID',
-  `menu_id` BIGINT NOT NULL COMMENT '菜单ID',
+  `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '角色菜单关系ID',
+  `role_id`   BIGINT       NOT NULL COMMENT '角色ID',
+  `menu_code` VARCHAR(100) NOT NULL COMMENT '菜单权限码',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_role_menu` (`role_id`, `menu_id`),
-  KEY `idx_menu` (`menu_id`),
+  UNIQUE KEY `uk_role_menu` (`role_id`, `menu_code`),
+  KEY `idx_menu_code` (`menu_code`),
   CONSTRAINT `fk_role_menu_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_role_menu_menu` FOREIGN KEY (`menu_id`) REFERENCES `menu` (`id`)
+  CONSTRAINT `fk_role_menu_menu` FOREIGN KEY (`menu_code`) REFERENCES `menu` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色-菜单(功能权限)';
 
 -- 角色-数据范围(统一承载:安保区域 / 组织 / 业务资源范围)

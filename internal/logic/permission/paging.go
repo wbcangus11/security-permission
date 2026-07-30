@@ -74,8 +74,7 @@ func appendUniqueInt(values []int, value int) []int {
 	return append(values, value)
 }
 
-func (e *evaluator) addFilterScope(filter *treeFilter, kind string, scope model.DataScope) {
-	path := e.nodePath(kind, scope.NodeId)
+func addScopeToFilter(filter *treeFilter, scope model.DataScope, path string) {
 	if path == "" {
 		return
 	}
@@ -96,50 +95,6 @@ func roleScopes(role *model.Role, kind string) []model.DataScope {
 	default:
 		return role.AreaScopes
 	}
-}
-
-func (e *evaluator) roleTreeFilter(role *model.Role, kind string) treeFilter {
-	filter := treeFilter{}
-	for _, scope := range roleScopes(role, kind) {
-		e.addFilterScope(&filter, kind, scope)
-	}
-	filter.None = len(filter.Prefixes) == 0 && len(filter.ExactIds) == 0
-	return filter
-}
-
-func unionTreeFilters(left, right treeFilter) treeFilter {
-	if left.All || right.All {
-		return treeFilter{All: true}
-	}
-	out := treeFilter{}
-	for _, source := range []treeFilter{left, right} {
-		for _, prefix := range source.Prefixes {
-			out.Prefixes = appendUniqueString(out.Prefixes, prefix)
-		}
-		for _, id := range source.ExactIds {
-			out.ExactIds = appendUniqueInt(out.ExactIds, id)
-		}
-		for _, root := range source.RootPaths {
-			out.RootPaths = appendUniqueString(out.RootPaths, root)
-		}
-	}
-	out.None = len(out.Prefixes) == 0 && len(out.ExactIds) == 0
-	return out
-}
-
-func (e *evaluator) treeScopeFilter(user *model.User, kind string) treeFilter {
-	if isSuper(user) {
-		return treeFilter{All: true}
-	}
-	result := treeFilter{None: true}
-	for _, role := range e.effectiveRoles(user) {
-		roleFilter := e.roleTreeFilter(role, kind)
-		if roleFilter.None {
-			continue
-		}
-		result = unionTreeFilters(result, roleFilter)
-	}
-	return result
 }
 
 func treeNavAncestors(filter treeFilter) map[int]bool {
@@ -205,7 +160,7 @@ func visibilityWhere(filter treeFilter, navigation map[int]bool) (string, []inte
 	return "(" + strings.Join(parts, " OR ") + ")", args, true
 }
 
-func (e *evaluator) areaAncestors(path string) []model.AncestorRef {
+func areaAncestors(ctx context.Context, path string) ([]model.AncestorRef, error) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	out := []model.AncestorRef{}
 	for index, part := range parts {
@@ -216,11 +171,15 @@ func (e *evaluator) areaAncestors(path string) []model.AncestorRef {
 		if err != nil {
 			continue
 		}
-		if area := e.area(id); area != nil {
+		area, err := findArea(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if area != nil {
 			out = append(out, model.AncestorRef{Id: area.Id, Name: area.Name})
 		}
 	}
-	return out
+	return out, nil
 }
 
 func AreaChildren(ctx context.Context, userID string, parentID, page, size int) (*model.PagedAreas, error) {
@@ -234,10 +193,9 @@ func ManageAreaChildren(ctx context.Context, userID string, parentID, page, size
 func areaChildrenBy(ctx context.Context, userID string, parentID, page, size int, kind string) (*model.PagedAreas, error) {
 	page, size = normPage(page, size)
 	out := &model.PagedAreas{Items: []model.AreaNode{}, Page: page, Size: size}
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return out, ev.err
+	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	if err != nil {
+		return out, err
 	}
 	var gateMenus []string
 	if kind == treeKindResArea {
@@ -245,14 +203,14 @@ func areaChildrenBy(ctx context.Context, userID string, parentID, page, size int
 	} else {
 		gateMenus = manageAreaReadMenus
 	}
-	if err := ev.requireAnyMenu(user, gateMenus...); err != nil {
+	if err := snapshot.requireAnyMenu(gateMenus...); err != nil {
 		return out, err
 	}
-	filter := ev.treeScopeFilter(user, kind)
+	filter := snapshot.treeFilter(kind)
 	navigation := treeNavAncestors(filter)
 	where, args, visible := visibilityWhere(filter, navigation)
 	if !visible {
-		return out, ev.err
+		return out, nil
 	}
 
 	query := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, parentID)
@@ -288,7 +246,7 @@ func areaChildrenBy(ctx context.Context, userID string, parentID, page, size int
 			Accessible: accessible, HasChildren: hasChildren,
 		})
 	}
-	return out, ev.err
+	return out, nil
 }
 
 type areaListRow struct {
@@ -324,10 +282,9 @@ func SearchManageAreas(ctx context.Context, userID, text string) (*model.PagedAr
 func searchAreasBy(ctx context.Context, userID, text, kind string) (*model.PagedAreas, error) {
 	out := &model.PagedAreas{Items: []model.AreaNode{}, Page: 1, Size: searchLimit}
 	text = strings.TrimSpace(text)
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return out, ev.err
+	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	if err != nil {
+		return out, err
 	}
 	var gateMenus []string
 	if kind == treeKindResArea {
@@ -335,7 +292,7 @@ func searchAreasBy(ctx context.Context, userID, text, kind string) (*model.Paged
 	} else {
 		gateMenus = manageAreaReadMenus
 	}
-	if err := ev.requireAnyMenu(user, gateMenus...); err != nil {
+	if err := snapshot.requireAnyMenu(gateMenus...); err != nil {
 		return out, err
 	}
 	if text == "" {
@@ -344,13 +301,13 @@ func searchAreasBy(ctx context.Context, userID, text, kind string) (*model.Paged
 	if utf8.RuneCountInString(text) > maxAreaSearchLength {
 		return out, gerror.NewCodef(gcode.CodeInvalidParameter, "区域搜索关键字不能超过 %d 个字符", maxAreaSearchLength)
 	}
-	filter := ev.treeScopeFilter(user, kind)
+	filter := snapshot.treeFilter(kind)
 	where, args, visible := visibilityWhere(filter, treeNavAncestors(filter))
 	if !visible {
-		return out, ev.err
+		return out, nil
 	}
-	// LOCATE performs a literal substring search, so caller supplied '%'/'_'
-	// cannot turn the request into a wildcard scan of the complete visible tree.
+	// LOCATE 按字面值搜索子串，因此调用方传入的“%”或“_”不会被解释为通配符，
+	// 也就不能借此把查询扩大为对整棵可见树的通配扫描。
 	query := dao.Area.Ctx(ctx).Where("LOCATE(?, name) > 0", text)
 	if where != "" {
 		query = query.Where(where, args...)
@@ -366,30 +323,38 @@ func searchAreasBy(ctx context.Context, userID, text, kind string) (*model.Paged
 		return nil, err
 	}
 	for _, row := range rows {
+		ancestors, err := areaAncestors(ctx, row.Path)
+		if err != nil {
+			return nil, err
+		}
 		out.Items = append(out.Items, model.AreaNode{
 			Id: row.Id, ParentId: row.ParentId, Name: row.Name,
-			Accessible: filter.covers(row.Path, row.Id), Ancestors: ev.areaAncestors(row.Path),
+			Accessible: filter.covers(row.Path, row.Id), Ancestors: ancestors,
 		})
 	}
-	return out, ev.err
+	return out, nil
 }
 
-func RoleAreaChildren(ctx context.Context, userID string, parentID int, kind string) ([]model.RoleTreeNode, error) {
+func RoleAreaChildren(ctx context.Context, userID string, parentID int, kind string, roleID int) ([]model.RoleTreeNode, error) {
 	out := []model.RoleTreeNode{}
 	if kind != treeKindArea && kind != treeKindResArea {
 		return out, nil
 	}
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return out, ev.err
-	}
-	if err := ev.requireAnyMenu(user, menuRoleManage); err != nil {
+	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	if err != nil {
 		return out, err
 	}
-	filter := ev.treeScopeFilter(user, kind)
-	if filter.None {
-		return out, ev.err
+	if roleID > 0 {
+		if _, err := guardManageRole(ctx, snapshot, roleID); err != nil {
+			return out, err
+		}
+	} else if err := snapshot.requireAnyMenu(menuRoleManage); err != nil {
+		return out, err
+	}
+	grantableFilter := snapshot.treeFilter(kind)
+	// 编辑树只展示当前操作人的可授权范围；角色范围外的历史记录由后端保留。
+	if grantableFilter.None {
+		return out, nil
 	}
 	var rows []areaListRow
 	if err := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, parentID).
@@ -405,43 +370,42 @@ func RoleAreaChildren(ctx context.Context, userID string, parentID int, kind str
 		return nil, err
 	}
 	for _, row := range rows {
-		canCheck := filter.covers(row.Path, row.Id)
-		if !canCheck && !filter.hasDescendantGrant(row.Path) {
+		visible := grantableFilter.covers(row.Path, row.Id) || grantableFilter.hasDescendantGrant(row.Path)
+		if !visible {
 			continue
 		}
-		hasChildren := filter.hasDescendantGrant(row.Path)
-		if filter.All || filter.underPrefix(row.Path) {
+		hasChildren := grantableFilter.hasDescendantGrant(row.Path)
+		if grantableFilter.All || grantableFilter.underPrefix(row.Path) {
 			hasChildren = childParents[row.Id]
 		}
 		out = append(out, model.RoleTreeNode{
 			Id: row.Id, ParentId: row.ParentId, Name: row.Name,
-			CanCheck: canCheck, HasChildren: hasChildren,
+			CanCheck: grantableFilter.covers(row.Path, row.Id), HasChildren: hasChildren,
 		})
 	}
-	return out, ev.err
+	return out, nil
 }
 
 func AreaResourcesPaged(ctx context.Context, userID string, areaID, page, size int) (*model.AreaResourcesPage, error) {
 	page, size = normPage(page, size)
 	out := &model.AreaResourcesPage{Resources: []model.ResourceView{}, Page: page, Size: size}
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return out, ev.err
-	}
-	if err := ev.requireAnyMenu(user, videoReadMenus...); err != nil {
+	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	if err != nil {
 		return out, err
 	}
-	area := ev.area(areaID)
-	if ev.err != nil || area == nil {
-		return out, ev.err
+	if err := snapshot.requireAnyMenu(videoReadMenus...); err != nil {
+		return out, err
+	}
+	area, err := findArea(ctx, areaID)
+	if err != nil || area == nil {
+		return out, err
 	}
 	out.AreaName = area.Name
-	if !ev.userResourceAreaCovers(user, areaID) {
-		return out, ev.err
+	if !snapshot.covers(treeKindResArea, area.Path, areaID) {
+		return out, nil
 	}
 	out.Accessible = true
-	filter := ev.treeScopeFilter(user, treeKindResArea)
+	filter := snapshot.treeFilter(treeKindResArea)
 	query := dao.Resource.Ctx(ctx).
 		LeftJoin(dao.Area.Table(), "area.id = resource.area_id").
 		Where("area.path LIKE ?", area.Path+"%")
@@ -454,28 +418,30 @@ func AreaResourcesPaged(ctx context.Context, userID string, areaID, page, size i
 	}
 	out.Total = total
 	var rows []struct {
-		Id     int
-		AreaId int
-		Name   string
-		Type   string
+		Id       int
+		AreaId   int
+		Name     string
+		Type     string
+		AreaName string
+		AreaPath string
 	}
-	if err = query.Fields("resource.id,resource.area_id,resource.name,resource.type").
+	if err = query.Fields("resource.id,resource.area_id,resource.name,resource.type,area.name AS area_name,area.path AS area_path").
 		Page(page, size).Order("resource.id asc").Scan(&rows); err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		ev.resources[row.Id] = &model.Resource{Id: row.Id, AreaId: row.AreaId, Name: row.Name, Type: row.Type}
-		ev.resLoaded[row.Id] = true
-		view := model.ResourceView{Id: row.Id, Name: row.Name, Area: ev.nodeName(treeKindArea, row.AreaId)}
+		view := model.ResourceView{Id: row.Id, Name: row.Name, Area: row.AreaName}
 		for _, action := range resourceActions {
-			decision := ev.checkResource(user, row.Id, action.Code)
 			view.Actions = append(view.Actions, model.ActionAllow{
-				Code: action.Code, Name: action.Name, Allowed: decision.Allow,
+				Code: action.Code,
+				Name: action.Name,
+				Allowed: snapshot.hasMenu(action.MenuCode) &&
+					snapshot.covers(treeKindResArea, row.AreaPath, row.AreaId),
 			})
 		}
 		out.Resources = append(out.Resources, view)
 	}
-	return out, ev.err
+	return out, nil
 }
 
 func normPage(page, size int) (int, int) {

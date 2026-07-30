@@ -1,5 +1,5 @@
-// dbinit destructively rebuilds the current test database from schema, menu
-// and seed files. --recreate is required to avoid accidental execution.
+// dbinit 根据 schema、menu 和 seed 文件破坏性重建当前数据库。
+// 必须显式传入 --recreate，避免误操作。
 package main
 
 import (

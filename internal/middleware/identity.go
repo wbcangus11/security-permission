@@ -10,7 +10,6 @@ import (
 	"github.com/gogf/gf/v2/net/ghttp"
 
 	"security-permission/internal/consts"
-	"security-permission/internal/logic/permission"
 )
 
 const userHeader = "X-User-Id"
@@ -32,8 +31,8 @@ func setPermissionResponseHeaders(header http.Header) {
 	header.Set("Vary", userHeader)
 }
 
-// UserId 返回当前用户并验证账号仍然存在。
-// "0" is reserved for system-owned roles and cannot be used as an identity.
+// UserId 只负责从请求里取身份，不在中间件里查业务表。
+// 账号是否还存在由 service 加载权限快照时统一检查，这样一次请求只查一次用户。
 func UserId(ctx context.Context) (string, error) {
 	r := g.RequestFromCtx(ctx)
 	if r == nil {
@@ -46,17 +45,6 @@ func UserId(ctx context.Context) (string, error) {
 	if userID == "0" {
 		return "", gerror.New("系统内置身份不能登录")
 	}
-	if !r.GetCtxVar(consts.ContextKeyUser).IsNil() {
-		return userID, nil
-	}
-	user, err := permission.UserByID(ctx, userID)
-	if err != nil {
-		return "", gerror.Wrap(err, "读取当前用户失败")
-	}
-	if user == nil {
-		return "", gerror.New("当前用户不存在")
-	}
-	r.SetCtxVar(consts.ContextKeyUser, user)
 	return userID, nil
 }
 

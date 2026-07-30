@@ -8,7 +8,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// User is the golang structure of table user for DAO operations like Where/Data.
+// User 是 user 表用于 DAO 的 Where/Data 等操作的数据结构。
 type User struct {
 	g.Meta      `orm:"table:user, do:true"`
 	Id          any // 用户ID

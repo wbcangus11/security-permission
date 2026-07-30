@@ -6,3 +6,10 @@ import "github.com/gogf/gf/v2/frame/g"
 type MetaReq struct {
 	g.Meta `path:"/meta" method:"get" tags:"权限/元数据" summary:"获取权限配置元数据"`
 }
+
+type MetaRes struct {
+	Areas []AreaItem `json:"areas"`
+	Orgs  []OrgItem  `json:"orgs"`
+	Menus []MenuItem `json:"menus"`
+	Users []UserItem `json:"users"`
+}

@@ -8,7 +8,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// Area is the golang structure of table area for DAO operations like Where/Data.
+// Area 是 area 表用于 DAO 的 Where/Data 等操作的数据结构。
 type Area struct {
 	g.Meta   `orm:"table:area, do:true"`
 	Id       any // 区域ID

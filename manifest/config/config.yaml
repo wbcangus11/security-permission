@@ -1,5 +1,5 @@
 # 当前项目唯一运行配置（实际用于测试环境）。
-# https://goframe.org/docs/web/server-config-file-template
+# Web 服务配置参考：https://goframe.org/docs/web/server-config-file-template
 server:
   address:     ":8001"
   readTimeout: "15s"
@@ -8,12 +8,12 @@ server:
   maxHeaderBytes: 16384
   clientMaxBodySize: 1048576
 
-# https://goframe.org/docs/core/glog-config
+# 日志配置参考：https://goframe.org/docs/core/glog-config
 logger:
   level : "info"
   stdout: true
 
-# https://goframe.org/docs/core/gdb-config-file
+# 数据库配置参考：https://goframe.org/docs/core/gdb-config-file
 database:
   default:
     link: "mysql:root:123456@tcp(127.0.0.1:3306)/security_permission?loc=Local&parseTime=true&charset=utf8mb4"

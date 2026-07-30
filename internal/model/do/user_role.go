@@ -8,7 +8,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// UserRole is the golang structure of table user_role for DAO operations like Where/Data.
+// UserRole 是 user_role 表用于 DAO 的 Where/Data 等操作的数据结构。
 type UserRole struct {
 	g.Meta `orm:"table:user_role, do:true"`
 	Id     any // 用户角色关系ID

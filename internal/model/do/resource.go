@@ -8,7 +8,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// Resource is the golang structure of table resource for DAO operations like Where/Data.
+// Resource 是 resource 表用于 DAO 的 Where/Data 等操作的数据结构。
 type Resource struct {
 	g.Meta `orm:"table:resource, do:true"`
 	Id     any // 资源ID

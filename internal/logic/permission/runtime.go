@@ -8,10 +8,6 @@ import (
 	"security-permission/internal/model/entity"
 )
 
-func UserByID(ctx context.Context, id string) (*model.User, error) {
-	return cachedUser(ctx, id)
-}
-
 func allUsers(ctx context.Context) ([]*model.User, error) {
 	var rows []struct{ Id string }
 	if err := dao.User.Ctx(ctx).Fields(dao.User.Columns().Id).
@@ -40,38 +36,45 @@ func visibleOrgs(ctx context.Context, filter treeFilter) ([]*model.Org, error) {
 	}
 	out := make([]*model.Org, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, &model.Org{Id: int(row.Id), ParentId: int(row.ParentId), Name: row.Name, Path: row.Path})
+		out = append(out, &model.Org{
+			Id: int(row.Id), ParentId: int(row.ParentId), Name: row.Name, Path: row.Path,
+		})
 	}
 	return out, nil
 }
 
-func (e *evaluator) visibleMenusWithAncestors(user *model.User, domain string) []*model.Menu {
-	menus := e.menus()
-	byID := make(map[int]*model.Menu, len(menus))
-	visible := make(map[int]bool, len(menus))
+// visibleMenusWithAncestors 先标出用户真正拥有的菜单，再把父菜单补齐。
+// 这样前端能直接渲染完整导航树，不用自己猜哪些父节点该显示。
+func visibleMenusWithAncestors(snapshot *permissionSnapshot, domain string) ([]*model.Menu, error) {
+	menus, err := catalogMenus()
+	if err != nil {
+		return nil, err
+	}
+	byCode := make(map[string]*model.Menu, len(menus))
+	visible := make(map[string]bool, len(menus))
 	for _, menu := range menus {
-		byID[menu.Id] = menu
+		byCode[menu.Code] = menu
 	}
 	var mark func(*model.Menu)
 	mark = func(menu *model.Menu) {
-		if menu == nil || visible[menu.Id] || (domain != "" && menu.Domain != domain) {
+		if menu == nil || visible[menu.Code] || (domain != "" && menu.Domain != domain) {
 			return
 		}
-		visible[menu.Id] = true
-		mark(byID[menu.ParentId])
+		visible[menu.Code] = true
+		mark(byCode[menu.ParentCode])
 	}
 	for _, menu := range menus {
-		if (domain == "" || menu.Domain == domain) && e.userHasMenuID(user, menu.Id) {
+		if (domain == "" || menu.Domain == domain) && snapshot.hasMenu(menu.Code) {
 			mark(menu)
 		}
 	}
 	out := make([]*model.Menu, 0, len(visible))
 	for _, menu := range menus {
-		if visible[menu.Id] {
+		if visible[menu.Code] {
 			out = append(out, menu)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func fullMeta(ctx context.Context) (*model.MetaData, error) {
@@ -83,7 +86,7 @@ func fullMeta(ctx context.Context) (*model.MetaData, error) {
 	if err != nil {
 		return nil, err
 	}
-	menus, err := cachedMenus(ctx)
+	menus, err := catalogMenus()
 	if err != nil {
 		return nil, err
 	}
@@ -91,26 +94,20 @@ func fullMeta(ctx context.Context) (*model.MetaData, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &model.MetaData{
-		Areas: areas, Orgs: orgs, Menus: menus, Users: users,
-	}, nil
+	return &model.MetaData{Areas: areas, Orgs: orgs, Menus: menus, Users: users}, nil
 }
 
-// Meta 返回前端初始化角色和用户管理所需的小型字典，不包含资源等大表。
+// Meta 返回角色和用户管理需要的小字典，不把资源大表一起塞进来。
 func Meta(ctx context.Context) (*model.MetaData, error) {
 	return fullMeta(ctx)
 }
 
 func ManageOrgs(ctx context.Context, userID string) ([]model.VisibleArea, error) {
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return []model.VisibleArea{}, ev.err
-	}
-	if err := ev.requireAnyMenu(user, manageOrgReadMenus...); err != nil {
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, manageOrgReadMenus...)
+	if err != nil {
 		return []model.VisibleArea{}, err
 	}
-	filter := ev.treeScopeFilter(user, treeKindOrg)
+	filter := snapshot.treeFilter(treeKindOrg)
 	orgs, err := visibleOrgs(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -122,70 +119,58 @@ func ManageOrgs(ctx context.Context, userID string) ([]model.VisibleArea, error)
 			Accessible: filter.covers(org.Path, org.Id),
 		})
 	}
-	return out, ev.err
+	return out, nil
 }
 
 func ManageAreaDetail(ctx context.Context, userID string, areaID int) (*model.ManageDetail, error) {
 	out := &model.ManageDetail{Children: []string{}, ResourceItems: []model.ResourceBrief{}}
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return out, ev.err
-	}
-	if err := ev.requireAnyMenu(user, manageAreaReadMenus...); err != nil {
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, manageAreaReadMenus...)
+	if err != nil {
 		return out, err
 	}
-	area := ev.area(areaID)
-	if ev.err != nil {
-		return out, ev.err
+	area, err := findArea(ctx, areaID)
+	if err != nil {
+		return nil, err
 	}
 	if area == nil {
 		return out, nil
 	}
 	out.Name, out.ParentId = area.Name, area.ParentId
-	if !ev.checkTree(user, areaID, treeKindArea).Allow {
-		return out, ev.err
+	if !snapshot.covers(treeKindArea, area.Path, area.Id) {
+		return out, nil
 	}
 	out.Accessible = true
-	var err error
 	out.ChildCount, err = dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaID).Count()
 	if err != nil {
 		return nil, err
 	}
-	var resources []model.ResourceBrief
-	if err = dao.Resource.Ctx(ctx).Fields("id,name,type,area_id").
+	if err := dao.Resource.Ctx(ctx).Fields("id,name,type,area_id").
 		Where(dao.Resource.Columns().AreaId, areaID).Order(dao.Resource.Columns().Id).
-		Limit(manageDetailResourceLimit).Scan(&resources); err != nil {
+		Limit(manageDetailResourceLimit).Scan(&out.ResourceItems); err != nil {
 		return nil, err
 	}
-	for _, resource := range resources {
-		out.ResourceItems = append(out.ResourceItems, resource)
-	}
-	return out, ev.err
+	return out, nil
 }
 
 func ManageOrgDetail(ctx context.Context, userID string, orgID int) (*model.ManageDetail, error) {
 	out := &model.ManageDetail{Children: []string{}, ResourceItems: []model.ResourceBrief{}}
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil {
-		return out, ev.err
-	}
-	if err := ev.requireAnyMenu(user, manageOrgReadMenus...); err != nil {
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, manageOrgReadMenus...)
+	if err != nil {
 		return out, err
 	}
-	org := ev.org(orgID)
-	if ev.err != nil {
-		return out, ev.err
+	org, err := findOrg(ctx, orgID)
+	if err != nil {
+		return nil, err
 	}
 	if org == nil {
 		return out, nil
 	}
 	out.Name, out.ParentId = org.Name, org.ParentId
-	if !ev.checkTree(user, orgID, treeKindOrg).Allow {
-		return out, ev.err
+	if !snapshot.covers(treeKindOrg, org.Path, org.Id) {
+		return out, nil
 	}
 	out.Accessible = true
+
 	var rows []struct{ Name string }
 	if err := dao.Org.Ctx(ctx).Fields(dao.Org.Columns().Name).
 		Where(dao.Org.Columns().ParentId, orgID).Order(dao.Org.Columns().Id).Scan(&rows); err != nil {
@@ -195,7 +180,7 @@ func ManageOrgDetail(ctx context.Context, userID string, orgID int) (*model.Mana
 	for _, row := range rows {
 		out.Children = append(out.Children, row.Name)
 	}
-	return out, ev.err
+	return out, nil
 }
 
 func SysMenus(ctx context.Context, userID string) ([]*model.Menu, error) {
@@ -207,11 +192,9 @@ func AppMenus(ctx context.Context, userID string) ([]*model.Menu, error) {
 }
 
 func visibleMenus(ctx context.Context, userID, domain string) ([]*model.Menu, error) {
-	ev := newEvaluator(ctx)
-	user := ev.user(userID)
-	if ev.err != nil || user == nil {
-		return []*model.Menu{}, ev.err
+	snapshot, err := loadPermissionSnapshot(ctx, userID)
+	if err != nil {
+		return []*model.Menu{}, err
 	}
-	out := ev.visibleMenusWithAncestors(user, domain)
-	return out, ev.err
+	return visibleMenusWithAncestors(snapshot, domain)
 }

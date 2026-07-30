@@ -4,9 +4,9 @@
 
 package entity
 
-// RoleMenu is the golang structure for table role_menu.
+// RoleMenu 是 role_menu 表对应的数据结构。
 type RoleMenu struct {
-	Id     int64 `json:"id"     orm:"id"      ` // 角色菜单关系ID
-	RoleId int64 `json:"roleId" orm:"role_id" ` // 角色ID
-	MenuId int64 `json:"menuId" orm:"menu_id" ` // 菜单ID
+	Id       int64  `json:"id"       orm:"id"       ` // 角色菜单关系ID
+	RoleId   int64  `json:"roleId"   orm:"role_id"  ` // 角色ID
+	MenuCode string `json:"menuCode" orm:"menu_code"` // 菜单权限码
 }

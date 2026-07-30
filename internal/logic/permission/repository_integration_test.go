@@ -8,13 +8,16 @@ import (
 	_ "github.com/gogf/gf/contrib/drivers/mysql/v2"
 )
 
-// Read-only smoke test for the configured database. It is opt-in so
-// ordinary unit tests do not require MySQL.
+// 这是针对当前配置数据库的只读冒烟测试。
+// 测试默认关闭，避免普通单元测试依赖 MySQL。
 func TestReadOnlyRepositoryIntegration(t *testing.T) {
 	if os.Getenv("PERMISSION_INTEGRATION") != "1" {
 		t.Skip("set PERMISSION_INTEGRATION=1 to run the read-only MySQL smoke test")
 	}
 	ctx := context.Background()
+	if err := InitializeMenuCatalog(ctx); err != nil {
+		t.Fatalf("initialize menu catalog: %v", err)
+	}
 	meta, err := Meta(ctx)
 	if err != nil {
 		t.Fatalf("read metadata: %v", err)
@@ -33,9 +36,24 @@ func TestReadOnlyRepositoryIntegration(t *testing.T) {
 	if superID == "" {
 		t.Fatal("expected at least one superuser")
 	}
-	ev := newEvaluator(ctx)
-	if decision := ev.checkMenu(ev.user(superID), meta.Menus[0].Code); ev.err != nil || !decision.Allow {
-		t.Fatalf("superuser menu check: decision=%+v err=%v", decision, ev.err)
+	InvalidateUser(superID)
+	superSnapshot, err := loadPermissionSnapshot(ctx, superID)
+	if err != nil || !superSnapshot.hasMenu(meta.Menus[0].Code) {
+		t.Fatalf("superuser menu check: err=%v", err)
+	}
+	cachedSuperSnapshot, err := loadPermissionSnapshot(ctx, superID)
+	if err != nil || cachedSuperSnapshot != superSnapshot {
+		t.Fatalf("superuser snapshot cache miss: same=%v err=%v", cachedSuperSnapshot == superSnapshot, err)
+	}
+	InvalidateUser(superID)
+	reloadedSuperSnapshot, err := loadPermissionSnapshot(ctx, superID)
+	if err != nil || reloadedSuperSnapshot == superSnapshot {
+		t.Fatalf("superuser snapshot should reload after invalidation: same=%v err=%v",
+			reloadedSuperSnapshot == superSnapshot, err)
+	}
+	access, err := ForUser(ctx, superID)
+	if err != nil || !access.HasMenu(meta.Menus[0].Code) || !access.IsSuperuser() {
+		t.Fatalf("public permission access: value=%+v err=%v", access, err)
 	}
 	if roles, err := ListRoles(ctx, superID); err != nil || len(roles) == 0 {
 		t.Fatalf("superuser role list: count=%d err=%v", len(roles), err)
@@ -51,18 +69,11 @@ func TestReadOnlyRepositoryIntegration(t *testing.T) {
 	}
 	hasAnyMenu := func(userID string, codes ...string) bool {
 		t.Helper()
-		ev := newEvaluator(ctx)
-		user := ev.user(userID)
-		for _, code := range codes {
-			decision := ev.checkMenu(user, code)
-			if ev.err != nil {
-				t.Fatalf("menu decision for user %s and %s: %v", userID, code, ev.err)
-			}
-			if decision.Allow {
-				return true
-			}
+		snapshot, err := loadPermissionSnapshot(ctx, userID)
+		if err != nil {
+			t.Fatalf("permission snapshot for user %s: %v", userID, err)
 		}
-		return false
+		return snapshot.hasAnyMenu(codes...)
 	}
 	for _, user := range meta.Users {
 		if _, err = SysMenus(ctx, user.Id); err != nil {
@@ -75,6 +86,7 @@ func TestReadOnlyRepositoryIntegration(t *testing.T) {
 		canManageArea := hasAnyMenu(user.Id, manageAreaReadMenus...)
 		canManageOrg := hasAnyMenu(user.Id, manageOrgReadMenus...)
 		canManageRole := hasAnyMenu(user.Id, menuRoleManage)
+		canManageAccount := hasAnyMenu(user.Id, menuAccountManage)
 		if canManageOrg {
 			if _, err = ManageOrgs(ctx, user.Id); err != nil {
 				t.Fatalf("org tree for user %s: %v", user.Id, err)
@@ -100,15 +112,17 @@ func TestReadOnlyRepositoryIntegration(t *testing.T) {
 				}
 			}
 		}
-		if _, err = ListRoles(ctx, user.Id); err != nil {
-			t.Fatalf("role list for user %s: %v", user.Id, err)
-		}
-		if _, err = ListUsers(ctx, user.Id); err != nil {
-			t.Fatalf("user list for user %s: %v", user.Id, err)
-		}
 		if canManageRole {
+			if _, err = ListRoles(ctx, user.Id); err != nil {
+				t.Fatalf("role list for user %s: %v", user.Id, err)
+			}
 			if _, err = GrantableSet(ctx, user.Id); err != nil {
 				t.Fatalf("grantable set for user %s: %v", user.Id, err)
+			}
+		}
+		if canManageAccount {
+			if _, err = ListUsers(ctx, user.Id); err != nil {
+				t.Fatalf("user list for user %s: %v", user.Id, err)
 			}
 		}
 		if canViewVideo && len(meta.Areas) > 0 {

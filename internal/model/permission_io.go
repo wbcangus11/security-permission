@@ -7,18 +7,57 @@ type MetaData struct {
 	Users []*User `json:"users"`
 }
 
-// Grantable describes the current user's delegation ceiling.
-type Grantable struct {
-	Unlimited  bool     `json:"unlimited"`
-	MenuCodes  []string `json:"menuCodes"`
-	AreaIds    []int    `json:"areaIds"`
-	OrgIds     []int    `json:"orgIds"`
-	ResAreaIds []int    `json:"resAreaIds"`
+// RoleSummary 是角色列表使用的轻量视图，不包含任何权限配置。
+type RoleSummary struct {
+	Id          int    `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CreatedBy   string `json:"createdBy"`
 }
 
-type RoleSaveResult struct {
-	Role      *Role `json:"role"`
-	Preserved int   `json:"preserved"`
+// Grantable 描述当前用户可二次授权的权限上限。
+type Grantable struct {
+	Unlimited       bool        `json:"unlimited"`
+	MenuConfigCodes []string    `json:"menuConfigCodes"`
+	MenuAppCodes    []string    `json:"menuAppCodes"`
+	AreaIds         []int       `json:"areaIds"`
+	OrgIds          []int       `json:"orgIds"`
+	ResAreaIds      []int       `json:"resAreaIds"`
+	AreaScopes      []DataScope `json:"areaScopes"`
+	OrgScopes       []DataScope `json:"orgScopes"`
+	ResAreaScopes   []DataScope `json:"resAreaScopes"`
+}
+
+// DataScopeChanges 表示用户明确执行的树权限变化。
+// 同一个节点改变 includeChild 时，必须同时删除旧值并增加新值。
+type DataScopeChanges struct {
+	Adds []DataScope `json:"adds"`
+	Dels []DataScope `json:"dels"`
+}
+
+// MenuReplacement 是当前编辑人可管理部分的菜单完整快照。
+// 对象存在表示需要替换，replace 空数组表示清空可管理部分；范围外旧权限由后端保留。
+type MenuReplacement struct {
+	Replace []string `json:"replace"`
+}
+
+// RolePermissionChanges 是一次保存中明确提交的权限变化。
+// MenuConfig、MenuApp 分别对应系统管理端和应用端菜单，省略其中任意一项都表示该域不变；
+// 三类树中没有出现在 adds/dels 的记录保持不变。
+type RolePermissionChanges struct {
+	MenuConfig   *MenuReplacement `json:"menuConfig,omitempty"`
+	MenuApp      *MenuReplacement `json:"menuApp,omitempty"`
+	Area         DataScopeChanges `json:"area"`
+	Org          DataScopeChanges `json:"org"`
+	ResourceArea DataScopeChanges `json:"resourceArea"`
+}
+
+// RoleSaveInput 是角色保存逻辑使用的输入。
+type RoleSaveInput struct {
+	RoleId      int
+	Name        string
+	Description string
+	Permissions *RolePermissionChanges
 }
 
 type AreaSaveInput struct {

@@ -15,27 +15,11 @@ import (
 	"security-permission/internal/model/entity"
 )
 
-func (e *evaluator) checkAreaWriter(userID string) (*model.User, error) {
-	user := e.user(userID)
-	if e.err != nil {
-		return nil, e.err
-	}
-	if user == nil {
-		return nil, gerror.New("操作人不存在")
-	}
-	decision := e.checkMenu(user, menuAreaManage)
-	if e.err != nil {
-		return nil, e.err
-	}
-	if !decision.Allow {
-		return nil, gerror.New("功能权限不足：" + decision.Reason)
-	}
-	return user, nil
-}
-
 func SaveArea(ctx context.Context, userID string, input *model.AreaSaveInput) (*model.Area, error) {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkAreaWriter(userID)
+	if input == nil {
+		return nil, gerror.New("区域保存参数不能为空")
+	}
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAreaManage)
 	if err != nil {
 		return nil, err
 	}
@@ -43,21 +27,27 @@ func SaveArea(ctx context.Context, userID string, input *model.AreaSaveInput) (*
 	if input.Name == "" {
 		return nil, gerror.New("区域名称不能为空")
 	}
+	var saved *model.Area
 	if input.Id <= 0 {
-		return createArea(ctx, ev, user, input)
+		saved, err = createArea(ctx, snapshot, input)
+	} else {
+		saved, err = updateArea(ctx, snapshot, input)
 	}
-	return updateArea(ctx, ev, user, input)
+	if err != nil {
+		return nil, err
+	}
+	InvalidateAll()
+	return saved, nil
 }
 
 func DeleteArea(ctx context.Context, userID string, areaID int) error {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkAreaWriter(userID)
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAreaManage)
 	if err != nil {
 		return err
 	}
-	target := ev.area(areaID)
-	if ev.err != nil {
-		return ev.err
+	target, err := findArea(ctx, areaID)
+	if err != nil {
+		return err
 	}
 	if target == nil {
 		return gerror.New("区域不存在")
@@ -65,12 +55,8 @@ func DeleteArea(ctx context.Context, userID string, areaID int) error {
 	if target.ParentId == 0 {
 		return gerror.New("根区域不允许删除")
 	}
-	decision := ev.checkTree(user, areaID, treeKindArea)
-	if !decision.Allow {
-		return gerror.New("无权删除“" + target.Name + "”：" + decision.Reason)
-	}
-	if ev.err != nil {
-		return ev.err
+	if !snapshot.covers(treeKindArea, target.Path, target.Id) {
+		return gerror.New("无权删除“" + target.Name + "”")
 	}
 	if count, err := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, areaID).Count(); err != nil {
 		return err
@@ -95,19 +81,25 @@ func DeleteArea(ctx context.Context, userID string, areaID int) error {
 	if err != nil {
 		return err
 	}
-	permissionHotCache.invalidateAll()
+	InvalidateAll()
 	return nil
 }
 
 func ReorderArea(ctx context.Context, userID string, input *model.AreaReorderInput) error {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkAreaWriter(userID)
+	if input == nil {
+		return gerror.New("区域排序参数不能为空")
+	}
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuAreaManage)
 	if err != nil {
 		return err
 	}
-	target, destination := ev.area(input.AreaId), ev.area(input.ToAreaId)
-	if ev.err != nil {
-		return ev.err
+	target, err := findArea(ctx, input.AreaId)
+	if err != nil {
+		return err
+	}
+	destination, err := findArea(ctx, input.ToAreaId)
+	if err != nil {
+		return err
 	}
 	if target == nil {
 		return gerror.New("区域不存在")
@@ -124,14 +116,11 @@ func ReorderArea(ctx context.Context, userID string, input *model.AreaReorderInp
 	if target.ParentId != destination.ParentId {
 		return gerror.New("只能调整同一父区域下的区域顺序")
 	}
-	if decision := ev.checkTree(user, target.Id, treeKindArea); !decision.Allow {
-		return gerror.New("无权调整“" + target.Name + "”排序：" + decision.Reason)
+	if !snapshot.covers(treeKindArea, target.Path, target.Id) {
+		return gerror.New("无权调整“" + target.Name + "”排序")
 	}
-	if decision := ev.checkTree(user, destination.Id, treeKindArea); !decision.Allow {
-		return gerror.New("无权与目标区域“" + destination.Name + "”换序：" + decision.Reason)
-	}
-	if ev.err != nil {
-		return ev.err
+	if !snapshot.covers(treeKindArea, destination.Path, destination.Id) {
+		return gerror.New("无权与目标区域“" + destination.Name + "”换序")
 	}
 	var rows []entity.Area
 	if err := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, target.ParentId).
@@ -173,34 +162,26 @@ func ReorderArea(ctx context.Context, userID string, input *model.AreaReorderInp
 	if err != nil {
 		return err
 	}
-	permissionHotCache.invalidateAll()
 	return nil
 }
 
-func createArea(ctx context.Context, ev *evaluator, user *model.User, input *model.AreaSaveInput) (*model.Area, error) {
-	parent := ev.area(input.ParentId)
-	if ev.err != nil {
-		return nil, ev.err
+func createArea(ctx context.Context, snapshot *permissionSnapshot, input *model.AreaSaveInput) (*model.Area, error) {
+	parent, err := findArea(ctx, input.ParentId)
+	if err != nil {
+		return nil, err
 	}
 	if parent == nil {
 		return nil, gerror.New("父区域不存在")
 	}
-	decision := ev.checkTree(user, parent.Id, treeKindArea)
-	if !decision.Allow {
-		return nil, gerror.New("无权在“" + parent.Name + "”下新增子区域：" + decision.Reason)
-	}
-	if ev.err != nil {
-		return nil, ev.err
+	if !snapshot.covers(treeKindArea, parent.Path, parent.Id) {
+		return nil, gerror.New("无权在“" + parent.Name + "”下新增子区域")
 	}
 	if exists, err := areaNameExists(ctx, parent.Id, input.Name, 0); err != nil {
 		return nil, err
 	} else if exists {
 		return nil, gerror.New("同级已存在同名区域：" + input.Name)
 	}
-	grantRoleID := ev.areaAutoGrantRole(user, parent)
-	if ev.err != nil {
-		return nil, ev.err
-	}
+	grantRoleID := snapshot.areaAutoGrantRole(parent)
 	nextSort, err := nextAreaSort(ctx, parent.Id)
 	if err != nil {
 		return nil, err
@@ -232,37 +213,13 @@ func createArea(ctx context.Context, ev *evaluator, user *model.User, input *mod
 	if err != nil {
 		return nil, err
 	}
-	permissionHotCache.invalidateAll()
 	return findArea(ctx, int(newID))
 }
 
-func (e *evaluator) areaAutoGrantRole(user *model.User, parent *model.Area) int {
-	if user == nil || user.IsSuperuser || parent == nil {
-		return 0
-	}
-	coveringRole := 0
-	for _, role := range e.effectiveRoles(user) {
-		for _, scope := range role.AreaScopes {
-			path := e.nodePath(treeKindArea, scope.NodeId)
-			covered := scope.NodeId == parent.Id || (scope.IncludeChild && path != "" && strings.HasPrefix(parent.Path, path))
-			if !covered {
-				continue
-			}
-			if scope.IncludeChild {
-				return 0
-			}
-			if coveringRole == 0 {
-				coveringRole = role.Id
-			}
-		}
-	}
-	return coveringRole
-}
-
-func updateArea(ctx context.Context, ev *evaluator, user *model.User, input *model.AreaSaveInput) (*model.Area, error) {
-	old := ev.area(input.Id)
-	if ev.err != nil {
-		return nil, ev.err
+func updateArea(ctx context.Context, snapshot *permissionSnapshot, input *model.AreaSaveInput) (*model.Area, error) {
+	old, err := findArea(ctx, input.Id)
+	if err != nil {
+		return nil, err
 	}
 	if old == nil {
 		return nil, gerror.New("区域不存在")
@@ -270,25 +227,25 @@ func updateArea(ctx context.Context, ev *evaluator, user *model.User, input *mod
 	if old.ParentId == 0 {
 		return nil, gerror.New("根区域不允许修改")
 	}
-	if decision := ev.checkTree(user, old.Id, treeKindArea); !decision.Allow {
-		return nil, gerror.New("无权管理“" + old.Name + "”：" + decision.Reason)
+	if !snapshot.covers(treeKindArea, old.Path, old.Id) {
+		return nil, gerror.New("无权管理“" + old.Name + "”")
 	}
 	moving := input.ParentId != 0 && input.ParentId != old.ParentId
 	var newParent *model.Area
 	if moving {
-		newParent = ev.area(input.ParentId)
+		newParent, err = findArea(ctx, input.ParentId)
+		if err != nil {
+			return nil, err
+		}
 		if newParent == nil {
 			return nil, gerror.New("目标父区域不存在")
 		}
 		if strings.HasPrefix(newParent.Path, old.Path) {
 			return nil, gerror.New("不能把区域移动到自己或自己的子区域下")
 		}
-		if decision := ev.checkTree(user, newParent.Id, treeKindArea); !decision.Allow {
-			return nil, gerror.New("无权移动到“" + newParent.Name + "”下：" + decision.Reason)
+		if !snapshot.covers(treeKindArea, newParent.Path, newParent.Id) {
+			return nil, gerror.New("无权移动到“" + newParent.Name + "”下")
 		}
-	}
-	if ev.err != nil {
-		return nil, ev.err
 	}
 	parentID := old.ParentId
 	if moving {
@@ -299,7 +256,7 @@ func updateArea(ctx context.Context, ev *evaluator, user *model.User, input *mod
 	} else if exists {
 		return nil, gerror.New("同级已存在同名区域：" + input.Name)
 	}
-	err := dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Data(do.Area{Name: input.Name}).
 			Where(dao.Area.Columns().Id, old.Id).Update(); err != nil {
 			return err
@@ -319,7 +276,6 @@ func updateArea(ctx context.Context, ev *evaluator, user *model.User, input *mod
 	if err != nil {
 		return nil, err
 	}
-	permissionHotCache.invalidateAll()
 	return findArea(ctx, old.Id)
 }
 

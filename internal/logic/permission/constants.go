@@ -1,5 +1,7 @@
 package permission
 
+import "security-permission/internal/consts"
+
 const (
 	// 树范围类型在运行时的内部标识。
 	// area/org 分别用于后台管理域;resarea 用于应用端业务资源范围。
@@ -9,18 +11,18 @@ const (
 )
 
 const (
-	menuAreaManage     = "sys.area"
-	menuResourceManage = "sys.resource"
-	menuOrgManage      = "sys.person.info"
-	menuRoleManage     = "sys.person.role"
-	menuAccountManage  = "sys.person.account"
+	menuAreaManage     = consts.MenuCodeSysArea
+	menuResourceManage = consts.MenuCodeSysResource
+	menuOrgManage      = consts.MenuCodeSysPersonInfo
+	menuRoleManage     = consts.MenuCodeSysPersonRole
+	menuAccountManage  = consts.MenuCodeSysPersonAccount
 )
 
 var (
 	videoReadMenus = []string{
-		"app.video.live",
-		"app.video.playback",
-		"app.video.picture",
+		consts.MenuCodeAppVideoLive,
+		consts.MenuCodeAppVideoPlayback,
+		consts.MenuCodeAppVideoPicture,
 	}
 	manageAreaReadMenus = []string{menuAreaManage, menuResourceManage}
 	manageOrgReadMenus  = []string{menuOrgManage, menuAccountManage, menuRoleManage}
@@ -45,16 +47,7 @@ type resourceActionDefinition struct {
 }
 
 var resourceActions = []resourceActionDefinition{
-	{Code: "live", Name: "实时预览", MenuCode: "app.video.live"},
-	{Code: "playback", Name: "远程回放", MenuCode: "app.video.playback"},
-	{Code: "picture", Name: "图片查询", MenuCode: "app.video.picture"},
-}
-
-func resourceAction(code string) (resourceActionDefinition, bool) {
-	for _, action := range resourceActions {
-		if action.Code == code {
-			return action, true
-		}
-	}
-	return resourceActionDefinition{}, false
+	{Code: "live", Name: "实时预览", MenuCode: consts.MenuCodeAppVideoLive},
+	{Code: "playback", Name: "远程回放", MenuCode: consts.MenuCodeAppVideoPlayback},
+	{Code: "picture", Name: "图片查询", MenuCode: consts.MenuCodeAppVideoPicture},
 }

@@ -4,7 +4,7 @@
 
 package entity
 
-// Org is the golang structure for table org.
+// Org 是 org 表对应的数据结构。
 type Org struct {
 	Id       int64  `json:"id"       orm:"id"        ` // 组织ID
 	ParentId int64  `json:"parentId" orm:"parent_id" ` // 父组织ID,0为根

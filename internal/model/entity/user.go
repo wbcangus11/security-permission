@@ -4,7 +4,7 @@
 
 package entity
 
-// User is the golang structure for table user.
+// User 是 user 表对应的数据结构。
 type User struct {
 	Id          string `json:"id"          orm:"id"           ` // 用户ID
 	Name        string `json:"name"        orm:"name"         ` // 用户名

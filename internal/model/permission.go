@@ -37,15 +37,12 @@ type Org struct {
 	Path     string `json:"path"`
 }
 
-// Menu 菜单/功能项(树形),Domain 区分系统管理域与应用域。
-// Id 是数据库关系主键;Code 才是前后端和后端鉴权使用的稳定业务标识。
+// Menu 菜单/功能项(树形)，Code 是唯一标识，ParentCode 表示父菜单。
 type Menu struct {
-	Id       int    `json:"id"`
-	ParentId int    `json:"parentId"`
-	Code     string `json:"code"`
-	Name     string `json:"name"`
-	Domain   string `json:"domain"`
-	Sort     int    `json:"sort"`
+	Code       string `json:"code"`
+	ParentCode string `json:"parentCode"`
+	Name       string `json:"name"`
+	Domain     string `json:"domain"`
 }
 
 // Resource 业务资源(如摄像头),挂在某个区域下。
@@ -69,10 +66,9 @@ type Role struct {
 	Description string `json:"description"`
 	CreatedBy   string `json:"createdBy"` // 创建该角色的用户,"0" 表示系统内置角色
 
-	// 功能权限:菜单 id 列表(含系统域与应用域)
-	MenuIds []int `json:"-"`
-	// 功能权限:菜单 code 列表。接口层优先使用 code,避免前后端依赖数据库自增 ID。
-	MenuCodes []string `json:"menuCodes"`
+	// 功能权限按系统配置域和应用域分别保存稳定 code。
+	MenuConfigCodes []string `json:"menuConfigCodes"`
+	MenuAppCodes    []string `json:"menuAppCodes"`
 
 	// 数据权限·管理域
 	AreaScopes []DataScope `json:"areaScopes"` // 安保区域管理权限

@@ -11,15 +11,15 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// UserDao is the data access object for the table user.
+// UserDao 是 user 表的数据访问对象。
 type UserDao struct {
-	table    string             // table is the underlying table name of the DAO.
-	group    string             // group is the database configuration group name of the current DAO.
-	columns  UserColumns        // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler // handlers for customized model modification.
+	table    string             // DAO 对应的底层表名。
+	group    string             // 当前 DAO 使用的数据库配置分组名。
+	columns  UserColumns        // 保存表的全部列名，便于统一引用。
+	handlers []gdb.ModelHandler // 用于自定义模型处理的处理器。
 }
 
-// UserColumns defines and stores column names for the table user.
+// UserColumns 定义并保存 user 表的列名。
 type UserColumns struct {
 	Id          string // 用户ID
 	Name        string // 用户名
@@ -27,7 +27,7 @@ type UserColumns struct {
 	IsSuperuser string // 超级管理员:1=鉴权三关直接放行(仿海康内置root)
 }
 
-// userColumns holds the columns for the table user.
+// userColumns 保存 user 表的列名。
 var userColumns = UserColumns{
 	Id:          "id",
 	Name:        "name",
@@ -35,7 +35,7 @@ var userColumns = UserColumns{
 	IsSuperuser: "is_superuser",
 }
 
-// NewUserDao creates and returns a new DAO object for table data access.
+// NewUserDao 创建并返回 user 表的数据访问对象。
 func NewUserDao(handlers ...gdb.ModelHandler) *UserDao {
 	return &UserDao{
 		group:    "default",
@@ -45,27 +45,27 @@ func NewUserDao(handlers ...gdb.ModelHandler) *UserDao {
 	}
 }
 
-// DB retrieves and returns the underlying raw database management object of the current DAO.
+// DB 返回当前 DAO 使用的底层数据库对象。
 func (dao *UserDao) DB() gdb.DB {
 	return g.DB(dao.group)
 }
 
-// Table returns the table name of the current DAO.
+// Table 返回当前 DAO 对应的表名。
 func (dao *UserDao) Table() string {
 	return dao.table
 }
 
-// Columns returns all column names of the current DAO.
+// Columns 返回当前 DAO 对应表的全部列名。
 func (dao *UserDao) Columns() UserColumns {
 	return dao.columns
 }
 
-// Group returns the database configuration group name of the current DAO.
+// Group 返回当前 DAO 使用的数据库配置分组名。
 func (dao *UserDao) Group() string {
 	return dao.group
 }
 
-// Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
+// Ctx 创建当前 DAO 的模型，并自动绑定本次操作的上下文。
 func (dao *UserDao) Ctx(ctx context.Context) *gdb.Model {
 	model := dao.DB().Model(dao.table)
 	for _, handler := range dao.handlers {
@@ -74,12 +74,10 @@ func (dao *UserDao) Ctx(ctx context.Context) *gdb.Model {
 	return model.Safe().Ctx(ctx)
 }
 
-// Transaction wraps the transaction logic using function f.
-// It rolls back the transaction and returns the error if function f returns a non-nil error.
-// It commits the transaction and returns nil if function f returns nil.
+// Transaction 使用函数 f 封装事务逻辑。
+// 当函数 f 返回非空错误时回滚事务并返回该错误；返回 nil 时提交事务。
 //
-// Note: Do not commit or roll back the transaction in function f,
-// as it is automatically handled by this function.
+// 注意：不要在函数 f 内自行提交或回滚，事务结果由本方法统一处理。
 func (dao *UserDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

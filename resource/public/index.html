@@ -374,7 +374,7 @@
           <div id="tree-sysmenu"></div>
         </div>
         <div data-subpane="area" style="display:none">
-          <div class="tip">配置该角色对安保区域及区域下资源的管理权限（查看/添加/修改/删除）。勾选某节点即授予其整棵子树（新增子节点自动继承）；展开后可单独取消某个子节点，此时父节点变为半选（仅授本节点）。区域较多时点一层查一层（惰性加载）。</div>
+          <div class="tip">配置该角色对安保区域及区域下资源的管理权限（查看/添加/修改/删除）。直接勾选某节点时按可授权范围授予该节点或其子树；单独勾选子节点不会带动父节点，父级权限只由用户直接操作。区域较多时点一层查一层（惰性加载）。</div>
           <div id="tree-area"></div>
         </div>
         <div data-subpane="org" style="display:none">
@@ -409,7 +409,7 @@
   </div>
 
 </div>
-      </div><!-- /sc-role -->
+      </div><!-- 角色配置结束 -->
 
       <!-- 账号管理 -->
       <div id="sc-user" class="sys-panel" style="display:none">
@@ -441,7 +441,7 @@
       </div>
     </div>
   </div>
-      </div><!-- /sc-user -->
+      </div><!-- 用户配置结束 -->
 
       <!-- 其他系统菜单:演示占位 -->
       <div id="sc-placeholder" class="sys-panel" style="display:none">
@@ -452,17 +452,84 @@
         </div>
       </div>
 
-    </div><!-- /sys-content -->
-  </div><!-- /sys-layout -->
-</div><!-- /view-sys -->
+    </div><!-- 系统管理内容结束 -->
+  </div><!-- 系统管理布局结束 -->
+</div><!-- 系统管理视图结束 -->
 
 <script>
-let META = {};            // areas/orgs/menus/users
+let META = {};            // 区域、组织、菜单和用户元数据
 let currentRoleId = 0;
 let role = blankRole();   // 当前编辑中的角色
+let roleBaseline = blankRole(); // 打开角色时的数据库快照,用于生成明确的权限增删量
+let rolePermissionTouched = {area:false, org:false, resarea:false};
 const checked = {         // 菜单树按 code 勾选,区域/组织树按 id 勾选
   sysmenu: {}, appmenu: {}, area: {}, org: {}, resarea: {}
 };
+// 菜单是随前端版本发布的固定功能目录，展示顺序也由前端明确维护。
+// 数据库只负责菜单字典和角色授权，不再通过 sort 字段影响界面顺序。
+// 新增但尚未写入此清单的菜单仍会显示，并按 code 排在同级已知菜单之后。
+const FIXED_MENU_ORDER = Object.freeze([
+  // 系统管理端
+  'sys.person',
+  'sys.person.info',
+  'sys.person.role',
+  'sys.person.account',
+  'sys.person.face',
+  'sys.business',
+  'sys.business.passenger',
+  'sys.vehicle',
+  'sys.area',
+  'sys.device',
+  'sys.device.encode',
+  'sys.device.broadcast',
+  'sys.device.alarm',
+  'sys.resource',
+  'sys.resource.point',
+  'sys.resource.terminal',
+  'sys.resource.io',
+  'sys.resource.zone',
+  'sys.videocfg',
+  'sys.videocfg.record',
+  'sys.videocfg.capture',
+  'sys.videocfg.defense',
+  'sys.videocfg.param',
+  'sys.servicecfg',
+  'sys.servicecfg.event',
+  'sys.servicecfg.map',
+  'sys.servicecfg.recognition',
+  'sys.network',
+  'sys.network.patrol',
+  'sys.advanced',
+  'sys.advanced.param',
+  'sys.advanced.platform-upgrade',
+  'sys.advanced.app-upgrade',
+  'sys.advanced.stream-upgrade',
+  'sys.advanced.sms',
+  'sys.advanced.email',
+  // 应用端
+  'app.integrated',
+  'app.integrated.eventsearch',
+  'app.integrated.mapmonitor',
+  'app.integrated.smartsearch',
+  'app.integrated.broadcast',
+  'app.video',
+  'app.video.live',
+  'app.video.playback',
+  'app.video.picture',
+  'app.network',
+  'app.network.monitor'
+]);
+const FIXED_MENU_ORDER_INDEX = new Map(FIXED_MENU_ORDER.map((code,index)=>[code,index]));
+function orderMenus(menus){
+  return [...(menus||[])].sort((left,right)=>{
+    const leftOrder=FIXED_MENU_ORDER_INDEX.get(left.code);
+    const rightOrder=FIXED_MENU_ORDER_INDEX.get(right.code);
+    const leftKnown=leftOrder!==undefined, rightKnown=rightOrder!==undefined;
+    if(leftKnown&&rightKnown) return leftOrder-rightOrder;
+    if(leftKnown!==rightKnown) return leftKnown?-1:1;
+    return String(left.code||'').localeCompare(String(right.code||''));
+  });
+}
 const treeFold = {        // 保存折叠树的手动展开/收起状态,避免勾选后重渲染丢失用户操作
   org: {expanded:new Set(), collapsed:new Set()}
 };
@@ -471,7 +538,7 @@ function resetTreeFold(kind){
   // 切换角色/新建角色时恢复默认层级:只展示根节点和直接子节点。
   fold.expanded.clear(); fold.collapsed.clear();
 }
-let GRANT = {unlimited:true}; // 当前用户可授出的上限,用于置灰
+let GRANT = {unlimited:true}; // 当前用户可授出的上限,用于过滤编辑树
 // 角色管理一律以身份请求头解析出的当前用户运作。
 function currentUserId(){ return loginUserId(); }
 function isMenuKind(kind){ return kind==='sysmenu' || kind==='appmenu'; }
@@ -479,19 +546,49 @@ function permKey(kind, node){ return isMenuKind(kind) ? node.code : node.id; }
 // 某菜单 code / 节点 id 在该树是否可授(超级管理员或在允许集合内)
 function grantAllows(kind, key){
   if(GRANT.unlimited) return true;
-  const m={sysmenu:'menuCodes',appmenu:'menuCodes',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
+  const m={sysmenu:'menuConfigCodes',appmenu:'menuAppCodes',area:'areaIds',org:'orgIds',resarea:'resAreaIds'}[kind];
   return (GRANT[m]||[]).includes(key);
 }
-function grantIds(kind){
-  if(GRANT.unlimited) return (META.areas||[]).map(a=>a.id);
-  const m={area:'areaIds',resarea:'resAreaIds'}[kind];
-  return (GRANT[m]||[]).map(Number);
+function cloneRole(value){
+  const copy=value||blankRole();
+  return {
+    id:Number(copy.id||0), name:copy.name||'', description:copy.description||'', createdBy:copy.createdBy||'',
+    menuConfigCodes:[...(copy.menuConfigCodes||[])],
+    menuAppCodes:[...(copy.menuAppCodes||[])],
+    areaScopes:(copy.areaScopes||[]).map(s=>({nodeId:Number(s.nodeId),includeChild:s.includeChild!==false})),
+    orgScopes:(copy.orgScopes||[]).map(s=>({nodeId:Number(s.nodeId),includeChild:s.includeChild!==false})),
+    resourceAreaScopes:(copy.resourceAreaScopes||[]).map(s=>({nodeId:Number(s.nodeId),includeChild:s.includeChild!==false}))
+  };
+}
+function baselineScopes(kind){
+  if(kind==='org') return roleBaseline.orgScopes||[];
+  if(kind==='resarea') return roleBaseline.resourceAreaScopes||[];
+  return roleBaseline.areaScopes||[];
+}
+function grantScopeList(kind){
+  const field={area:'areaScopes',org:'orgScopes',resarea:'resAreaScopes'}[kind];
+  return field?(GRANT[field]||[]):[];
+}
+function treeNodePath(kind,id){
+  const list=kind==='org'?(META.orgs||[]):(META.areas||[]);
+  const node=list.find(n=>Number(n.id)===Number(id));
+  return node&&node.path||'';
+}
+// includeChild=true 只有在操作人拥有某个祖先的子树权限时才可继续授出。
+function grantCanSubtree(kind,id){
+  if(GRANT.unlimited) return true;
+  const targetPath=treeNodePath(kind,id); if(!targetPath) return false;
+  return grantScopeList(kind).some(scope=>{
+    if(scope.includeChild===false) return false;
+    const sourcePath=treeNodePath(kind,scope.nodeId);
+    return sourcePath && targetPath.startsWith(sourcePath);
+  });
 }
 // ---------- 角色配置:惰性分层区域树(级联勾选 + 推断 nodeType,对齐真实海康) ----------
-// 角色区域树对齐海康交互:使用普通 el-tree 级联勾选框,不单设「含子节点」开关。
-//   - 勾未展开节点 = 勾整棵子树(subTree);展开后被覆盖的子显实勾、可单独取消。
-//   - 取消某子 → 父降为半选(singleNode),其余兄弟保持子树。保存按「整子树全勾?」推断:
-//     全勾→{includeChild:true}(subTree);勾但非全→{includeChild:false}(singleNode)+递归。
+// 区域树按“用户直接操作的节点”保存状态，不用父级半选推断用户意图。
+//   - 直接勾节点：在可授权宽度内授予该节点或子树。
+//   - 单独勾子节点：父节点保持未勾选，也不会因为所有子节点已选而自动合并成父级子树。
+//   - 从已授子树中取消子节点：父级只保留自身，其他已勾选分支继续独立保存。
 // 状态:chk[id]=已授(级联);sub[id]=该节点整棵子树都授(子树标记)。path 取自 META.areas(全量,深层未加载也可判定)。
 let roleTree = {
   area:    { chk:{}, sub:{}, index:{}, childrenOf:{}, expanded:new Set() }, // 管理域 AREA
@@ -501,41 +598,14 @@ function rtEl(kind){ return document.getElementById(kind==='area'?'tree-area':'t
 function rtEditable(){ return !document.getElementById('btnSaveRole').disabled; }
 function rtPath(id){ const a=META._areaById&&META._areaById[id]; return a?a.path:''; }
 function rtParent(kind,id){ const n=roleTree[kind].index[id]; return n?n.parentId:0; }
-// 节点是否「整棵子树都已授」:子树标记 / 叶子已勾 / 已加载的子全部 full。
-function rtFully(kind,id){ const st=roleTree[kind]; if(!st.chk[id]) return false;
-  const n=st.index[id]; if(n && !n.hasChildren) return true;     // 叶子且勾选
-  if(st.sub[id]) return true;                                    // 子树标记(含未展开)
-  const kids=st.childrenOf[id]; if(!kids) return false;          // 勾选但有子未加载且非子树 = 仅本节点(半选)
-  return kids.every(c=>rtFully(kind,c));
-}
-// 是否有「已授」的后代(按 path 判定,深层未加载也算)→ 决定祖先显示半选。
-function rtAnyCheckedDesc(kind,id){ const st=roleTree[kind], p=rtPath(id); if(!p) return false;
-  for(const cS in st.chk){ if(!st.chk[cS]) continue; const cp=rtPath(Number(cS));
-    if(cp && cp.length>p.length && cp.startsWith(p)) return true; }
-  return false;
-}
+// 勾选状态只反映节点自身是否被明确授予，不再用后代状态把祖先渲染成半选。
 function rtState(kind,id){ const st=roleTree[kind];
-  if(rtFully(kind,id)) return 'full';
-  if(st.chk[id]) return 'half';                 // 勾选但非全 = 仅本节点(半选)
-  if(rtAnyCheckedDesc(kind,id)) return 'half';  // 自身未勾但有已授后代
-  return 'none';
+  return st.chk[id]?'full':'none';
 }
 // scopes ⇄ 状态:subTree→chk+sub;singleNode→chk(sub=false)。
-function rtGrantDescendants(kind, scopeId){
-  const sp=rtPath(scopeId); if(!sp) return [];
-  return grantIds(kind).filter(id=>{ const p=rtPath(id); return p && p.length>sp.length && p.startsWith(sp); });
-}
 function rtApplyScopes(kind, scopes){ const st=roleTree[kind]; st.chk={}; st.sub={};
-  (scopes||[]).forEach(sc=>{
-    const id=Number(sc.nodeId);
-    if(grantAllows(kind,id)){
-      st.chk[id]=true; st.sub[id]= sc.includeChild!==false;
-      return;
-    }
-    if(sc.includeChild!==false){
-      rtGrantDescendants(kind,id).forEach(gid=>{ st.chk[gid]=true; st.sub[gid]=true; });
-    }
-  });
+  // 详情接口已经按当前编辑人过滤，只回填其可授予范围内的显式权限。
+  (scopes||[]).forEach(sc=>{ const id=Number(sc.nodeId); st.chk[id]=true; st.sub[id]=sc.includeChild!==false; });
 }
 // 从状态导出 scopes:每个 chk 节点,若未被某「子树祖先」覆盖则记一条(子树标记→includeChild:true)。用 path,深层未展开也准。
 function rtScopes(kind){ const st=roleTree[kind]; const out=[];
@@ -554,7 +624,7 @@ function resAreaCovers(areaId){ const sc=rtScopes('resarea'), p=rtPath(areaId);
 }
 // 拉取某层(后端按当前用户可授范围过滤),写入 index/childrenOf;若父为子树授权则新子继承勾选(级联)。
 async function rtFetch(kind, parentId){
-  const list=await api(`/api/role/area-children?parentId=${parentId}&kind=${kind}`)||[];
+  const list=(await api(`/api/role/area-children?parentId=${parentId}&kind=${kind}&roleId=${currentRoleId||0}`)).items||[];
   const st=roleTree[kind]; const inheritSub = parentId!==0 && st.chk[parentId] && st.sub[parentId];
   list.forEach(n=>{ st.index[n.id]=n; if(inheritSub){ st.chk[n.id]=true; st.sub[n.id]=true; } });
   st.childrenOf[parentId]=list.map(n=>n.id);
@@ -580,7 +650,7 @@ async function rtRender(kind){
   el.appendChild(rtRenderNodes(kind, list));
 }
 function renderRoleAreaTrees(){ rtRender('area'); rtRender('resarea'); }
-// 整树重渲(只含已加载节点,按 expanded 还原展开态);勾选变化后调用以刷新全部祖先/后代的半选态。
+// 整树重渲（只含已加载节点，按 expanded 还原展开状态）。
 function rtRefresh(kind){ const st=roleTree[kind], el=rtEl(kind);
   if(!el || !st.childrenOf[0]) return;
   el.innerHTML=''; el.appendChild(rtRenderNodes(kind, st.childrenOf[0].map(id=>st.index[id])));
@@ -595,7 +665,7 @@ function rtRenderNode(kind, n){
   if(n.canCheck){
     const state=rtState(kind, n.id);
     const cb=document.createElement('input'); cb.type='checkbox';
-    cb.checked = state==='full'; cb.indeterminate = state==='half';
+    cb.checked = state==='full';
     cb.disabled = !rtEditable();
     cb.onchange=()=>rtToggleCheck(kind, n.id, cb.checked);
     lab.append(cb, document.createTextNode(' '+n.name));
@@ -615,29 +685,33 @@ function rtRenderNode(kind, n){
   } else { tog.textContent=''; }
   return node;
 }
-// 勾选切换:勾=级联授整棵子树;取消=级联取消;再自下而上重算祖先(合并为整子树 / 打破为半选)。
+// 勾选只修改当前分支；取消子节点时仅打破已有祖先子树，不自动选择或合并任何祖先。
 function rtToggleCheck(kind, id, checked){
+  rolePermissionTouched[kind]=true;
   if(checked) rtCascade(kind, id, true); else rtCascade(kind, id, false);
-  rtRecomputeUp(kind, id);
+  if(!checked) rtBreakAncestorSubtrees(kind,id);
   rtRefresh(kind);
 }
 function rtCascade(kind, id, on){ const st=roleTree[kind];
-  st.chk[id]=on; st.sub[id]=on;                          // on:子树授权;off:清掉
+  st.chk[id]=on;
+  st.sub[id]=on && grantCanSubtree(kind,id);
   if(!on){ delete st.chk[id]; delete st.sub[id]; }
-  (st.childrenOf[id]||[]).forEach(c=>rtCascade(kind, c, on)); // 级联已加载后代
+  (st.childrenOf[id]||[]).forEach(c=>{
+    if(on && !grantAllows(kind,c)) return;
+    rtCascade(kind, c, on);
+  });
 }
-function rtRecomputeUp(kind, id){ const st=roleTree[kind]; let cur=rtParent(kind, id);
+function rtBreakAncestorSubtrees(kind,id){ const st=roleTree[kind]; let cur=rtParent(kind,id);
   while(cur){
-    const kids=st.childrenOf[cur]||[];
-    const allFull = kids.length>0 && kids.every(c=>rtFully(kind,c));
-    if(allFull){ st.chk[cur]=true; st.sub[cur]=true; }         // 子全 full → 合并为整子树
-    else if(st.chk[cur] && st.sub[cur]){ st.sub[cur]=false; }  // 曾整子树、被打破 → 降为仅本节点(保持 chk)
-    // 其余:显式仅本节点保持;未勾父保持未勾(渲染时按后代显半选)
+    if(st.chk[cur]&&st.sub[cur]) st.sub[cur]=false;
     cur=rtParent(kind, cur);
   }
 }
 
-function blankRole(){ return {id:0,name:'',description:'',menuCodes:[],areaScopes:[],orgScopes:[],resourceAreaScopes:[]}; }
+function blankRole(){ return {
+  id:0,name:'',description:'',menuConfigCodes:[],menuAppCodes:[],
+  areaScopes:[],orgScopes:[],resourceAreaScopes:[]
+}; }
 
 // ---------- 通用请求 ----------
 function unwrapRes(j){
@@ -654,9 +728,12 @@ async function api(path, opts){
 }
 
 // ---------- 树工具 ----------
-function buildTree(nodes){ // nodes: [{id,parentId,...}]
-  const map={}, roots=[]; nodes.forEach(n=>map[n.id]={...n,children:[]});
-  nodes.forEach(n=>{ if(n.parentId&&map[n.parentId]) map[n.parentId].children.push(map[n.id]); else roots.push(map[n.id]); });
+function buildTree(nodes){ // 业务树使用 id/parentId，菜单树使用 code/parentCode。
+  // 菜单树先套用前端固定顺序；区域、组织等业务树保持接口返回顺序。
+  if(nodes.some(n=>n.code)) nodes=orderMenus(nodes);
+  const keyOf=n=>n.code||n.id, parentOf=n=>n.parentCode||n.parentId;
+  const map={}, roots=[]; nodes.forEach(n=>map[keyOf(n)]={...n,children:[]});
+  nodes.forEach(n=>{ const key=keyOf(n), parent=parentOf(n); if(parent&&map[parent]) map[parent].children.push(map[key]); else roots.push(map[key]); });
   return roots;
 }
 function descendants(node){ let r=[]; (node.children||[]).forEach(c=>{ r.push(c); r=r.concat(descendants(c)); }); return r; }
@@ -690,7 +767,7 @@ function renderNodes(nodes, store, kind, opts={}, depth=0){
     const lab=document.createElement('label');
     if(selfAllowed){
       const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!store[key];
-      cb.onchange=()=>{ toggleNode(n,store,cb.checked); };
+      cb.onchange=()=>{ toggleNode(n,store,cb.checked,kind); };
       lab.append(cb, document.createTextNode(' '+ (n.name||n.code)));
     } else {
       // 自身不可授,但有可授子孙:仅作结构展示(无勾选框)
@@ -708,11 +785,15 @@ function renderNodes(nodes, store, kind, opts={}, depth=0){
   return wrap;
 }
 // 勾选级联:选父则选中所有后代;取消父则取消后代
-function toggleNode(n,store,val){
-  const kind = n.domain==='SYS' ? 'sysmenu' : (n.domain==='APP' ? 'appmenu' : '');
+function toggleNode(n,store,val,kind){
   const keyOf=x=>kind?permKey(kind,x):x.id;
   store[keyOf(n)]=val;
-  descendants(n).forEach(d=>store[keyOf(d)]=val);
+  descendants(n).forEach(d=>{
+    const key=keyOf(d);
+    // 取消时清理整棵已选分支；勾选时不能顺带增加当前不可授的权限。
+    if(!val || grantAllows(kind,key)) store[key]=val;
+  });
+  if(kind==='org') rolePermissionTouched.org=true;
   // 重新渲染对应树以刷新 UI
   rerenderAll();
 }
@@ -726,12 +807,12 @@ function fullyChecked(n, store){
 //   - 整棵子树都被勾选 -> {includeChild:true} 作为子树根,不再下钻(新增子节点自动继承);
 //   - 否则(仅自身/部分子孙被勾) -> {includeChild:false} 只授本节点,再递归把被勾的子孙各自记录。
 // 关键:只勾「园区A」不勾其子节点 => {园区A, includeChild:false}(只给园区A自身),而非整棵子树。
-function extractScopes(roots, store){
+function extractScopes(roots, store, kind){
   const out=[];
   function walk(nodes){
     nodes.forEach(n=>{
       if(!store[n.id]){ walk(n.children||[]); return; }   // 自身未勾:跳过,继续找被勾的子孙
-      if(fullyChecked(n, store)){
+      if(fullyChecked(n, store) && grantCanSubtree(kind,n.id)){
         out.push({nodeId:n.id, includeChild:true});        // 整棵子树 -> 子树根,不再下钻
       } else {
         out.push({nodeId:n.id, includeChild:false});       // 仅本节点
@@ -783,7 +864,7 @@ async function reloadMeta(){
   if((META.users||[]).some(u=>String(u.id)===previousUserId)) loginSelect.value = previousUserId;
   persistLoginUserId(loginSelect.value);
   syncLoginDisplay();
-  META._roles = await api('/api/role/list');
+  META._roles = (await api('/api/role/list')).items||[];
   renderAccountPanel();
 }
 function loginUserId(){ return document.getElementById('loginUser').value || '0'; }
@@ -814,7 +895,7 @@ async function onLoginChange(){
 }
 async function loadAppView(){
   // 应用菜单(功能权限)→ 卡片
-  const menus=await api('/api/app/menu');
+  const menus=(await api('/api/app/menu')).items||[];
   renderAppCards(menus);
   // 应用首页不预加载区域树；进入具体视频应用时再按 RES_AREA 实时查询。
   document.getElementById('appAreaTree').innerHTML='';
@@ -868,13 +949,14 @@ function appSectionDesc(code){
 function renderAppCards(menus){
   const box=document.getElementById('appCards');
   if(!menus.length){ box.innerHTML='<div class="card-section"><span class="muted">该用户无任何应用菜单权限</span></div>'; return; }
+  menus=orderMenus(menus);
   // 按顶级父菜单分组
-  const tops=menus.filter(m=>!m.parentId);
-  const childrenOf=pid=>menus.filter(m=>m.parentId===pid);
+  const tops=menus.filter(m=>!m.parentCode);
+  const childrenOf=parentCode=>menus.filter(m=>m.parentCode===parentCode);
   let html='';
-  const sections = tops.length ? tops : [{id:0,name:'应用',code:''}];
+  const sections = tops.length ? tops : [{name:'应用',code:''}];
   sections.forEach(top=>{
-    const kids = top.id ? childrenOf(top.id) : menus;
+    const kids = top.code ? childrenOf(top.code) : menus;
     const cards = (kids.length?kids:[top]); // 没有子项就把父本身作为卡片
     const desc=appSectionDesc(top.code);
     html+=`<div class="card-section"><h3>${h(top.name)}</h3>${desc?`<div class="desc">${h(desc)}</div>`:''}<div class="card-grid">`;
@@ -899,7 +981,7 @@ function showAppHome(){ document.getElementById('appHome').style.display='block'
 function showAppBrowse(){ document.getElementById('appHome').style.display='none'; document.getElementById('appBrowse').style.display='block'; }
 // 区域树:按层懒加载 + 每层分页(100/页),权限过滤后端下推。
 // 应用端浏览树 / 后台管理树 / 移动选择器 共用 lazyTreeLevel + lazyTreeNode 一套;差异由 opts 注入。
-//   opts: { url(parentId,page,size)->string, rootParent, emptyText, icon, activeSel, onClick(node,rowEl) }
+//   参数格式：{ url(parentId,page,size)->string, rootParent, emptyText, icon, activeSel, onClick(node,rowEl) }
 const TREE_PAGE=100, RES_PAGE=100;
 async function lazyTreeLevel(container, parentId, page, reset, opts){
   const d=await api(opts.url(parentId, page, TREE_PAGE));
@@ -1064,7 +1146,7 @@ async function onSysMenu(code, name, el){
     }else if(panel==='person'){
       curManage.org=0;
       document.getElementById('sysMainOrg').innerHTML='<div class="no-perm"><div class="big"><svg class="ico"><use href="#i-back"></use></svg></div>请选择左侧组织查看管理权限</div>';
-      MANAGE_ORGS=await api('/api/manage/org-tree');
+      MANAGE_ORGS=(await api('/api/manage/org-tree')).items||[];
       renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
     }
   }catch(e){
@@ -1080,19 +1162,20 @@ function renderSysNav(navEl, menus){
     navEl.innerHTML='<div class="nav-empty">该用户无任何系统管理菜单权限<br>(应用域有权 ≠ 管理域有权)</div>';
     return;
   }
-  const byId=new Map(menus.map(m=>[m.id,m]));
+  menus=orderMenus(menus);
+  const byCode=new Map(menus.map(m=>[m.code,m]));
   const children=new Map();
   menus.forEach(m=>{
-    const pid=byId.has(m.parentId)?m.parentId:0;
-    if(!children.has(pid)) children.set(pid,[]);
-    children.get(pid).push(m);
+    const parentCode=byCode.has(m.parentCode)?m.parentCode:'';
+    if(!children.has(parentCode)) children.set(parentCode,[]);
+    children.get(parentCode).push(m);
   });
   function sysGroupDefaultOpen(m){
     // 仅人员管理是系统管理的高频入口,首屏默认展开;其他分组保持折叠,减少左侧菜单占用。
     return m.code==='sys.person';
   }
   const renderNode=(m, level)=>{
-    const kids=children.get(m.id)||[];
+    const kids=children.get(m.code)||[];
     const cls='nav-item '+(level>0?'child':'parent');
     if(kids.length){
       const folded=sysGroupDefaultOpen(m)?'':' collapsed';
@@ -1103,19 +1186,19 @@ function renderSysNav(navEl, menus){
     }
     return `<div class="${cls}" data-code="${h(m.code)}" onclick="onSysMenu('${h(m.code)}','${h(m.name)}',this)">${svgIco(sysIcon(m.code))}<span>${h(m.name)}</span></div>`;
   };
-  navEl.innerHTML=(children.get(0)||[]).map(m=>renderNode(m,0)).join('');
+  navEl.innerHTML=(children.get('')||[]).map(m=>renderNode(m,0)).join('');
 }
 function showSysPanel(panel, name){
   ['person','area','role','user','placeholder'].forEach(p=>{ const d=document.getElementById('sc-'+p); if(d) d.style.display=(p===panel)?'block':'none'; });
   if(panel==='placeholder'){ document.getElementById('phName').textContent=name||''; }
 }
 async function loadSysView(){
-  const menus=await api('/api/manage/menu');
+  const menus=orderMenus((await api('/api/manage/menu')).items||[]);
   const navEl=document.getElementById('sysMenus');
   renderSysNav(navEl, menus);
   // 默认选中:优先"安保区域管理",否则第一个有界面的菜单,否则第一个
-  const hasChild=id=>menus.some(m=>m.parentId===id);
-  let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus.find(m=>!hasChild(m.id)) || menus[0];
+  const hasChild=code=>menus.some(m=>m.parentCode===code);
+  let def = menus.find(m=>m.code==='sys.area') || menus.find(m=>SYS_ROUTE[m.code]) || menus.find(m=>!hasChild(m.code)) || menus[0];
   if(def){ const el=navEl.querySelector(`.nav-item[data-code="${def.code}"]`); await onSysMenu(def.code, def.name, el); }
   else { showSysPanel('none'); }
 }
@@ -1355,7 +1438,7 @@ async function areaDelete(){
 function manageOrgName(id){ const o=MANAGE_ORGS.find(x=>x.id===id); return o?o.name:('#'+id); }
 // 操作成功后:刷新左树 + 元数据(角色编辑器的组织树 / 用户管理的所属组织下拉),并重新打开 focusId
 async function refreshOrgMgmt(focusId){
-  MANAGE_ORGS = await api('/api/manage/org-tree');
+  MANAGE_ORGS = (await api('/api/manage/org-tree')).items||[];
   renderManageTree('manageOrgTree', MANAGE_ORGS, 'org');
   await reloadMeta();
   if(focusId && MANAGE_ORGS.some(x=>x.id===focusId)) await openManageNode('org', focusId);
@@ -1550,7 +1633,7 @@ async function refreshRolePanel(){
 }
 
 async function refreshRoles(){
-  const roles = await api('/api/role/list');
+  const roles = (await api('/api/role/list')).items||[];
   META._roles = roles;            // 供用户管理用
   if(document.getElementById('editUserRoles')) renderUserForm(EDIT_USER_ID ? (META.users||[]).find(u=>String(u.id)===EDIT_USER_ID) : null);
   const el=document.getElementById('roleList');
@@ -1590,12 +1673,14 @@ async function loadRole(id){
   currentRoleId=id; highlightRole(id); // 立即高亮,不等异步重渲染
   resetTreeFold('org');
   role = await api('/api/role/detail?id='+id);
+  roleBaseline=cloneRole(role);
+  rolePermissionTouched={area:false,org:false,resarea:false};
   document.getElementById('roleName').value=role.name||'';
   document.getElementById('roleDesc').value=role.description||'';
   // 菜单勾选
-  const sysMenus=META.menus.filter(m=>m.domain==='SYS'), appMenus=META.menus.filter(m=>m.domain==='APP');
   checked.sysmenu={}; checked.appmenu={};
-  (role.menuCodes||[]).forEach(code=>{ const m=META.menus.find(x=>x.code===code); if(!m)return; if(m.domain==='SYS')checked.sysmenu[code]=true; else checked.appmenu[code]=true; });
+  (role.menuConfigCodes||[]).forEach(code=>checked.sysmenu[code]=true);
+  (role.menuAppCodes||[]).forEach(code=>checked.appmenu[code]=true);
   // 树范围:区域(管理域 AREA + 应用域 RES_AREA)用惰性树的显式授权状态;组织仍 eager
   rtApplyScopes('area', role.areaScopes||[]);
   applyScopes(buildTree(META.orgs), role.orgScopes||[], checked.org);
@@ -1605,7 +1690,8 @@ async function loadRole(id){
   rerenderAll(); renderRoleAreaTrees(); // 切换角色不必重拉/重建列表,高亮已在开头同步更新;区域树惰性重渲
 }
 
-function newRole(){ currentRoleId=0; role=blankRole();
+function newRole(){ currentRoleId=0; role=blankRole(); roleBaseline=blankRole();
+  rolePermissionTouched={area:false,org:false,resarea:false};
   document.getElementById('roleName').value=''; document.getElementById('roleDesc').value='';
   ['sysmenu','appmenu','area','org','resarea'].forEach(k=>checked[k]={});
   resetTreeFold('org');
@@ -1625,7 +1711,7 @@ function rerenderAll(){
   // 区域树(tree-area / tree-resarea)改为惰性分层,由 renderRoleAreaTrees()/内部增量更新维护,不在此整树重渲(避免折叠)
 }
 
-// ---------- Tab 切换 ----------
+// ---------- 标签页切换 ----------
 function switchTab(t){ document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active',e.dataset.tab===t));
   document.querySelectorAll('[data-pane]').forEach(e=>e.style.display=e.dataset.pane===t?'flex':'none'); }
 function switchSub(pane,sub){ const root=document.querySelector(`[data-pane="${pane}"]`);
@@ -1633,26 +1719,74 @@ function switchSub(pane,sub){ const root=document.querySelector(`[data-pane="${p
   root.querySelectorAll('[data-subpane]').forEach(e=>e.style.display=e.dataset.subpane===sub?'block':'none'); }
 
 // ---------- 保存 ----------
+function selectedMenuCodes(kind){
+  return Object.keys(checked[kind]||{}).filter(code=>checked[kind][code]);
+}
+function sameCodes(left,right){
+  const a=[...new Set(left||[])].sort(), b=[...new Set(right||[])].sort();
+  return a.length===b.length && a.every((value,index)=>value===b[index]);
+}
+function scopeChanges(original,current){
+  const oldMap=new Map((original||[]).map(s=>[Number(s.nodeId),s.includeChild!==false]));
+  const newMap=new Map((current||[]).map(s=>[Number(s.nodeId),s.includeChild!==false]));
+  const adds=[], dels=[];
+  oldMap.forEach((includeChild,nodeId)=>{
+    if(!newMap.has(nodeId)||newMap.get(nodeId)!==includeChild) dels.push({nodeId,includeChild});
+  });
+  newMap.forEach((includeChild,nodeId)=>{
+    if(!oldMap.has(nodeId)||oldMap.get(nodeId)!==includeChild) adds.push({nodeId,includeChild});
+  });
+  adds.sort((a,b)=>a.nodeId-b.nodeId); dels.sort((a,b)=>a.nodeId-b.nodeId);
+  return {adds,dels};
+}
+function noScopeChanges(changes){ return !changes.adds.length&&!changes.dels.length; }
+function buildPermissionChanges(){
+  const menuConfigCodes=selectedMenuCodes('sysmenu');
+  const menuAppCodes=selectedMenuCodes('appmenu');
+  const area=rolePermissionTouched.area?scopeChanges(roleBaseline.areaScopes,rtScopes('area')):{adds:[],dels:[]};
+  const orgCurrent=rolePermissionTouched.org?extractScopes(buildTree(META.orgs),checked.org,'org'):[];
+  const org=rolePermissionTouched.org?scopeChanges(roleBaseline.orgScopes,orgCurrent):{adds:[],dels:[]};
+  const resourceArea=rolePermissionTouched.resarea?scopeChanges(roleBaseline.resourceAreaScopes,rtScopes('resarea')):{adds:[],dels:[]};
+  const permissions={};
+  if(!sameCodes(menuConfigCodes,roleBaseline.menuConfigCodes)) permissions.menuConfig={replace:menuConfigCodes};
+  if(!sameCodes(menuAppCodes,roleBaseline.menuAppCodes)) permissions.menuApp={replace:menuAppCodes};
+  if(!noScopeChanges(area)) permissions.area=area;
+  if(!noScopeChanges(org)) permissions.org=org;
+  if(!noScopeChanges(resourceArea)) permissions.resourceArea=resourceArea;
+  return Object.keys(permissions).length?permissions:null;
+}
 async function saveRole(){
-  const r={
-    id: currentRoleId,
-    name: document.getElementById('roleName').value.trim(),
-    description: document.getElementById('roleDesc').value.trim(),
-    menuCodes: [...Object.keys(checked.sysmenu).filter(k=>checked.sysmenu[k]), ...Object.keys(checked.appmenu).filter(k=>checked.appmenu[k])],
-    areaScopes: rtScopes('area'),
-    orgScopes: extractScopes(buildTree(META.orgs), checked.org),
-    resourceAreaScopes: rtScopes('resarea')
-  };
-  if(!r.name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
-  const result=await api('/api/role/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
-  const saved=result.role;
-  let msg='已保存:'+saved.name;
-  if(result.preserved>0) msg+=`\n(保留了 ${result.preserved} 项你无权查看/修改的范围外权限)`;
-  await modalAlert(msg,'保存成功','i-check');
-  currentRoleId=saved.id;
-  await fetchGrantable(); // 新建/编辑后刷新可分配角色范围
-  await refreshRoles();
-  await loadRole(currentRoleId); // 重新载入合并后的结果
+  const name=document.getElementById('roleName').value.trim();
+  const description=document.getElementById('roleDesc').value.trim();
+  if(!name){ await modalAlert('角色名称不能为空','提示','i-x'); return; }
+
+  const creating=!currentRoleId;
+  const infoChanged=creating||name!==roleBaseline.name||description!==roleBaseline.description;
+  const permissions=buildPermissionChanges();
+  if(!infoChanged&&!permissions){ await modalAlert('没有需要保存的修改','提示','i-check'); return; }
+
+  try{
+    // 基本信息与可选权限变化只发送一次，并由后端在同一个事务中提交。
+    const body={id:currentRoleId,name,description};
+    if(permissions) body.permissions=permissions;
+    const saved=await api('/api/role/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    currentRoleId=saved.id; role=saved; roleBaseline=cloneRole(saved);
+    rolePermissionTouched={area:false,org:false,resarea:false};
+  }catch(e){
+    await modalError('保存失败；角色基本信息和权限均未改变',e);
+    return;
+  }
+
+  // 写入成功后重新加载数据库结果，建立下一次编辑的新基线。
+  try{
+    await fetchGrantable();
+    await refreshRoles();
+    await loadRole(currentRoleId);
+  }catch(e){
+    await modalError('角色已经保存，但页面刷新失败；重新进入角色管理即可恢复',e);
+    return;
+  }
+  await modalAlert('已保存:'+roleBaseline.name,'保存成功','i-check');
 }
 
 init();

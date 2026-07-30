@@ -8,7 +8,7 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// RoleDataScope is the golang structure of table role_data_scope for DAO operations like Where/Data.
+// RoleDataScope 是 role_data_scope 表用于 DAO 的 Where/Data 等操作的数据结构。
 type RoleDataScope struct {
 	g.Meta       `orm:"table:role_data_scope, do:true"`
 	Id           any // 角色数据范围ID

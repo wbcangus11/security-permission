@@ -11,6 +11,7 @@ import (
 	"github.com/gogf/gf/v2/os/gfile"
 
 	"security-permission/internal/controller/perm"
+	permissionlogic "security-permission/internal/logic/permission"
 	"security-permission/internal/middleware"
 )
 
@@ -20,8 +21,13 @@ var (
 		Usage: "main",
 		Brief: "start http server",
 		Func: func(ctx context.Context, parser *gcmd.Parser) (err error) {
+			// 第 1 步：先确认主库可用。数据库不可用时直接终止启动，避免提供不完整服务。
 			if err = g.DB().PingMaster(); err != nil {
 				return gerror.Wrap(err, "数据库启动检查失败")
+			}
+			// 第 2 步：在注册 HTTP 路由前完整加载菜单权限字典，之后鉴权不再查询菜单表。
+			if err = permissionlogic.InitializeMenuCatalog(ctx); err != nil {
+				return gerror.Wrap(err, "菜单目录启动加载失败")
 			}
 			s := g.Server()
 			if address := genv.Get("APP_SERVER_ADDRESS").String(); address != "" {

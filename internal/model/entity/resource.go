@@ -4,7 +4,7 @@
 
 package entity
 
-// Resource is the golang structure for table resource.
+// Resource 是 resource 表对应的数据结构。
 type Resource struct {
 	Id     int64  `json:"id"     orm:"id"      ` // 资源ID
 	AreaId int64  `json:"areaId" orm:"area_id" ` // 所属区域ID

@@ -31,12 +31,12 @@ INSERT INTO `role` (`id`,`name`,`description`,`created_by`) VALUES
  (1,'安防管理员','全菜单 + 事件图片测试区域','0'),
  (2,'园区A值班员','应用域视频 + 园区A资源范围','0');
 
--- 角色1:全部菜单。菜单以 code 维护,role_menu 内部仍保存 menu_id。
-INSERT INTO `role_menu` (`role_id`,`menu_id`)
- SELECT 1, id FROM `menu`;
+-- 角色1：全部菜单。
+INSERT INTO `role_menu` (`role_id`,`menu_code`)
+ SELECT 1, code FROM `menu`;
 -- 角色2:部分应用菜单
-INSERT INTO `role_menu` (`role_id`,`menu_id`)
- SELECT 2, id FROM `menu`
+INSERT INTO `role_menu` (`role_id`,`menu_code`)
+ SELECT 2, code FROM `menu`
  WHERE `code` IN (
   'app.integrated','app.integrated.eventsearch','app.integrated.mapmonitor',
   'app.video','app.video.live','app.video.playback','app.video.picture'

@@ -4,7 +4,7 @@
 
 package entity
 
-// Area is the golang structure for table area.
+// Area 是 area 表对应的数据结构。
 type Area struct {
 	Id       int64  `json:"id"       orm:"id"        ` // 区域ID
 	ParentId int64  `json:"parentId" orm:"parent_id" ` // 父区域ID,0为根

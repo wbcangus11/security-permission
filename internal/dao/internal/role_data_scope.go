@@ -11,15 +11,15 @@ import (
 	"github.com/gogf/gf/v2/frame/g"
 )
 
-// RoleDataScopeDao is the data access object for the table role_data_scope.
+// RoleDataScopeDao 是 role_data_scope 表的数据访问对象。
 type RoleDataScopeDao struct {
-	table    string               // table is the underlying table name of the DAO.
-	group    string               // group is the database configuration group name of the current DAO.
-	columns  RoleDataScopeColumns // columns contains all the column names of Table for convenient usage.
-	handlers []gdb.ModelHandler   // handlers for customized model modification.
+	table    string               // DAO 对应的底层表名。
+	group    string               // 当前 DAO 使用的数据库配置分组名。
+	columns  RoleDataScopeColumns // 保存表的全部列名，便于统一引用。
+	handlers []gdb.ModelHandler   // 用于自定义模型处理的处理器。
 }
 
-// RoleDataScopeColumns defines and stores column names for the table role_data_scope.
+// RoleDataScopeColumns 定义并保存 role_data_scope 表的列名。
 type RoleDataScopeColumns struct {
 	Id           string // 角色数据范围ID
 	RoleId       string // 角色ID
@@ -28,7 +28,7 @@ type RoleDataScopeColumns struct {
 	IncludeChild string // 是否含子树
 }
 
-// roleDataScopeColumns holds the columns for the table role_data_scope.
+// roleDataScopeColumns 保存 role_data_scope 表的列名。
 var roleDataScopeColumns = RoleDataScopeColumns{
 	Id:           "id",
 	RoleId:       "role_id",
@@ -37,7 +37,7 @@ var roleDataScopeColumns = RoleDataScopeColumns{
 	IncludeChild: "include_child",
 }
 
-// NewRoleDataScopeDao creates and returns a new DAO object for table data access.
+// NewRoleDataScopeDao 创建并返回 role_data_scope 表的数据访问对象。
 func NewRoleDataScopeDao(handlers ...gdb.ModelHandler) *RoleDataScopeDao {
 	return &RoleDataScopeDao{
 		group:    "default",
@@ -47,27 +47,27 @@ func NewRoleDataScopeDao(handlers ...gdb.ModelHandler) *RoleDataScopeDao {
 	}
 }
 
-// DB retrieves and returns the underlying raw database management object of the current DAO.
+// DB 返回当前 DAO 使用的底层数据库对象。
 func (dao *RoleDataScopeDao) DB() gdb.DB {
 	return g.DB(dao.group)
 }
 
-// Table returns the table name of the current DAO.
+// Table 返回当前 DAO 对应的表名。
 func (dao *RoleDataScopeDao) Table() string {
 	return dao.table
 }
 
-// Columns returns all column names of the current DAO.
+// Columns 返回当前 DAO 对应表的全部列名。
 func (dao *RoleDataScopeDao) Columns() RoleDataScopeColumns {
 	return dao.columns
 }
 
-// Group returns the database configuration group name of the current DAO.
+// Group 返回当前 DAO 使用的数据库配置分组名。
 func (dao *RoleDataScopeDao) Group() string {
 	return dao.group
 }
 
-// Ctx creates and returns a Model for the current DAO. It automatically sets the context for the current operation.
+// Ctx 创建当前 DAO 的模型，并自动绑定本次操作的上下文。
 func (dao *RoleDataScopeDao) Ctx(ctx context.Context) *gdb.Model {
 	model := dao.DB().Model(dao.table)
 	for _, handler := range dao.handlers {
@@ -76,12 +76,10 @@ func (dao *RoleDataScopeDao) Ctx(ctx context.Context) *gdb.Model {
 	return model.Safe().Ctx(ctx)
 }
 
-// Transaction wraps the transaction logic using function f.
-// It rolls back the transaction and returns the error if function f returns a non-nil error.
-// It commits the transaction and returns nil if function f returns nil.
+// Transaction 使用函数 f 封装事务逻辑。
+// 当函数 f 返回非空错误时回滚事务并返回该错误；返回 nil 时提交事务。
 //
-// Note: Do not commit or roll back the transaction in function f,
-// as it is automatically handled by this function.
+// 注意：不要在函数 f 内自行提交或回滚，事务结果由本方法统一处理。
 func (dao *RoleDataScopeDao) Transaction(ctx context.Context, f func(ctx context.Context, tx gdb.TX) error) (err error) {
 	return dao.Ctx(ctx).Transaction(ctx, f)
 }

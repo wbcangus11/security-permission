@@ -6,7 +6,7 @@ package do
 
 import "github.com/gogf/gf/v2/frame/g"
 
-// Role is the golang structure of table role for DAO operations like Where/Data.
+// Role 是 role 表用于 DAO 的 Where/Data 等操作的数据结构。
 type Role struct {
 	g.Meta      `orm:"table:role, do:true"`
 	Id          any // 角色ID

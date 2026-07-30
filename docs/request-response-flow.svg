@@ -1,0 +1,316 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1280" viewBox="0 0 1600 1280" role="img" aria-labelledby="title desc">
+  <title id="title">权限系统一次请求从接收到响应的完整流程</title>
+  <desc id="desc">动画依次展示浏览器请求、身份中间件、Controller、Service、用户权限快照缓存、Repository 和 MySQL，再返回统一 HTTP 响应；缓存未命中才访问权限表，红色虚线表示权限不足时的提前返回。</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111f"/>
+      <stop offset="0.55" stop-color="#0d1629"/>
+      <stop offset="1" stop-color="#111a31"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2942"/>
+      <stop offset="1" stop-color="#111c31"/>
+    </linearGradient>
+    <linearGradient id="requestDot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#93c5fd" stroke-opacity=".035" stroke-width="1"/>
+    </pattern>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="redGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#fb7185"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M1 1L10 6L1 11Z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowActive" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M1 1L10 6L1 11Z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrowReject" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M1 1L10 6L1 11Z" fill="#fb7185"/>
+    </marker>
+    <path id="successRoute" d="
+      M130 210 L390 210
+      L390 282 L650 282
+      L650 354 L910 354
+      L910 426 L1170 426
+      L1170 498 L1430 498
+      L1430 570 L1170 570
+      L1170 642 L910 642
+      L910 714 L1170 714
+      L1170 786 L910 786
+      L910 858 L1430 858
+      L1430 930 L910 930
+      L910 1002 L650 1002
+      L650 1074 L390 1074
+      L390 1146 L130 1146"/>
+    <path id="rejectRoute" d="M1170 714 C1090 760 1040 925 910 1002 C790 1070 620 1080 390 1146 C300 1172 220 1184 130 1184"/>
+  </defs>
+
+  <style>
+    text {
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+    .actor-title {
+      fill: #f8fafc;
+      font-size: 20px;
+      font-weight: 700;
+      text-anchor: middle;
+    }
+    .actor-subtitle {
+      fill: #94a3b8;
+      font-size: 13px;
+      text-anchor: middle;
+    }
+    .lifeline {
+      stroke: #475569;
+      stroke-width: 2;
+      stroke-dasharray: 7 9;
+      opacity: .52;
+    }
+    .message {
+      stroke: #64748b;
+      stroke-width: 2.5;
+      marker-end: url(#arrow);
+    }
+    .message-label {
+      fill: #cbd5e1;
+      font-size: 16px;
+      font-weight: 600;
+      text-anchor: middle;
+    }
+    .message-note {
+      fill: #7f8da3;
+      font-size: 13px;
+      text-anchor: middle;
+    }
+    .step {
+      opacity: .48;
+      animation: stepGlow 15s linear infinite;
+      animation-delay: calc(var(--i) * 1.02s);
+    }
+    .step .message {
+      animation: lineGlow 15s linear infinite;
+      animation-delay: calc(var(--i) * 1.02s);
+    }
+    .step .message-label {
+      animation: labelGlow 15s linear infinite;
+      animation-delay: calc(var(--i) * 1.02s);
+    }
+    .snapshot-halo {
+      animation: halo 3s ease-in-out infinite;
+      transform-origin: 1170px 92px;
+    }
+    .reject-path {
+      stroke-dasharray: 10 9;
+      animation: dash 1s linear infinite;
+    }
+    .legend-dot {
+      animation: legendPulse 1.8s ease-in-out infinite;
+    }
+    @keyframes stepGlow {
+      0%, 7% { opacity: 1; }
+      12%, 100% { opacity: .48; }
+    }
+    @keyframes lineGlow {
+      0%, 7% { stroke: #38bdf8; stroke-width: 4; marker-end: url(#arrowActive); filter: url(#softGlow); }
+      12%, 100% { stroke: #64748b; stroke-width: 2.5; marker-end: url(#arrow); filter: none; }
+    }
+    @keyframes labelGlow {
+      0%, 7% { fill: #e0f2fe; }
+      12%, 100% { fill: #cbd5e1; }
+    }
+    @keyframes halo {
+      0%, 100% { opacity: .25; transform: scale(.96); }
+      50% { opacity: .8; transform: scale(1.05); }
+    }
+    @keyframes dash {
+      to { stroke-dashoffset: -19; }
+    }
+    @keyframes legendPulse {
+      0%, 100% { opacity: .5; }
+      50% { opacity: 1; }
+    }
+  </style>
+
+  <rect width="1600" height="1280" fill="url(#background)"/>
+  <rect width="1600" height="1280" fill="url(#grid)"/>
+
+  <text x="56" y="54" fill="#f8fafc" font-size="30" font-weight="800">一次请求怎样走完</text>
+  <text x="56" y="88" fill="#94a3b8" font-size="16">当前实现：薄 Controller + 用户权限快照缓存 + 显式 Repository</text>
+
+  <g transform="translate(1110 38)">
+    <rect width="430" height="60" rx="15" fill="#0b1324" stroke="#263650"/>
+    <circle class="legend-dot" cx="28" cy="21" r="6" fill="#38bdf8"/>
+    <text x="44" y="26" fill="#cbd5e1" font-size="14">蓝点：缓存未命中时的完整请求</text>
+    <line x1="20" y1="43" x2="36" y2="43" stroke="#fb7185" stroke-width="3" stroke-dasharray="5 4"/>
+    <text x="44" y="48" fill="#cbd5e1" font-size="14">红线：权限不足，直接提前返回</text>
+  </g>
+
+  <!-- 六个参与者 -->
+  <g transform="translate(40 118)">
+    <rect width="180" height="72" rx="16" fill="url(#card)" stroke="#334155"/>
+    <text class="actor-title" x="90" y="31">浏览器 / 调用方</text>
+    <text class="actor-subtitle" x="90" y="54">HTTP JSON</text>
+  </g>
+  <g transform="translate(300 118)">
+    <rect width="180" height="72" rx="16" fill="url(#card)" stroke="#334155"/>
+    <text class="actor-title" x="90" y="31">HTTP 中间件</text>
+    <text class="actor-subtitle" x="90" y="54">身份 + 统一响应</text>
+  </g>
+  <g transform="translate(560 118)">
+    <rect width="180" height="72" rx="16" fill="url(#card)" stroke="#334155"/>
+    <text class="actor-title" x="90" y="31">Controller</text>
+    <text class="actor-subtitle" x="90" y="54">api/perm/v1 DTO</text>
+  </g>
+  <g transform="translate(820 118)">
+    <rect width="180" height="72" rx="16" fill="url(#card)" stroke="#334155"/>
+    <text class="actor-title" x="90" y="31">Service</text>
+    <text class="actor-subtitle" x="90" y="54">internal/model</text>
+  </g>
+  <g transform="translate(1080 118)">
+    <circle class="snapshot-halo" cx="90" cy="36" r="48" fill="#0891b2" opacity=".28"/>
+    <rect width="180" height="72" rx="16" fill="url(#card)" stroke="#22d3ee" stroke-width="2"/>
+    <text class="actor-title" x="90" y="31">权限快照缓存</text>
+    <text class="actor-subtitle" x="90" y="54">按用户只读复用</text>
+  </g>
+  <g transform="translate(1340 118)">
+    <rect width="180" height="72" rx="16" fill="url(#card)" stroke="#334155"/>
+    <text class="actor-title" x="90" y="31">Repository / DB</text>
+    <text class="actor-subtitle" x="90" y="54">显式 (值, error)</text>
+  </g>
+
+  <line class="lifeline" x1="130" y1="190" x2="130" y2="1205"/>
+  <line class="lifeline" x1="390" y1="190" x2="390" y2="1205"/>
+  <line class="lifeline" x1="650" y1="190" x2="650" y2="1205"/>
+  <line class="lifeline" x1="910" y1="190" x2="910" y2="1205"/>
+  <line class="lifeline" x1="1170" y1="190" x2="1170" y2="1205"/>
+  <line class="lifeline" x1="1430" y1="190" x2="1430" y2="1205"/>
+
+  <!-- 正常路径 -->
+  <g class="step" style="--i:0">
+    <line class="message" x1="130" y1="210" x2="390" y2="210"/>
+    <text class="message-label" x="260" y="202">① HTTP 请求</text>
+    <text class="message-note" x="260" y="228">JSON + X-User-Id</text>
+  </g>
+
+  <g class="step" style="--i:1">
+    <line class="message" x1="390" y1="282" x2="650" y2="282"/>
+    <text class="message-label" x="520" y="274">② 只把 userID 放进 Context</text>
+    <text class="message-note" x="520" y="300">这里不查用户表</text>
+  </g>
+
+  <g class="step" style="--i:2">
+    <line class="message" x1="650" y1="354" x2="910" y2="354"/>
+    <text class="message-label" x="780" y="346">③ Req 转成 service input</text>
+    <text class="message-note" x="780" y="372">Controller 不做权限业务</text>
+  </g>
+
+  <g class="step" style="--i:3">
+    <line class="message" x1="910" y1="426" x2="1170" y2="426"/>
+    <text class="message-label" x="1040" y="418">④ 先读取用户权限缓存</text>
+    <text class="message-note" x="1040" y="444">ForUser / loadPermissionSnapshot</text>
+  </g>
+
+  <g class="step" style="--i:4">
+    <line class="message" x1="1170" y1="498" x2="1430" y2="498"/>
+    <text class="message-label" x="1300" y="490">⑤ 未命中才读取权限事实</text>
+    <text class="message-note" x="1300" y="516">用户、角色、菜单、范围路径</text>
+  </g>
+
+  <g class="step" style="--i:5">
+    <line class="message" x1="1430" y1="570" x2="1170" y2="570"/>
+    <text class="message-label" x="1300" y="562">⑥ 返回批量查询结果</text>
+    <text class="message-note" x="1300" y="588">固定几次查询，不再出现 N+1</text>
+  </g>
+
+  <g class="step" style="--i:6">
+    <line class="message" x1="1170" y1="642" x2="910" y2="642"/>
+    <text class="message-label" x="1040" y="634">⑦ 组装快照并放入缓存</text>
+    <text class="message-note" x="1040" y="660">menuCodes + AREA / ORG / RES_AREA</text>
+  </g>
+
+  <g class="step" style="--i:7">
+    <line class="message" x1="910" y1="714" x2="1170" y2="714"/>
+    <text class="message-label" x="1040" y="706">⑧ 纯内存权限判断</text>
+    <text class="message-note" x="1040" y="732">requireAnyMenu + covers</text>
+  </g>
+
+  <g class="step" style="--i:8">
+    <line class="message" x1="1170" y1="786" x2="910" y2="786"/>
+    <text class="message-label" x="1040" y="778">⑨ 允许继续</text>
+    <text class="message-note" x="1040" y="804">权限判断本身不再查库</text>
+  </g>
+
+  <g class="step" style="--i:9">
+    <line class="message" x1="910" y1="858" x2="1430" y2="858"/>
+    <text class="message-label" x="1170" y="850">⑩ 查询列表 / 详情，或提交写事务</text>
+    <text class="message-note" x="1170" y="876">只有这里读取真正的业务对象</text>
+  </g>
+
+  <g class="step" style="--i:10">
+    <line class="message" x1="1430" y1="930" x2="910" y2="930"/>
+    <text class="message-label" x="1170" y="922">⑪ 返回 service model</text>
+    <text class="message-note" x="1170" y="948">写事务提交后精准失效相关用户</text>
+  </g>
+
+  <g class="step" style="--i:11">
+    <line class="message" x1="910" y1="1002" x2="650" y2="1002"/>
+    <text class="message-label" x="780" y="994">⑫ 返回结果 / error</text>
+    <text class="message-note" x="780" y="1020">错误当场向上传递</text>
+  </g>
+
+  <g class="step" style="--i:12">
+    <line class="message" x1="650" y1="1074" x2="390" y2="1074"/>
+    <text class="message-label" x="520" y="1066">⑬ model 转成 v1 Res</text>
+    <text class="message-note" x="520" y="1092">HTTP 不暴露 internal/model</text>
+  </g>
+
+  <g class="step" style="--i:13">
+    <line class="message" x1="390" y1="1146" x2="130" y2="1146"/>
+    <text class="message-label" x="260" y="1138">⑭ 统一响应</text>
+    <text class="message-note" x="260" y="1164">{code, message, data}</text>
+  </g>
+
+  <!-- 正常请求的移动光点 -->
+  <circle r="9" fill="url(#requestDot)" stroke="#e0f2fe" stroke-width="2" filter="url(#softGlow)">
+    <animateMotion dur="15s" repeatCount="indefinite" rotate="auto">
+      <mpath href="#successRoute"/>
+    </animateMotion>
+  </circle>
+
+  <!-- 权限不足分支 -->
+  <path class="reject-path" d="M1170 714 C1090 760 1040 925 910 1002 C790 1070 620 1080 390 1146 C300 1172 220 1184 130 1184"
+        fill="none" stroke="#fb7185" stroke-width="3" marker-end="url(#arrowReject)" opacity=".7"/>
+  <rect x="965" y="746" width="395" height="58" rx="14" fill="#2a1420" stroke="#fb7185" stroke-opacity=".7"/>
+  <text x="1162" y="770" fill="#fecdd3" font-size="15" font-weight="700" text-anchor="middle">权限不足：不再查询业务数据</text>
+  <text x="1162" y="791" fill="#fda4af" font-size="13" text-anchor="middle">CodeNotAuthorized 沿原调用栈直接返回</text>
+  <circle r="7" fill="#fb7185" filter="url(#redGlow)">
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.45;0.5;0.78;1" dur="15s" repeatCount="indefinite"/>
+    <animateMotion dur="15s" repeatCount="indefinite" rotate="auto"
+                   keyPoints="0;0;1;1" keyTimes="0;0.5;0.78;1" calcMode="linear">
+      <mpath href="#rejectRoute"/>
+    </animateMotion>
+  </circle>
+
+  <g transform="translate(470 1208)">
+    <rect width="660" height="48" rx="14" fill="#0b1324" stroke="#263650"/>
+    <text x="330" y="21" fill="#a5f3fc" font-size="14" font-weight="700" text-anchor="middle">关键点：只缓存最终的用户权限快照，不缓存业务对象</text>
+    <text x="330" y="39" fill="#94a3b8" font-size="12" text-anchor="middle">用户和角色精准失效；树结构低频写入才统一清快照</text>
+  </g>
+</svg>

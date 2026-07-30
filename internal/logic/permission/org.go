@@ -13,27 +13,11 @@ import (
 	"security-permission/internal/model/do"
 )
 
-func (e *evaluator) checkOrgWriter(userID string) (*model.User, error) {
-	user := e.user(userID)
-	if e.err != nil {
-		return nil, e.err
-	}
-	if user == nil {
-		return nil, gerror.New("操作人不存在")
-	}
-	decision := e.checkMenu(user, menuOrgManage)
-	if e.err != nil {
-		return nil, e.err
-	}
-	if !decision.Allow {
-		return nil, gerror.New("功能权限不足：" + decision.Reason)
-	}
-	return user, nil
-}
-
 func SaveOrg(ctx context.Context, userID string, input *model.OrgSaveInput) (*model.Org, error) {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkOrgWriter(userID)
+	if input == nil {
+		return nil, gerror.New("组织保存参数不能为空")
+	}
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuOrgManage)
 	if err != nil {
 		return nil, err
 	}
@@ -41,21 +25,27 @@ func SaveOrg(ctx context.Context, userID string, input *model.OrgSaveInput) (*mo
 	if input.Name == "" {
 		return nil, gerror.New("组织名称不能为空")
 	}
+	var saved *model.Org
 	if input.Id <= 0 {
-		return createOrg(ctx, ev, user, input)
+		saved, err = createOrg(ctx, snapshot, input)
+	} else {
+		saved, err = updateOrg(ctx, snapshot, input)
 	}
-	return updateOrg(ctx, ev, user, input)
+	if err != nil {
+		return nil, err
+	}
+	InvalidateAll()
+	return saved, nil
 }
 
 func DeleteOrg(ctx context.Context, userID string, orgID int) error {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkOrgWriter(userID)
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuOrgManage)
 	if err != nil {
 		return err
 	}
-	target := ev.org(orgID)
-	if ev.err != nil {
-		return ev.err
+	target, err := findOrg(ctx, orgID)
+	if err != nil {
+		return err
 	}
 	if target == nil {
 		return gerror.New("组织不存在")
@@ -63,12 +53,8 @@ func DeleteOrg(ctx context.Context, userID string, orgID int) error {
 	if target.ParentId == 0 {
 		return gerror.New("根组织不允许删除")
 	}
-	decision := ev.checkTree(user, orgID, treeKindOrg)
-	if !decision.Allow {
-		return gerror.New("无权删除“" + target.Name + "”：" + decision.Reason)
-	}
-	if ev.err != nil {
-		return ev.err
+	if !snapshot.covers(treeKindOrg, target.Path, target.Id) {
+		return gerror.New("无权删除“" + target.Name + "”")
 	}
 	if count, err := dao.Org.Ctx(ctx).Where(dao.Org.Columns().ParentId, orgID).Count(); err != nil {
 		return err
@@ -92,24 +78,20 @@ func DeleteOrg(ctx context.Context, userID string, orgID int) error {
 	if err != nil {
 		return err
 	}
-	permissionHotCache.invalidateAll()
+	InvalidateAll()
 	return nil
 }
 
-func createOrg(ctx context.Context, ev *evaluator, user *model.User, input *model.OrgSaveInput) (*model.Org, error) {
-	parent := ev.org(input.ParentId)
-	if ev.err != nil {
-		return nil, ev.err
+func createOrg(ctx context.Context, snapshot *permissionSnapshot, input *model.OrgSaveInput) (*model.Org, error) {
+	parent, err := findOrg(ctx, input.ParentId)
+	if err != nil {
+		return nil, err
 	}
 	if parent == nil {
 		return nil, gerror.New("父组织不存在")
 	}
-	decision := ev.checkTree(user, parent.Id, treeKindOrg)
-	if !decision.Allow {
-		return nil, gerror.New("无权在“" + parent.Name + "”下新增子组织：" + decision.Reason)
-	}
-	if ev.err != nil {
-		return nil, ev.err
+	if !snapshot.covers(treeKindOrg, parent.Path, parent.Id) {
+		return nil, gerror.New("无权在“" + parent.Name + "”下新增子组织")
 	}
 	if exists, err := orgNameExists(ctx, parent.Id, input.Name, 0); err != nil {
 		return nil, err
@@ -117,7 +99,7 @@ func createOrg(ctx context.Context, ev *evaluator, user *model.User, input *mode
 		return nil, gerror.New("同级已存在同名组织：" + input.Name)
 	}
 	var newID int64
-	err := dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+	err = dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		result, err := tx.Model(dao.Org.Table()).Ctx(ctx).
 			Data(do.Org{ParentId: parent.Id, Name: input.Name, Path: ""}).Insert()
 		if err != nil {
@@ -135,14 +117,13 @@ func createOrg(ctx context.Context, ev *evaluator, user *model.User, input *mode
 	if err != nil {
 		return nil, err
 	}
-	permissionHotCache.invalidateAll()
 	return findOrg(ctx, int(newID))
 }
 
-func updateOrg(ctx context.Context, ev *evaluator, user *model.User, input *model.OrgSaveInput) (*model.Org, error) {
-	old := ev.org(input.Id)
-	if ev.err != nil {
-		return nil, ev.err
+func updateOrg(ctx context.Context, snapshot *permissionSnapshot, input *model.OrgSaveInput) (*model.Org, error) {
+	old, err := findOrg(ctx, input.Id)
+	if err != nil {
+		return nil, err
 	}
 	if old == nil {
 		return nil, gerror.New("组织不存在")
@@ -150,25 +131,25 @@ func updateOrg(ctx context.Context, ev *evaluator, user *model.User, input *mode
 	if old.ParentId == 0 {
 		return nil, gerror.New("根组织不允许修改")
 	}
-	if decision := ev.checkTree(user, old.Id, treeKindOrg); !decision.Allow {
-		return nil, gerror.New("无权管理“" + old.Name + "”：" + decision.Reason)
+	if !snapshot.covers(treeKindOrg, old.Path, old.Id) {
+		return nil, gerror.New("无权管理“" + old.Name + "”")
 	}
 	moving := input.ParentId != 0 && input.ParentId != old.ParentId
 	var newParent *model.Org
 	if moving {
-		newParent = ev.org(input.ParentId)
+		newParent, err = findOrg(ctx, input.ParentId)
+		if err != nil {
+			return nil, err
+		}
 		if newParent == nil {
 			return nil, gerror.New("目标父组织不存在")
 		}
 		if strings.HasPrefix(newParent.Path, old.Path) {
 			return nil, gerror.New("不能把组织移动到自己或自己的子组织下")
 		}
-		if decision := ev.checkTree(user, newParent.Id, treeKindOrg); !decision.Allow {
-			return nil, gerror.New("无权移动到“" + newParent.Name + "”下：" + decision.Reason)
+		if !snapshot.covers(treeKindOrg, newParent.Path, newParent.Id) {
+			return nil, gerror.New("无权移动到“" + newParent.Name + "”下")
 		}
-	}
-	if ev.err != nil {
-		return nil, ev.err
 	}
 	parentID := old.ParentId
 	if moving {
@@ -179,7 +160,7 @@ func updateOrg(ctx context.Context, ev *evaluator, user *model.User, input *mode
 	} else if exists {
 		return nil, gerror.New("同级已存在同名组织：" + input.Name)
 	}
-	err := dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+	err = dao.Org.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
 		if _, err := tx.Model(dao.Org.Table()).Ctx(ctx).Data(do.Org{Name: input.Name}).
 			Where(dao.Org.Columns().Id, old.Id).Update(); err != nil {
 			return err
@@ -199,7 +180,6 @@ func updateOrg(ctx context.Context, ev *evaluator, user *model.User, input *mode
 	if err != nil {
 		return nil, err
 	}
-	permissionHotCache.invalidateAll()
 	return findOrg(ctx, old.Id)
 }
 

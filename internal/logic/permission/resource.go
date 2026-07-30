@@ -11,27 +11,11 @@ import (
 	"security-permission/internal/model/do"
 )
 
-func (e *evaluator) checkResourceWriter(userID string) (*model.User, error) {
-	user := e.user(userID)
-	if e.err != nil {
-		return nil, e.err
-	}
-	if user == nil {
-		return nil, gerror.New("操作人不存在")
-	}
-	decision := e.checkMenu(user, menuResourceManage)
-	if e.err != nil {
-		return nil, e.err
-	}
-	if !decision.Allow {
-		return nil, gerror.New("功能权限不足：" + decision.Reason)
-	}
-	return user, nil
-}
-
 func SaveResource(ctx context.Context, userID string, input *model.ResourceSaveInput) (*model.Resource, error) {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkResourceWriter(userID)
+	if input == nil {
+		return nil, gerror.New("资源保存参数不能为空")
+	}
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuResourceManage)
 	if err != nil {
 		return nil, err
 	}
@@ -40,52 +24,46 @@ func SaveResource(ctx context.Context, userID string, input *model.ResourceSaveI
 		return nil, gerror.New("资源名称不能为空")
 	}
 	if input.Id <= 0 {
-		return createResource(ctx, ev, user, input)
+		return createResource(ctx, snapshot, input)
 	}
-	return updateResource(ctx, ev, user, input)
+	return updateResource(ctx, snapshot, input)
 }
 
 func DeleteResource(ctx context.Context, userID string, resourceID int) error {
-	ev := newEvaluator(ctx)
-	user, err := ev.checkResourceWriter(userID)
+	snapshot, err := loadAuthorizedSnapshot(ctx, userID, menuResourceManage)
 	if err != nil {
 		return err
 	}
-	target := ev.resource(resourceID)
-	if ev.err != nil {
-		return ev.err
+	target, err := findResource(ctx, resourceID)
+	if err != nil {
+		return err
 	}
 	if target == nil {
 		return gerror.New("资源不存在")
 	}
-	decision := ev.checkTree(user, target.AreaId, treeKindArea)
-	if !decision.Allow {
-		return gerror.New("无权删除“" + target.Name + "”：" + decision.Reason)
+	area, err := findArea(ctx, target.AreaId)
+	if err != nil {
+		return err
 	}
-	if ev.err != nil {
-		return ev.err
+	if area == nil || !snapshot.covers(treeKindArea, area.Path, area.Id) {
+		return gerror.New("无权删除“" + target.Name + "”")
 	}
 	if _, err = dao.Resource.Ctx(ctx).Where(dao.Resource.Columns().Id, resourceID).Delete(); err != nil {
 		return err
 	}
-	permissionHotCache.invalidateAll()
 	return nil
 }
 
-func createResource(ctx context.Context, ev *evaluator, user *model.User, input *model.ResourceSaveInput) (*model.Resource, error) {
-	area := ev.area(input.AreaId)
-	if ev.err != nil {
-		return nil, ev.err
+func createResource(ctx context.Context, snapshot *permissionSnapshot, input *model.ResourceSaveInput) (*model.Resource, error) {
+	area, err := findArea(ctx, input.AreaId)
+	if err != nil {
+		return nil, err
 	}
 	if area == nil {
 		return nil, gerror.New("所在区域不存在")
 	}
-	decision := ev.checkTree(user, area.Id, treeKindArea)
-	if !decision.Allow {
-		return nil, gerror.New("无权在“" + area.Name + "”下新增资源：" + decision.Reason)
-	}
-	if ev.err != nil {
-		return nil, ev.err
+	if !snapshot.covers(treeKindArea, area.Path, area.Id) {
+		return nil, gerror.New("无权在“" + area.Name + "”下新增资源")
 	}
 	if input.Type == "" {
 		input.Type = "camera"
@@ -105,34 +83,37 @@ func createResource(ctx context.Context, ev *evaluator, user *model.User, input 
 	if err != nil {
 		return nil, err
 	}
-	permissionHotCache.invalidateAll()
 	return findResource(ctx, int(id))
 }
 
-func updateResource(ctx context.Context, ev *evaluator, user *model.User, input *model.ResourceSaveInput) (*model.Resource, error) {
-	old := ev.resource(input.Id)
-	if ev.err != nil {
-		return nil, ev.err
+func updateResource(ctx context.Context, snapshot *permissionSnapshot, input *model.ResourceSaveInput) (*model.Resource, error) {
+	old, err := findResource(ctx, input.Id)
+	if err != nil {
+		return nil, err
 	}
 	if old == nil {
 		return nil, gerror.New("资源不存在")
 	}
-	if decision := ev.checkTree(user, old.AreaId, treeKindArea); !decision.Allow {
-		return nil, gerror.New("无权管理“" + old.Name + "”所在区域：" + decision.Reason)
+	oldArea, err := findArea(ctx, old.AreaId)
+	if err != nil {
+		return nil, err
+	}
+	if oldArea == nil || !snapshot.covers(treeKindArea, oldArea.Path, oldArea.Id) {
+		return nil, gerror.New("无权管理“" + old.Name + "”所在区域")
 	}
 	targetAreaID := old.AreaId
 	if input.AreaId != 0 && input.AreaId != old.AreaId {
-		area := ev.area(input.AreaId)
+		area, err := findArea(ctx, input.AreaId)
+		if err != nil {
+			return nil, err
+		}
 		if area == nil {
 			return nil, gerror.New("目标区域不存在")
 		}
-		if decision := ev.checkTree(user, area.Id, treeKindArea); !decision.Allow {
-			return nil, gerror.New("无权移动到“" + area.Name + "”：" + decision.Reason)
+		if !snapshot.covers(treeKindArea, area.Path, area.Id) {
+			return nil, gerror.New("无权移动到“" + area.Name + "”")
 		}
 		targetAreaID = area.Id
-	}
-	if ev.err != nil {
-		return nil, ev.err
 	}
 	resourceType := input.Type
 	if resourceType == "" {
@@ -148,7 +129,6 @@ func updateResource(ctx context.Context, ev *evaluator, user *model.User, input 
 	}).Where(dao.Resource.Columns().Id, old.Id).Update(); err != nil {
 		return nil, err
 	}
-	permissionHotCache.invalidateAll()
 	return findResource(ctx, old.Id)
 }
 
