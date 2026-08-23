@@ -2,7 +2,6 @@ package permission
 
 import (
 	"context"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -122,46 +121,45 @@ func ReorderArea(ctx context.Context, input *model.AreaReorderInput) error {
 	if !snapshot.covers(treeKindArea, destination.Path, destination.Id) {
 		return gerror.New("无权与目标区域“" + destination.Name + "”换序")
 	}
-	var rows []entity.Area
-	if err := dao.Area.Ctx(ctx).Where(dao.Area.Columns().ParentId, target.ParentId).
-		Order(dao.Area.Columns().Sort + "," + dao.Area.Columns().Id).Scan(&rows); err != nil {
-		return err
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Sort == rows[j].Sort {
-			return rows[i].Id < rows[j].Id
-		}
-		return rows[i].Sort < rows[j].Sort
-	})
-	left, right := -1, -1
-	for index := range rows {
-		if int(rows[index].Id) == target.Id {
-			left = index
-		}
-		if int(rows[index].Id) == destination.Id {
-			right = index
-		}
-	}
-	if left < 0 || right < 0 {
-		return gerror.New("同级区域排序数据异常")
-	}
-	rows[left], rows[right] = rows[right], rows[left]
 	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		for index, row := range rows {
-			nextSort := (index + 1) * 10
-			if row.Sort == nextSort {
-				continue
-			}
-			if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Data(do.Area{Sort: nextSort}).
-				Where(dao.Area.Columns().Id, row.Id).Update(); err != nil {
-				return err
+		var rows []entity.Area
+		if err := tx.Model(dao.Area.Table()).Ctx(ctx).
+			WhereIn(dao.Area.Columns().Id, []int{target.Id, destination.Id}).
+			LockUpdate().Scan(&rows); err != nil {
+			return err
+		}
+		if len(rows) != 2 {
+			return gerror.New("区域排序数据已发生变化，请刷新后重试")
+		}
+		var lockedTarget, lockedDestination *entity.Area
+		for index := range rows {
+			switch int(rows[index].Id) {
+			case target.Id:
+				lockedTarget = &rows[index]
+			case destination.Id:
+				lockedDestination = &rows[index]
 			}
 		}
-		return nil
+		if lockedTarget == nil || lockedDestination == nil {
+			return gerror.New("区域排序数据已发生变化，请刷新后重试")
+		}
+		if lockedTarget.ParentId != lockedDestination.ParentId {
+			return gerror.New("只能交换同一父区域下的区域顺序")
+		}
+		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).
+			Data(do.Area{Sort: lockedDestination.Sort}).
+			Where(dao.Area.Columns().Id, lockedTarget.Id).Update(); err != nil {
+			return err
+		}
+		_, err := tx.Model(dao.Area.Table()).Ctx(ctx).
+			Data(do.Area{Sort: lockedTarget.Sort}).
+			Where(dao.Area.Columns().Id, lockedDestination.Id).Update()
+		return err
 	})
 	if err != nil {
 		return err
 	}
+	InvalidateAll()
 	return nil
 }
 
@@ -230,53 +228,27 @@ func updateArea(ctx context.Context, snapshot *permissionSnapshot, input *model.
 	if !snapshot.covers(treeKindArea, old.Path, old.Id) {
 		return nil, gerror.New("无权管理“" + old.Name + "”")
 	}
-	moving := input.ParentId != 0 && input.ParentId != old.ParentId
-	var newParent *model.Area
-	if moving {
-		newParent, err = findArea(ctx, input.ParentId)
-		if err != nil {
-			return nil, err
-		}
-		if newParent == nil {
-			return nil, gerror.New("目标父区域不存在")
-		}
-		if strings.HasPrefix(newParent.Path, old.Path) {
-			return nil, gerror.New("不能把区域移动到自己或自己的子区域下")
-		}
-		if !snapshot.covers(treeKindArea, newParent.Path, newParent.Id) {
-			return nil, gerror.New("无权移动到“" + newParent.Name + "”下")
-		}
+	if err := validateAreaParentUnchanged(old.ParentId, input.ParentId); err != nil {
+		return nil, err
 	}
-	parentID := old.ParentId
-	if moving {
-		parentID = newParent.Id
-	}
-	if exists, err := areaNameExists(ctx, parentID, input.Name, old.Id); err != nil {
+	if exists, err := areaNameExists(ctx, old.ParentId, input.Name, old.Id); err != nil {
 		return nil, err
 	} else if exists {
 		return nil, gerror.New("同级已存在同名区域：" + input.Name)
 	}
-	err = dao.Area.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
-		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Data(do.Area{Name: input.Name}).
-			Where(dao.Area.Columns().Id, old.Id).Update(); err != nil {
-			return err
-		}
-		if !moving {
-			return nil
-		}
-		if _, err := tx.Model(dao.Area.Table()).Ctx(ctx).Data(do.Area{ParentId: newParent.Id}).
-			Where(dao.Area.Columns().Id, old.Id).Update(); err != nil {
-			return err
-		}
-		newPrefix := newParent.Path + strconv.Itoa(old.Id) + "/"
-		_, err := tx.Exec("UPDATE `area` SET `path`=CONCAT(?, SUBSTRING(`path`, ?)) WHERE `path` LIKE ?",
-			newPrefix, len(old.Path)+1, old.Path+"%")
-		return err
-	})
+	_, err = dao.Area.Ctx(ctx).Data(do.Area{Name: input.Name}).
+		Where(dao.Area.Columns().Id, old.Id).Update()
 	if err != nil {
 		return nil, err
 	}
 	return findArea(ctx, old.Id)
+}
+
+func validateAreaParentUnchanged(currentParentID, requestedParentID int) error {
+	if requestedParentID != 0 && requestedParentID != currentParentID {
+		return gerror.New("区域不允许更换父级，请使用区域排序接口交换同级区域顺序")
+	}
+	return nil
 }
 
 func areaNameExists(ctx context.Context, parentID int, name string, excludeID int) (bool, error) {

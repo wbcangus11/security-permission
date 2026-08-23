@@ -13,7 +13,9 @@ import (
 const userHeader = "X-User-Id"
 const maxIdentityLength = 64
 
-// Identity 读取当前用户请求头并写入请求上下文。
+// Identity 是当前独立演示页面使用的身份适配器：读取请求头并写入请求上下文。
+// 实际项目应由统一认证中间件在完成身份校验后写入同一个 ctx 身份位置；权限和
+// 业务代码只依赖 GetUserId，不需要知道身份来自 Token、Session 还是网关。
 func Identity(r *ghttp.Request) {
 	setPermissionResponseHeaders(r.Response.Header())
 	if userID := identityHeaderValue(r.Header, userHeader); userID != "" {
@@ -29,8 +31,9 @@ func setPermissionResponseHeaders(header http.Header) {
 	header.Set("Vary", userHeader)
 }
 
-// GetUserId 只从 ctx 里读取中间件已经放好的用户 ID。
-// 实际项目替换这里的 context key 就行，Controller 和 Service 都不用再改。
+// GetUserId 是权限和业务代码读取当前用户 ID 的稳定边界，只读取认证中间件已经
+// 放入 ctx 的身份。实际项目调整认证方式、context key 或用户信息结构时，只需在
+// 中间件包内部完成适配，Controller、Service 和权限逻辑都不用修改。
 func GetUserId(ctx context.Context) (userId string) {
 	if ctx == nil {
 		return ""

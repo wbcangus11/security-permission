@@ -106,22 +106,22 @@ type ManageAreaDetailRes struct {
 	ResourceItems []ResourceBrief `json:"resourceItems"`
 }
 
-// ManageAreaSaveReq 新增、重命名或移动区域。
+// ManageAreaSaveReq 新增或重命名区域，不允许更换已有区域的父级。
 // 写操作同时检查功能菜单权限和区域数据权限。
 type ManageAreaSaveReq struct {
-	g.Meta   `path:"/manage/area-save" method:"post" tags:"权限/后台管理" summary:"新增或修改区域"`
+	g.Meta   `path:"/manage/area-save" method:"post" tags:"权限/后台管理" summary:"新增或重命名区域"`
 	Id       int    `json:"id" dc:"区域 ID,0 或空表示新增区域"`
-	ParentId int    `json:"parentId" dc:"父区域 ID;新增时必填,更新时非 0 且变化表示移动区域"`
+	ParentId int    `json:"parentId" dc:"父区域 ID;新增时必填,重命名时省略或传当前父区域 ID"`
 	Name     string `json:"name" dc:"区域名称"`
 }
 
 type ManageAreaSaveRes AreaItem
 
-// ManageAreaReorderReq 调整同父区域的排序。
+// ManageAreaReorderReq 交换同一父区域下两个区域的排序值。
 type ManageAreaReorderReq struct {
 	g.Meta   `path:"/manage/area-reorder" method:"post" tags:"权限/后台管理" summary:"交换同级区域排序"`
 	AreaId   int `json:"areaId" dc:"当前区域 ID"`
-	ToAreaId int `json:"toAreaId" dc:"目标同级区域 ID,后端会和当前区域交换排序"`
+	ToAreaId int `json:"toAreaId" dc:"目标同级区域 ID,后端直接交换两个区域的 sort 值"`
 }
 
 type ManageAreaReorderRes struct {

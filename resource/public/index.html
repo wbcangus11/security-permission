@@ -1249,11 +1249,10 @@ async function openManageNode(kind, id){
   let html=`<h3>${d.name} — 管理权限</h3>`;
   if(kind==='area'){
     curAreaNode={id, name:d.name, parentId:d.parentId}; // 缓存当前节点(CRUD 取名/父用,替代全量 MANAGE_AREAS)
-    // 真实落库的区域操作(后端写时再校验一遍权限);移动改用懒加载树选择器(弹框)
+    // 真实落库的区域操作(后端写时再校验一遍权限);区域只允许在当前层级上移或下移
     html+=`<div class="res-card"><div class="rc-title">${svgIco('i-area')} 区域操作 <span class="muted" style="font-weight:400">(真实落库,写时校验权限)</span></div>
       <button class="op-btn" onclick="areaAdd()">${svgIco('i-plus')} 新增子区域</button>
       <button class="op-btn" onclick="areaRename()">${svgIco('i-edit')} 重命名</button>
-      <button class="op-btn" onclick="areaMoveUI()">${svgIco('i-move')} 移动到…</button>
       <button class="op-btn" onclick="areaReorder('up')">${svgIco('i-up')} 上移</button>
       <button class="op-btn" onclick="areaReorder('down')">${svgIco('i-down')} 下移</button>
       <button class="op-btn" onclick="areaDelete()">${svgIco('i-trash')} 删除</button>
@@ -1330,7 +1329,7 @@ async function resFormDo(){
   }catch(e){ await modalError('保存失败', e); }
 }
 function resMoveUI(id){ const r=CUR_RES_ITEMS.find(x=>x.id===id); if(!r) return; resMoveTarget=id;
-  openMovePicker('移动资源「'+(r.name||'')+'」到区域…', areaPickerOpts(), resMoveDo); }
+  openMovePicker('移动资源「'+(r.name||'')+'」到区域…', resourceAreaPickerOpts(), resMoveDo); }
 async function resMoveDo(target){
   const r=CUR_RES_ITEMS.find(x=>x.id===resMoveTarget)||{};
   try{
@@ -1376,15 +1375,8 @@ async function areaRename(){
     toast('已重命名为:'+name.trim(),'i-check'); await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('重命名失败', e); }
 }
-// 移动:弹出懒加载树选择器,导航到目标点选(只能选 accessible 节点);写时后端再校验防环/权限/重名
-function areaPickerOpts(){ return { url:(p,pg,s)=>`/api/manage/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
-function areaMoveUI(){ if(!curManage.area) return; openMovePicker('移动「'+manageAreaName(curManage.area)+'」到…', areaPickerOpts(), areaMoveDo); }
-async function areaMoveDo(target){
-  try{
-    await api('/api/manage/area-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:curManage.area,parentId:target.id,name:manageAreaName(curManage.area)})});
-    closeMovePicker(); toast('已移动到:'+target.name,'i-check'); await refreshAreaMgmt(curManage.area);
-  }catch(e){ await modalError('移动失败', e); }
-}
+// 资源移动目标:弹出懒加载区域树选择器,只能选择 accessible 节点
+function resourceAreaPickerOpts(){ return { url:(p,pg,s)=>`/api/manage/area-children?parentId=${p}&page=${pg}&size=${s}`, rootParent:0, emptyText:'无可选目标', icon:'i-area', activeSel:'#movePickerTree .area-node', onClick:(n,row)=>{ if(!n.accessible){ toast('「'+n.name+'」仅可见,无管理权,不能作为目标','i-x'); row.classList.remove('active'); return; } movePicked={id:n.id,name:n.name}; document.getElementById('movePickedName').textContent=n.name; } }; }
 async function areaReorder(direction){
   if(!curManage.area) return;
   const cur=(META.areas||[]).find(a=>a.id===curManage.area);
@@ -1399,7 +1391,7 @@ async function areaReorder(direction){
     await refreshAreaMgmt(curManage.area);
   }catch(e){ await modalError('排序失败', e); }
 }
-// ---------- 移动目标选择器(懒加载树弹框,后端区域/组织可共用) ----------
+// ---------- 移动目标选择器(资源与组织操作复用) ----------
 let movePicked=null, movePickerOnConfirm=null;
 function ensureMovePicker(){
   let m=document.getElementById('movePicker'); if(m) return m;
